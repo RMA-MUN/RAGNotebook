@@ -74,6 +74,7 @@ chromadb/
 !.vscode/extensions.json
 .opencode/
 .omo/
+.codegraph/
 
 # Windows
 Thumbs.db
