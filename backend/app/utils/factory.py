@@ -35,7 +35,7 @@ class DashScopeEmbeddingsWrapper(Embeddings):
                 input=text
             )
             if resp.status_code == 200:
-                results.append(resp.output['embedding'])
+                results.append(resp.output['embeddings'][0]['embedding'])
             else:
                 logger.error(f"阿里云嵌入调用失败: {resp.message}")
                 results.append([])
@@ -48,7 +48,7 @@ class DashScopeEmbeddingsWrapper(Embeddings):
             input=text
         )
         if resp.status_code == 200:
-            return resp.output['embedding']
+            return resp.output['embeddings'][0]['embedding']
         else:
             logger.error(f"阿里云嵌入调用失败: {resp.message}")
             return []
