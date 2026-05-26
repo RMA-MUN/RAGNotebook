@@ -60,7 +60,6 @@ async def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depend
 
     # 检查JWT是否在黑名单中
     jti = payload.get("jti")
-    logger.info(f"【debug】 检查JWT是否在黑名单中，jti: {jti}", extra={"path": "auth_utils.get_current_user_id"})
     if jti:
         redis_client = await connect_redis()
         # 使用通配符查询所有可能的黑名单键格式
@@ -69,7 +68,6 @@ async def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depend
         
         # 获取所有匹配的键
         matching_keys = await redis_client.keys(wildcard_pattern)
-        logger.info(f"【debug】 检查JWT是否在黑名单中，匹配的键: {matching_keys}", extra={"path": "auth_utils.get_current_user_id"})
         
         # 如果有匹配的键，说明JWT在黑名单中
         if matching_keys:
