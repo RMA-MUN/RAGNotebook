@@ -195,6 +195,17 @@ class VisionService:
             logger.error("【视觉服务】DashScope 返回 None，可能是网络错误或请求超时")
             return ""
 
+        if response.status_code != 200:
+            logger.error(
+                f"【视觉服务】DashScope 返回错误，status_code: {response.status_code}, "
+                f"code: {getattr(response, 'code', '')}, message: {getattr(response, 'message', '')}"
+            )
+            return ""
+
+        if response.output is None:
+            logger.error("【视觉服务】DashScope 返回 output 为 None，可能是服务暂时不可用")
+            return ""
+
         choices = response.output.choices
         if not choices:
             logger.error("【视觉服务】DashScope 返回空 choices")
@@ -234,6 +245,17 @@ class VisionService:
 
         if response is None:
             logger.error("【视觉服务·批量】DashScope 返回 None，可能是网络错误或请求超时")
+            return ""
+
+        if response.status_code != 200:
+            logger.error(
+                f"【视觉服务·批量】DashScope 返回错误，status_code: {response.status_code}, "
+                f"code: {getattr(response, 'code', '')}, message: {getattr(response, 'message', '')}"
+            )
+            return ""
+
+        if response.output is None:
+            logger.error("【视觉服务·批量】DashScope 返回 output 为 None，可能是服务暂时不可用")
             return ""
 
         choices = response.output.choices
