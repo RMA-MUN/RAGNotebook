@@ -1,10 +1,12 @@
-from typing import List, Dict, Any
-import torch
 import os
+from typing import Any
+
+import torch
 from dotenv import load_dotenv
-from sentence_transformers import CrossEncoder
 from modelscope import snapshot_download
+from sentence_transformers import CrossEncoder
 from tqdm import tqdm
+
 from app.core.logger_handler import logger
 
 # 加载环境变量
@@ -14,11 +16,11 @@ load_dotenv()
 def find_model_path(base_path: str) -> str:
     if os.path.exists(os.path.join(base_path, 'config.json')):
         return base_path
-    
+
     for root, dirs, files in os.walk(base_path):
         if 'config.json' in files:
             return root
-    
+
     logger.info(f"✅ 模型路径：{base_path}")
     logger.info(f"✅ 模型路径：{root}")
     return base_path
@@ -56,13 +58,13 @@ def check_and_download_reranker_model() -> None:
 
 class ReorderService:
     """文档重排序服务"""
-    
+
     def __init__(self):
         self.LOCAL_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH", r"D:\Hugging_Face\models\Qwen3-Reranker-0.6B")
         self.MODELSCOPE_MODEL_NAME = "Qwen/Qwen3-Reranker-0.6B"
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self._model = None
-    
+
     async def _get_model(self):
         """懒加载模型实例"""
         if self._model is None:
@@ -77,13 +79,13 @@ class ReorderService:
             self._model.eval()
             logger.info(f"✅ 模型加载成功，使用设备：{self.device}")
         return self._model
-    
+
     @property
     async def model(self):
         """获取模型实例（懒加载）"""
         return await self._get_model()
-    
-    async def reorder_documents(self, query: str, documents: List[str], thinking_callback=None) -> Dict[str, Any]:
+
+    async def reorder_documents(self, query: str, documents: list[str], thinking_callback=None) -> dict[str, Any]:
         """
         对文档进行重排序
         :param query: 查询语句
@@ -99,23 +101,23 @@ class ReorderService:
                     "documents": [],
                     "error": ""
                 }
-            
+
             if thinking_callback:
                 await thinking_callback({
                     "type": "thinking",
                     "stage": "reorder",
                     "content": f"正在计算 {len(documents)} 个文档的相关性分数..."
                 })
-            
+
             # 构造查询+文档对
             pairs = [(query, doc) for doc in documents]
-            
+
             # 使用模型进行批量预测（batch_size=1避免padding令牌报错）
             model = await self.model
             # 禁用梯度计算，提高推理性能
             with torch.no_grad():
                 scores = model.predict(pairs, batch_size=1)
-            
+
             # 构建结果列表
             scored_documents = []
             for doc, score in zip(documents, scores):
@@ -124,7 +126,7 @@ class ReorderService:
                     "similarity": float(score)
                 })
                 logger.info(f"【重排序服务】文档相似度分数: {score:.4f}")
-            
+
             if thinking_callback:
                 score_details = []
                 for i, (doc, score) in enumerate(zip(documents, scores), 1):
@@ -141,11 +143,11 @@ class ReorderService:
                         "scores": score_details
                     }
                 })
-            
+
             # 按相似度分数降序排序
             sorted_docs = sorted(scored_documents, key=lambda x: x["similarity"], reverse=True)
             logger.info(f"【重排序服务】文档重排序成功，返回 {len(sorted_docs)} 个文档")
-            
+
             return {
                 "success": True,
                 "documents": sorted_docs,
@@ -161,7 +163,7 @@ class ReorderService:
             }
 
     @staticmethod
-    async def format_reorder_result(sorted_docs: List[Dict]) -> str:
+    async def format_reorder_result(sorted_docs: list[dict]) -> str:
         """
         格式化重排序结果
         :param sorted_docs: 重排序后的文档列表

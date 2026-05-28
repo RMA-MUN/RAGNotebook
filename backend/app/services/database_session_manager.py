@@ -1,9 +1,8 @@
 import asyncio
-from typing import Dict, List, Tuple, Optional
 
-from app.db.db_config import AsyncSessionLocal
-from app.models.chat_history import ChatSession, ChatMessage
 from app.core.logger_handler import logger
+from app.db.db_config import AsyncSessionLocal
+from app.models.chat_history import ChatMessage, ChatSession
 
 
 class DatabaseSessionManager:
@@ -23,7 +22,7 @@ class DatabaseSessionManager:
         logger.info("【数据库会话管理】初始化完成")
         return instance
 
-    async def get_session(self, session_id: str, user_id: str) -> Dict:
+    async def get_session(self, session_id: str, user_id: str) -> dict:
         """获取会话"""
         async with AsyncSessionLocal() as db:
             # 尝试查找会话，验证属于该用户
@@ -51,7 +50,7 @@ class DatabaseSessionManager:
                 existing_session = await db.run_sync(
                     lambda session: session.query(ChatSession).filter(ChatSession.id == session_id).first()
                 )
-                
+
                 if existing_session:
                     # 会话存在但不属于当前用户
                     logger.warning(f"【数据库会话管理】会话 {session_id} 不属于用户 {user_id}")
@@ -130,7 +129,7 @@ class DatabaseSessionManager:
             await db.commit()
             logger.info(f"【数据库会话管理】添加消息到会话: {session_id} 属于用户: {user_id}")
 
-    async def get_history(self, session_id: str, user_id: str) -> List[Tuple[str, str]]:
+    async def get_history(self, session_id: str, user_id: str) -> list[tuple[str, str]]:
         """获取会话历史"""
         session_data = await self.get_session(session_id, user_id)
         return session_data.get("history", [])
@@ -149,7 +148,7 @@ class DatabaseSessionManager:
                 await db.commit()
                 logger.info(f"【数据库会话管理】会话 {session_id} 已清除，属于用户: {user_id}")
 
-    async def get_all_session_ids(self, user_id: Optional[str] = None) -> List[str]:
+    async def get_all_session_ids(self, user_id: str | None = None) -> list[str]:
         """获取所有会话 ID，如果提供了 user_id，则只返回该用户的会话"""
         async with AsyncSessionLocal() as db:
             if user_id:
@@ -162,7 +161,7 @@ class DatabaseSessionManager:
                 )
             return [session.id for session in sessions]
 
-    async def get_user_sessions(self, user_id: str) -> List[Dict]:
+    async def get_user_sessions(self, user_id: str) -> list[dict]:
         """获取用户所有会话详细信息"""
         async with AsyncSessionLocal() as db:
             sessions = await db.run_sync(

@@ -1,25 +1,21 @@
 import time
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from starlette.middleware.cors import CORSMiddleware
 
+from app.core.failed_response_register import register_exception_handlers
+from app.core.logger_handler import logger
 from app.db.db_config import init_db
-from app.db.redis_config import connect_redis, close_redis
+from app.db.redis_config import close_redis, connect_redis
+from app.rag.reorder_service import check_and_download_reranker_model
 from app.router.chat import chat_router
-from app.router.knowledge_router import knowledge_router
 from app.router.health import health_router
-from app.router.user import user_router
+from app.router.knowledge_router import knowledge_router
 from app.router.note_router import note_router
 from app.router.review_router import review_router
-
+from app.router.user import user_router
 from app.services.database_session_manager import init_database_session_manager
-
-from app.core.failed_response_register import register_exception_handlers
-from app.core.rate_limit import RateLimitMiddleware
-from app.core.logger_handler import logger
-
-from app.rag.reorder_service import check_and_download_reranker_model
 
 # 加载环境变量
 load_dotenv()
@@ -78,7 +74,7 @@ async def startup_event():
     # 初始化数据库表结构
     await init_db()
     logger.info("数据库表结构初始化完成")
-    
+
     # 使用数据库版本的会话管理器
     await init_database_session_manager()
     logger.info("数据库会话管理器初始化完成")
@@ -86,7 +82,7 @@ async def startup_event():
     # 连接Redis
     await connect_redis()
     logger.info("Redis连接初始化完成")
-    
+
     # 检查并重排序模型
     check_and_download_reranker_model()
     logger.info("重排序模型检查完成")

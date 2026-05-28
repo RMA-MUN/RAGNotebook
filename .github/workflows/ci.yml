@@ -51,7 +51,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: uv sync --no-build-isolation
+        run: uv sync
       - name: Django check
         run: uv run python manage.py check --deploy
         env:

@@ -1,21 +1,20 @@
 import asyncio
 import os
-import threading
 import shutil
+import threading
 
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
+from app.core.logger_handler import logger
 from app.utils.config import chroma_config
 from app.utils.factory import embed_model
-from app.utils.path_tool import get_abstract_path
-from app.core.logger_handler import logger
-
-from .retrievers import EmptyRetriever
-from .retrievers.hybrid_retriever import HybridRetriever
-from .md5_manager import MD5Store
-from .document_handler import DocumentProcessor
 from app.utils.image_extractor import delete_image_directory, delete_user_all_images
+from app.utils.path_tool import get_abstract_path
+
+from .document_handler import DocumentProcessor
+from .md5_manager import MD5Store
+from .retrievers.hybrid_retriever import HybridRetriever
 
 
 def _clear_chroma_cache():

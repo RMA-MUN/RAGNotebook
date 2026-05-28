@@ -3,9 +3,8 @@ import shutil
 
 import fitz
 
-from app.utils.path_tool import get_abstract_path, get_data_path
 from app.core.logger_handler import logger
-
+from app.utils.path_tool import get_abstract_path, get_data_path
 
 # 存储结构：data/extracted_images/{user_id}/{md5}/
 # 这样组织的好处：

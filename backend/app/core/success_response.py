@@ -1,5 +1,6 @@
-from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+
 
 def success_response(message: str = "success", data = None) -> JSONResponse:
     """

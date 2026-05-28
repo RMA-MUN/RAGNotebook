@@ -1,18 +1,15 @@
-from typing import List
 import uuid
 
-from fastapi.routing import APIRouter
-from fastapi import Depends, HTTPException
+from fastapi import Depends
 from fastapi.responses import StreamingResponse
+from fastapi.routing import APIRouter
 
 from app.agent.agent import get_agent_stream_response
-from app.router.chat_service import ChatService, get_router_service
-
-from app.schemas.models import QueryRequest, RAGResponse, RAGRequest, SessionResponse, ReorderResponse, ReorderRequest
-from app.utils.auth_utils import get_current_user_id
-from app.core.success_response import success_response
 from app.core.rate_limit import rate_limit
-
+from app.core.success_response import success_response
+from app.router.chat_service import ChatService, get_router_service
+from app.schemas.models import QueryRequest, RAGRequest, RAGResponse, ReorderRequest, ReorderResponse, SessionResponse
+from app.utils.auth_utils import get_current_user_id
 
 chat_router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -70,7 +67,11 @@ async def get_all_sessions(router_service: ChatService = Depends(get_router_serv
 
 
 @chat_router.get("/sessions/{user_id}")
-async def get_user_sessions(user_id: str, current_user_id: str = Depends(get_current_user_id), router_service: ChatService = Depends(get_router_service)):
+async def get_user_sessions(
+    user_id: str,
+    current_user_id: str = Depends(get_current_user_id),
+    router_service: ChatService = Depends(get_router_service),
+):
     """获取用户所有会话ID"""
     session_ids = await router_service.handle_get_user_sessions(user_id, current_user_id)
     return success_response(data={"sessions": session_ids})

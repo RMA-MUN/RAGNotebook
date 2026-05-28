@@ -1,5 +1,6 @@
-from sqlalchemy import Column, String, DateTime, Integer, ForeignKey
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.sql import func
+
 from app.models.chat_history import Base
 
 

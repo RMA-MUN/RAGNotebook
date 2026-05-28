@@ -1,7 +1,6 @@
 import logging
 import os
 from datetime import datetime
-import sys
 
 # 获取项目根目录
 project_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
@@ -39,11 +38,11 @@ def get_logger(
     # 如果没有指定log_file，使用默认名称
     if log_file is None:
         log_file = f"{name}_{datetime.now().strftime('%Y%m%d')}.log"
-    
+
     # 确保logs目录存在
     logs_dir = os.path.join(project_path, 'logs')
     os.makedirs(logs_dir, exist_ok=True)
-    
+
     file_handler = logging.FileHandler(os.path.join(logs_dir, log_file), encoding='utf-8')
     file_handler.setLevel(file_level)
     file_handler.setFormatter(DEFAULT_LOGGING_FORMAT)

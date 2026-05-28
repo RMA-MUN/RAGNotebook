@@ -1,18 +1,30 @@
-import os, hashlib, aiofiles, asyncio, sys
+import asyncio
+import hashlib
+import os
+import sys
+
+import aiofiles
+from langchain_community.document_loaders import (
+    PyPDFLoader,
+    TextLoader,
+    UnstructuredMarkdownLoader,
+    UnstructuredPDFLoader,
+    UnstructuredPowerPointLoader,
+)
 from langchain_core.documents import Document
 
 from app.core.logger_handler import logger
 from app.utils.path_tool import get_abstract_path
-from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredPDFLoader, UnstructuredMarkdownLoader, UnstructuredPowerPointLoader
+
 
 class FontBBoxStreamFilter:
     def __init__(self, stream):
         self.stream = stream
-        
+
     def write(self, data):
         if 'FontBBox from font descriptor' not in data:
             self.stream.write(data)
-            
+
     def flush(self):
         self.stream.flush()
 
@@ -22,7 +34,7 @@ async def get_file_md5_hex(file_path: str) -> str:
     """获取文件的md5值"""
     # 处理路径，确保使用绝对路径
     abs_file_path = get_abstract_path(file_path) if not os.path.isabs(file_path) else file_path
-    
+
     if not os.path.exists(abs_file_path):
         logger.error(f"【md5计算】文件路径 {abs_file_path} 不存在")
         return ""
@@ -52,7 +64,7 @@ async def listdir_allowed_type(path: str, allowed_types: tuple[str]) -> tuple:
     """
     # 处理路径，确保使用绝对路径
     abs_path = get_abstract_path(path) if not os.path.isabs(path) else path
-    
+
     if not os.path.exists(abs_path):
         logger.error(f"【文件列表】目录路径 {abs_path} 不存在")
         return ()
@@ -79,11 +91,11 @@ async def pdf_loader(file_path: str, password: str = None) -> list[Document]:
     :return: PDF文件内容
     """
     abs_file_path = get_abstract_path(file_path) if not os.path.isabs(file_path) else file_path
-    
+
     if password:
         loader = PyPDFLoader(abs_file_path, password=password)
         return await asyncio.to_thread(loader.load)
-    
+
     try:
         loader = UnstructuredPDFLoader(abs_file_path)
         docs = await asyncio.to_thread(loader.load)
@@ -91,7 +103,7 @@ async def pdf_loader(file_path: str, password: str = None) -> list[Document]:
             return docs
     except Exception as e:
         logger.warning(f"【PDF加载】UnstructuredPDFLoader失败，尝试PyPDFLoader: {e}")
-    
+
     loader = PyPDFLoader(abs_file_path)
     return await asyncio.to_thread(loader.load)
 
@@ -104,7 +116,7 @@ async def txt_loader(file_path: str) -> list[Document]:
     """
     # 处理路径，确保使用绝对路径
     abs_file_path = get_abstract_path(file_path) if not os.path.isabs(file_path) else file_path
-    
+
     # 使用不同的编码加载文件
     encodings = ['utf-8', 'gbk']
     for encoding in encodings:
@@ -164,7 +176,7 @@ async def ppt_loader(file_path: str) -> list[Document]:
 def get_file_md5_hex_sync(file_path: str) -> str:
     """同步获取文件的md5值（用于多线程场景）"""
     abs_file_path = get_abstract_path(file_path) if not os.path.isabs(file_path) else file_path
-    
+
     if not os.path.exists(abs_file_path):
         logger.error(f"【md5计算】文件路径 {abs_file_path} 不存在")
         return ""
@@ -194,11 +206,11 @@ def pdf_loader_sync(file_path: str, password: str = None) -> list[Document]:
     :return: PDF文件内容
     """
     abs_file_path = get_abstract_path(file_path) if not os.path.isabs(file_path) else file_path
-    
+
     if password:
         loader = PyPDFLoader(abs_file_path, password=password)
         return loader.load()
-    
+
     try:
         loader = UnstructuredPDFLoader(abs_file_path)
         docs = loader.load()
@@ -206,7 +218,7 @@ def pdf_loader_sync(file_path: str, password: str = None) -> list[Document]:
             return docs
     except Exception as e:
         logger.warning(f"【PDF加载】UnstructuredPDFLoader失败，尝试PyPDFLoader: {e}")
-    
+
     loader = PyPDFLoader(abs_file_path)
     return loader.load()
 
@@ -218,7 +230,7 @@ def txt_loader_sync(file_path: str) -> list[Document]:
     :return: TXT文件内容
     """
     abs_file_path = get_abstract_path(file_path) if not os.path.isabs(file_path) else file_path
-    
+
     encodings = ['utf-8', 'gbk']
     for encoding in encodings:
         try:

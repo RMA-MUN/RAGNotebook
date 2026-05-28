@@ -1,5 +1,6 @@
 import os
 
+
 def get_project_root() -> str:
     """
     获取项目根目录

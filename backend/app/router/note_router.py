@@ -1,23 +1,23 @@
 """
 笔记管理 API 路由 —— CRUD、搜索、自动标签、内联补全、写作辅助。
 """
-from fastapi.routing import APIRouter
+
 from fastapi import Depends, Query
 from fastapi.responses import StreamingResponse
+from fastapi.routing import APIRouter
 from pydantic import BaseModel
-from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.note_service import note_service
+from app.core.rate_limit import rate_limit
+from app.core.success_response import success_response
+from app.db.db_config import get_db
 from app.schemas.models import (
     NoteCreate,
-    NoteUpdate,
     NoteListResponse,
+    NoteUpdate,
 )
+from app.services.note_service import note_service
 from app.utils.auth_utils import get_current_user_id
-from app.core.success_response import success_response
-from app.core.rate_limit import rate_limit
-from app.db.db_config import get_db
-from sqlalchemy.ext.asyncio import AsyncSession
 
 note_router = APIRouter(prefix="/note", tags=["note"])
 

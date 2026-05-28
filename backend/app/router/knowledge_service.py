@@ -1,23 +1,20 @@
 import asyncio
 import base64
-import time
-import json
-import magic
 import os
 import tempfile
-from typing import List, Optional, Dict, Any, AsyncGenerator
-from dataclasses import dataclass
+import time
+from collections.abc import AsyncGenerator
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 
+import magic
 from fastapi import HTTPException, UploadFile
 
 from app.core.logger_handler import logger
-from app.rag.vector_store import VectorStoreService
+from app.rag.sse_models import SliceResult, SSEEvent
 from app.rag.task_queue import TaskQueue
-from app.rag.sse_models import SSEEvent, SliceResult
+from app.rag.vector_store import VectorStoreService
 from app.utils.file_handler import get_file_md5_hex_sync
-
-
 
 ALLOWED_EXTENSIONS = {'.pdf', '.txt', '.md', '.pptx', '.docx'}
 ALLOWED_MIME_TYPES = {
@@ -112,7 +109,7 @@ class KnowledgeService:
         await store.get_document(files=[file], user_id=user_id)
         return file.filename
 
-    async def handle_add_vector_multiple(self, files: List[UploadFile], user_id: str) -> List[str]:
+    async def handle_add_vector_multiple(self, files: list[UploadFile], user_id: str) -> list[str]:
         """处理添加多个向量逻辑"""
         total_size = 0
         for file in files:
@@ -231,8 +228,8 @@ class KnowledgeService:
         ).to_sse()
 
     async def _validate_and_read_files(
-        self, files: List[UploadFile]
-    ) -> tuple[List[dict], List[str], int]:
+        self, files: list[UploadFile]
+    ) -> tuple[list[dict], list[str], int]:
         """
         阶段1: 读取文件内容并验证总大小
         阶段2: 逐一验证文件 MIME 类型
@@ -241,7 +238,7 @@ class KnowledgeService:
         total_files = len(files)
         total_size = 0
         files_content = []
-        error_events: List[str] = []
+        error_events: list[str] = []
 
         for file in files:
             content = await file.read()
@@ -283,7 +280,7 @@ class KnowledgeService:
         return valid_files, error_events, total_files
 
     def _start_slicing(
-        self, valid_files: List[dict], user_id: str
+        self, valid_files: list[dict], user_id: str
     ) -> tuple[TaskQueue, ThreadPoolExecutor, list]:
         """启动多线程切片，返回 (队列, 执行器, future列表)"""
         queue = TaskQueue(maxsize=10)
@@ -349,7 +346,7 @@ class KnowledgeService:
 
     async def handle_add_vector_multiple_stream(
         self,
-        files: List[UploadFile],
+        files: list[UploadFile],
         user_id: str
     ) -> AsyncGenerator[str, None]:
         """
@@ -366,7 +363,7 @@ class KnowledgeService:
             yield event
 
         if not valid_files:
-            logger.info(f"【SSE上传】无有效文件可处理")
+            logger.info("【SSE上传】无有效文件可处理")
             return
 
         start_time = time.time()

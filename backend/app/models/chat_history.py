@@ -1,5 +1,5 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
 
 Base = declarative_base()
@@ -30,7 +30,7 @@ class ChatMessage(Base):
     content = Column(Text, nullable=False)
     metadata_ = Column(JSON, name="metadata")
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now()) 
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # 关系
     session = relationship("ChatSession", back_populates="messages")

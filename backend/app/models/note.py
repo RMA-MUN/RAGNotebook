@@ -1,5 +1,6 @@
-from sqlalchemy import Column, String, Text, DateTime, JSON
+from sqlalchemy import JSON, Column, DateTime, String, Text
 from sqlalchemy.sql import func
+
 from app.models.chat_history import Base
 
 

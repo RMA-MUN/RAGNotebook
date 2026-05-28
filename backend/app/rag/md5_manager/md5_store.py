@@ -1,13 +1,13 @@
-import os
 import json
+import os
 from datetime import datetime
 
 import aiofiles
 from aiofiles import os as aio_os
 
+from app.core.logger_handler import logger
 from app.utils.config import chroma_config
 from app.utils.path_tool import get_abstract_path
-from app.core.logger_handler import logger
 
 
 class MD5Store:
@@ -49,7 +49,7 @@ class MD5Store:
             return False
 
         try:
-            async with aiofiles.open(md5_path, 'r', encoding="utf-8") as f:
+            async with aiofiles.open(md5_path, encoding="utf-8") as f:
                 async for line in f:
                     line = line.strip()
                     if not line:
@@ -59,7 +59,7 @@ class MD5Store:
                             data = json.loads(line)
                             if data.get('md5') == md5_for_check:
                                 return True
-                        except:
+                        except json.JSONDecodeError:
                             if line == md5_for_check:
                                 return True
                     else:
@@ -131,7 +131,7 @@ class MD5Store:
             return md5_path, []
 
         records = []
-        async with aiofiles.open(md5_path, 'r', encoding="utf-8") as f:
+        async with aiofiles.open(md5_path, encoding="utf-8") as f:
             async for line in f:
                 line = line.strip()
                 if not line:
@@ -139,7 +139,7 @@ class MD5Store:
                 if line.startswith('{'):
                     try:
                         records.append(json.loads(line))
-                    except:
+                    except json.JSONDecodeError:
                         records.append({
                             'md5': line, 'filename': None,
                             'original_filename': None, 'upload_time': None

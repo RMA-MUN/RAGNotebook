@@ -1,7 +1,5 @@
-from dataclasses import dataclass, asdict
-from typing import Optional, Any
 import json
-
+from dataclasses import asdict, dataclass
 
 EVENT_RESPONSE = "response"
 EVENT_ERROR = "error"
@@ -13,15 +11,15 @@ class SSEEvent:
     event_type: str
     message: str
     total_files: int = 0
-    file_index: Optional[int] = None
-    filename: Optional[str] = None
-    step: Optional[str] = None
+    file_index: int | None = None
+    filename: str | None = None
+    step: str | None = None
     progress: int = 0
     success_count: int = 0
     failed_count: int = 0
     slice_success_count: int = 0
-    error_message: Optional[str] = None
-    chunk_count: Optional[int] = None
+    error_message: str | None = None
+    chunk_count: int | None = None
 
     def to_sse(self) -> str:
         payload = {k: v for k, v in asdict(self).items() if v is not None}
@@ -37,7 +35,7 @@ class SliceResult:
         self.documents: list = []
         self.md5: str = ""
         self.success: bool = False
-        self.error: Optional[str] = None
+        self.error: str | None = None
         self.chunk_count: int = 0
 
     @classmethod

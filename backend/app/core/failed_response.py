@@ -1,14 +1,13 @@
-import re
 import logging
+import re
 import traceback
-from typing import List, Dict
 
 from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic_settings import BaseSettings
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette import status
-from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -135,7 +134,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """处理 FastAPI 参数校验异常（最常见的异常之一）"""
     # 把FastAPI的原始校验错误转换成用户友好的提示
-    error_details: List[Dict] = exc.errors()
+    error_details: list[dict] = exc.errors()
     friendly_msg_parts = []
 
     for err in error_details:
@@ -222,7 +221,7 @@ async def sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError):
         }
 
     logger.error(
-        f"数据库操作异常",
+        "数据库操作异常",
         extra={"path": str(request.url), "method": request.method},
         exc_info=exc
     )
@@ -246,7 +245,7 @@ async def general_exception_handler(request: Request, exc: Exception):
         }
 
     logger.critical(
-        f"未捕获系统异常",
+        "未捕获系统异常",
         extra={"path": str(request.url), "method": request.method},
         exc_info=exc  # 这个参数会把完整堆栈打到日志里，生产环境排错全靠它
     )

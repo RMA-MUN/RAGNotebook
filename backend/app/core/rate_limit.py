@@ -1,9 +1,8 @@
 import os
 
-from fastapi import Request, HTTPException
+from fastapi import HTTPException, Request
 
 from app.db.redis_config import connect_redis
-
 
 # 全局开关：通过环境变量 RATE_LIMIT_ENABLED 控制所有限流是否生效
 # 当设置为 false 时，rate_limit 依赖和 RateLimitMiddleware 均直接放行
@@ -32,7 +31,7 @@ def rate_limit(limit: int = 1, window: int = 60):
 
         # 获取Redis连接
         redis = await connect_redis()
-        
+
         # 获取当前计数
         current = await redis.get(key)
         current = int(current) if current else 0
@@ -77,7 +76,7 @@ class RateLimitMiddleware:
         # 构建请求对象
         from fastapi import Request
         request = Request(scope, receive)
-        
+
         # 获取客户端IP
         client_ip = request.client.host
         if not client_ip:
@@ -88,7 +87,7 @@ class RateLimitMiddleware:
 
         # 获取Redis连接
         redis = await connect_redis()
-        
+
         # 获取当前计数
         current = await redis.get(key)
         current = int(current) if current else 0

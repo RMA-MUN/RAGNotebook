@@ -1,20 +1,23 @@
 import os
-from typing import List
 
+from fastapi import Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.routing import APIRouter
-from fastapi import UploadFile, File, Depends, HTTPException
-from fastapi.responses import StreamingResponse, FileResponse
 
+from app.core.rate_limit import rate_limit
+from app.core.success_response import success_response
 from app.router.knowledge_service import KnowledgeService, get_knowledge_service
-
-from app.schemas.models import MD5Record, MD5ListResponse, KnowledgeListResponse, KnowledgeDocumentDetail, DocumentChunksResponse
+from app.schemas.models import (
+    DocumentChunksResponse,
+    KnowledgeDocumentDetail,
+    KnowledgeListResponse,
+    MD5ListResponse,
+    MD5Record,
+)
 from app.utils.auth_utils import get_current_user_id
+
 # 图片相关工具：定位存储目录，构建文件路径
 from app.utils.image_extractor import get_image_storage_dir
-from app.utils.path_tool import get_data_path
-from app.core.success_response import success_response
-from app.core.rate_limit import rate_limit
-
 
 knowledge_router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
@@ -33,7 +36,7 @@ async def add_vector_single(
 
 @knowledge_router.post("/add/multiple")
 async def add_vector_multiple(
-        files: List[UploadFile] = File(..., description="要上传的文件列表，仅支持PDF和TXT格式"),
+        files: list[UploadFile] = File(..., description="要上传的文件列表，仅支持PDF和TXT格式"),
         user_id: str = Depends(get_current_user_id),
         knowledge_service: KnowledgeService = Depends(get_knowledge_service),
         _: None = Depends(rate_limit(limit=3, window=60))
@@ -45,7 +48,7 @@ async def add_vector_multiple(
 
 @knowledge_router.post("/add/multiple/stream")
 async def add_vector_multiple_stream(
-        files: List[UploadFile] = File(..., description="要上传的文件列表，仅支持PDF、TXT、MD、PPTX、DOCX格式"),
+        files: list[UploadFile] = File(..., description="要上传的文件列表，仅支持PDF、TXT、MD、PPTX、DOCX格式"),
         user_id: str = Depends(get_current_user_id),
         knowledge_service: KnowledgeService = Depends(get_knowledge_service),
         _: None = Depends(rate_limit(limit=3, window=60))

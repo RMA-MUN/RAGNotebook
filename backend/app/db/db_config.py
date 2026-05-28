@@ -1,16 +1,20 @@
 import os
+
 from dotenv import load_dotenv
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from app.models.chat_history import Base
-from app.models.note import Note
-from app.models.review_record import ReviewRecord
 
 # 加载环境变量
 load_dotenv()
 
 # 数据库URL
-ASYNC_DATABSE_URL = f"mysql+aiomysql://{os.getenv('MYSQL_USER', 'root')}:{os.getenv('MYSQL_PASSWORD', '')}@{os.getenv('MYSQL_HOST', 'localhost')}:{os.getenv('MYSQL_PORT', '3306')}/{os.getenv('MYSQL_DATABASE', 'chat_history')}?charset=utf8mb4"
+ASYNC_DATABSE_URL = (
+    f"mysql+aiomysql://{os.getenv('MYSQL_USER', 'root')}:{os.getenv('MYSQL_PASSWORD', '')}"
+    f"@{os.getenv('MYSQL_HOST', 'localhost')}:{os.getenv('MYSQL_PORT', '3306')}"
+    f"/{os.getenv('MYSQL_DATABASE', 'chat_history')}?charset=utf8mb4"
+)
 
 # 创建异步引擎
 async_engine = create_async_engine(

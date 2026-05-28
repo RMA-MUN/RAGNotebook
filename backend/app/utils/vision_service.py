@@ -1,13 +1,12 @@
-import os
-import base64
 import asyncio
+import base64
+import os
 import re
 
 from langchain_core.messages import HumanMessage
 
-from app.utils.factory import vision_model as default_vision_model
 from app.core.logger_handler import logger
-
+from app.utils.factory import vision_model as default_vision_model
 
 # 批量视觉识别模板：要求模型按固定格式输出每个页面的描述，
 # 格式为 "--- Page N ---" + 描述内容，便于后续用正则解析。
@@ -397,8 +396,8 @@ class VisionService:
         （如页眉、背景图），通过去重可以避免重复调用视觉模型，节省成本和延迟。
         """
         try:
-            from PIL import Image
             import imagehash
+            from PIL import Image
             with Image.open(image_path) as img:
                 return str(imagehash.phash(img))
         except ImportError:

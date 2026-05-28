@@ -2,16 +2,14 @@
 回顾服务层 —— 艾宾浩斯间隔重复算法 + 回顾问题生成。
 """
 import json
-import uuid
 from datetime import datetime, timedelta
-from typing import List
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logger_handler import logger
 from app.models.note import Note
 from app.models.review_record import ReviewRecord
-from app.core.logger_handler import logger
 
 # 艾宾浩斯间隔重复数组（天）
 INTERVALS = [1, 2, 4, 7, 15, 30]
@@ -32,7 +30,7 @@ class ReviewService:
     回顾服务 —— 负责今日回顾查询、标记已回顾、生成 LLM 回顾问题。
     """
 
-    async def get_today_reviews(self, db: AsyncSession, user_id: str) -> List[dict]:
+    async def get_today_reviews(self, db: AsyncSession, user_id: str) -> list[dict]:
         """
         查询今日待回顾的笔记列表（next_review_at <= 当前时间）。
         同时关联查询笔记内容用于生成回顾问题。
@@ -119,9 +117,10 @@ class ReviewService:
         """
         raw = ""
         try:
+            from langchain_core.messages import HumanMessage
+
             from app.utils.factory import chat_model
             from app.utils.prompt_loader import load_prompt
-            from langchain_core.messages import HumanMessage
 
             prompt_template = load_prompt("review_question_prompt")
             prompt = prompt_template.format(content=content[:2000])

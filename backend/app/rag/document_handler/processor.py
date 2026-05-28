@@ -5,13 +5,25 @@ import tempfile
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
+from app.core.logger_handler import logger
 from app.rag.text_spliter import AsyncTextSplitter
 from app.utils.config import chroma_config
 from app.utils.factory import embed_model
-from app.utils.file_handler import pdf_loader, txt_loader, listdir_allowed_type, get_file_md5_hex, markdown_loader, \
-    ppt_loader, word_loader, pdf_loader_sync, txt_loader_sync, markdown_loader_sync, ppt_loader_sync, word_loader_sync
+from app.utils.file_handler import (
+    get_file_md5_hex,
+    listdir_allowed_type,
+    markdown_loader,
+    markdown_loader_sync,
+    pdf_loader,
+    pdf_loader_sync,
+    ppt_loader,
+    ppt_loader_sync,
+    txt_loader,
+    txt_loader_sync,
+    word_loader,
+    word_loader_sync,
+)
 from app.utils.pdf_multimodal_loader import pdf_multimodal_loader, pdf_multimodal_loader_sync
-from app.core.logger_handler import logger
 
 
 class DocumentProcessor:
@@ -111,7 +123,7 @@ class DocumentProcessor:
                 if files:
                     try:
                         os.unlink(file_path)
-                    except:
+                    except OSError:
                         pass
                 continue
 
@@ -138,7 +150,7 @@ class DocumentProcessor:
                     if files:
                         try:
                             os.unlink(file_path)
-                        except Exception as e:
+                        except Exception:
                             pass
                     continue
 
@@ -163,7 +175,7 @@ class DocumentProcessor:
                     if files:
                         try:
                             os.unlink(file_path)
-                        except:
+                        except OSError:
                             pass
                     continue
 
@@ -199,7 +211,7 @@ class DocumentProcessor:
                 if files:
                     try:
                         os.unlink(file_path)
-                    except:
+                    except OSError:
                         pass
 
             except Exception as e:
@@ -214,6 +226,6 @@ class DocumentProcessor:
                 if files:
                     try:
                         os.unlink(file_path)
-                    except:
+                    except OSError:
                         pass
                 continue

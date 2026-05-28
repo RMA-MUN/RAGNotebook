@@ -1,5 +1,5 @@
-from app.utils.config import prompt_config
 from app.core.logger_handler import logger
+from app.utils.config import prompt_config
 from app.utils.path_tool import get_abstract_path
 
 

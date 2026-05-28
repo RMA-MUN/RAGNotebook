@@ -1,19 +1,17 @@
-from typing import List, Optional
+import datetime
 from contextvars import ContextVar
 
 from langchain_core.tools import tool
 
 from app.core.logger_handler import logger
+from app.db.db_config import AsyncSessionLocal
 from app.rag.rag_service import RagService
-from app.utils.auth_utils import decode_django_jwt
 from app.services.note_service import note_service
 from app.services.review_service import review_service
-from app.db.db_config import AsyncSessionLocal
-
-import datetime
+from app.utils.auth_utils import decode_django_jwt
 
 current_user_id_var: ContextVar[str] = ContextVar('current_user_id', default=None)
-thinking_callback_var: ContextVar[Optional[callable]] = ContextVar('thinking_callback', default=None)
+thinking_callback_var: ContextVar[callable | None] = ContextVar('thinking_callback', default=None)
 
 def set_current_user_id(user_id: str):
     """设置当前用户ID到上下文"""
@@ -31,7 +29,11 @@ def get_thinking_callback_from_context():
     """从上下文获取思考过程回调"""
     return thinking_callback_var.get()
 
-@tool(description="用于从向量数据库里检索文档并生成摘要，返回包含文档列表和摘要的结果。返回格式为：'摘要: [摘要内容]\n\n检索到的文档列表:\n1. [文档1内容]\n2. [文档2内容]\n...'。注意：文档已经过自动重排序，无需再调用重排序工具")
+@tool(description=(
+    "用于从向量数据库里检索文档并生成摘要，返回包含文档列表和摘要的结果。"
+    "返回格式为：'摘要: [摘要内容]\n\n检索到的文档列表:\n1. [文档1内容]\n2. [文档2内容]\n...'。"
+    "注意：文档已经过自动重排序，无需再调用重排序工具"
+))
 async def rag_summary_tools(query: str, user_id: str = None) -> str:
     """RAG 摘要工具"""
     effective_user_id = user_id or get_current_user_id_from_context()
@@ -99,7 +101,7 @@ async def get_note_stats_tool() -> str:
     async with AsyncSessionLocal() as db:
         try:
             stats = await note_service.get_category_stats(db, user_id)
-            lines = [f"📊 笔记统计\n"]
+            lines = ["📊 笔记统计\n"]
             lines.append(f"总笔记数: {stats['total']}\n")
             lines.append("各分类:")
             for cat in stats['categories']:
@@ -150,7 +152,11 @@ async def mark_reviewed_tool(note_id: str) -> str:
             logger.error(f"标记回顾失败: {e}")
             return f"标记回顾时出错: {str(e)}"
 
-@tool(description="创建一篇新笔记。参数 title 为笔记标题，content 为笔记内容（支持Markdown格式，可选，不传则只创建标题）。创建后会自动生成向量索引和智能标签。")
+@tool(description=(
+    "创建一篇新笔记。参数 title 为笔记标题，content 为笔记内容"
+    "（支持Markdown格式，可选，不传则只创建标题）。"
+    "创建后会自动生成向量索引和智能标签。"
+))
 async def create_note_tool(title: str, content: str = "") -> str:
     """创建笔记工具"""
     user_id = get_current_user_id_from_context()

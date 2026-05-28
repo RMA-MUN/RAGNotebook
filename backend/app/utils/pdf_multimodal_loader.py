@@ -1,17 +1,16 @@
+import asyncio
 import os
 import tempfile
-import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import fitz
 from langchain_core.documents import Document
 
-from app.utils.image_extractor import extract_images_from_pdf
-from app.utils.vision_service import VisionService
-from app.utils.path_tool import get_abstract_path
 from app.core.logger_handler import logger
-
+from app.utils.image_extractor import extract_images_from_pdf
+from app.utils.path_tool import get_abstract_path
+from app.utils.vision_service import VisionService
 
 # 环境变量配置项（可被 .env 覆盖），用于控制多模态 PDF 加载的行为：
 # - BATCH_SIZE:    每批次发送给视觉模型的页数（越大越快，但受限于视觉模型的上下文窗口）

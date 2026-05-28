@@ -1,25 +1,24 @@
 """
 笔记服务层 —— 包含 CRUD、向量双写、异步自动标签等核心业务逻辑。
 """
-import uuid
 import asyncio
 import json
+import uuid
 from datetime import datetime, timedelta
-from typing import List, Optional
 
-from sqlalchemy import select, delete, func, update
-from sqlalchemy.ext.asyncio import AsyncSession
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logger_handler import logger
 from app.models.note import Note
 from app.models.review_record import ReviewRecord
-from app.schemas.models import NoteCreate, NoteUpdate, NoteResponse
-from app.utils.factory import embed_model
+from app.schemas.models import NoteCreate, NoteResponse, NoteUpdate
 from app.utils.config import chroma_config
+from app.utils.factory import embed_model
 from app.utils.path_tool import get_abstract_path
-from app.core.logger_handler import logger
 from app.utils.prompt_loader import load_prompt
 
 NOTES_COLLECTION_NAME = "notes_collection"
@@ -117,7 +116,7 @@ class NoteService:
 
         return self._doc_to_response(note)
 
-    async def update_note(self, db: AsyncSession, note_id: str, user_id: str, payload: NoteUpdate) -> Optional[NoteResponse]:
+    async def update_note(self, db: AsyncSession, note_id: str, user_id: str, payload: NoteUpdate) -> NoteResponse | None:
         """
         更新笔记：
         1. 更新 MySQL 中的 title/content
@@ -186,7 +185,7 @@ class NoteService:
 
         return True
 
-    async def get_note(self, db: AsyncSession, note_id: str, user_id: str) -> Optional[NoteResponse]:
+    async def get_note(self, db: AsyncSession, note_id: str, user_id: str) -> NoteResponse | None:
         """
         根据笔记 ID 和用户 ID 获取笔记详情。
         """
@@ -203,9 +202,9 @@ class NoteService:
         user_id: str,
         page: int = 1,
         page_size: int = 20,
-        category: Optional[str] = None,
-        tag: Optional[str] = None,
-    ) -> tuple[List[NoteResponse], int]:
+        category: str | None = None,
+        tag: str | None = None,
+    ) -> tuple[list[NoteResponse], int]:
         """
         分页查询笔记列表，支持按分类筛选。
         tag 筛选为内存过滤（JSON 字段不支持直接 SQL 过滤）。
@@ -238,7 +237,7 @@ class NoteService:
 
         return note_list, total
 
-    async def search_notes(self, db: AsyncSession, user_id: str, query: str, top_k: int = 10) -> List[NoteResponse]:
+    async def search_notes(self, db: AsyncSession, user_id: str, query: str, top_k: int = 10) -> list[NoteResponse]:
         """
         语义搜索笔记：ChromaDB 向量检索 → MySQL 回填完整数据。
         只搜索当前用户的笔记（通过 metadata filter）。
@@ -276,7 +275,7 @@ class NoteService:
         note_id: str,
         user_id: str,
         top_k: int = 3,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """
         获取与当前笔记语义相似的其他笔记和知识库文档。
 
@@ -376,8 +375,8 @@ class NoteService:
             prompt = prompt_template.replace("{content}", content)
 
             # 惰性导入避免模块级循环依赖
-            from app.utils.factory import chat_model
             from app.db.db_config import AsyncSessionLocal
+            from app.utils.factory import chat_model
 
             response = await chat_model.ainvoke([HumanMessage(content=prompt)])
             raw_output = response.content.strip()
@@ -430,8 +429,9 @@ class NoteService:
             {"completion": "续写文本", "success": true/false}
         """
         try:
-            from app.utils.factory import chat_model
             from langchain_core.messages import HumanMessage
+
+            from app.utils.factory import chat_model
 
             prompt_template = load_prompt("autocomplete_prompt")
             prompt = prompt_template.format(context=context[-200:])  # 最多取最后200字
@@ -458,8 +458,9 @@ class NoteService:
         Yields:
             SSE 事件数据（字符串）
         """
-        from app.utils.factory import chat_model
         from langchain_core.messages import HumanMessage
+
+        from app.utils.factory import chat_model
 
         prompt_template = load_prompt("write_assistant_prompt")
         prompt = prompt_template.format(content=content, action=action)
@@ -477,7 +478,6 @@ class NoteService:
         """
         获取用户的笔记分类统计 —— 按 category 分组计数。
         """
-        from sqlalchemy import case
 
         categories = []
         for cat in ['work', 'study', 'life', 'project']:
@@ -507,7 +507,7 @@ class NoteService:
             "uncategorized": uncategorized,
         }
 
-    async def export_note_markdown(self, db: AsyncSession, note_id: str, user_id: str) -> Optional[str]:
+    async def export_note_markdown(self, db: AsyncSession, note_id: str, user_id: str) -> str | None:
         """
         导出单篇笔记为 Markdown 文本。
         包含 frontmatter 格式的元数据（标题、标签、分类、日期）。

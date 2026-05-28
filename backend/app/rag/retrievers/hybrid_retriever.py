@@ -1,9 +1,10 @@
 import asyncio
+
 from langchain_chroma import Chroma
+from langchain_classic.retrievers import EnsembleRetriever
+from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-from langchain_community.retrievers import BM25Retriever
-from langchain_classic.retrievers import EnsembleRetriever
 
 from app.utils.config import chroma_config
 

@@ -1,14 +1,15 @@
 import asyncio
+
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langsmith import traceable
 
-from app.rag.vector_store import VectorStoreService
+from app.core.logger_handler import logger
 from app.rag.reorder_service import reorder_service
+from app.rag.vector_store import VectorStoreService
+from app.services.note_service import note_service
 from app.utils.factory import chat_model
 from app.utils.prompt_loader import load_prompt
-from app.core.logger_handler import logger
-from app.services.note_service import note_service
 
 
 class RagService:
@@ -21,7 +22,10 @@ class RagService:
         self.prompt_template = PromptTemplate.from_template(self.prompt_text)
         self.chat_model = chat_model
         self.chain = self._init_chain()
-        self.hyde_prompt_template = PromptTemplate.from_template("基于以下问题，生成一个详细的假设性回答，我会根据你的这个假设性回答在向量数据库里检索文档：\n\n问题：{query}\n\n假设性回答：")
+        self.hyde_prompt_template = PromptTemplate.from_template(
+            "基于以下问题，生成一个详细的假设性回答，我会根据你的这个假设性回答"
+            "在向量数据库里检索文档：\n\n问题：{query}\n\n假设性回答："
+        )
         self.thinking_callback = thinking_callback
 
     async def initialize_retriever(self, query: str = None):
@@ -32,7 +36,7 @@ class RagService:
         if self.retriever is None:
             # 获取动态权重信息
             weights = await self.vector_store.get_dynamic_weights(query)
-            
+
             if self.thinking_callback:
                 await self.thinking_callback({
                     "type": "thinking",
@@ -43,7 +47,7 @@ class RagService:
                         "bm25_weight": weights[1]
                     }
                 })
-            
+
             self.retriever = await self.vector_store.get_retriever(query, self.user_id)
 
 
@@ -80,46 +84,46 @@ class RagService:
     async def retrieve_document(self, query: str) -> list:
         """使用HyDE技术 从向量数据库里检索文档"""
         if not self.user_id:
-            logger.warning(f"【HyDE】user_id为空，不进行任何检索")
+            logger.warning("【HyDE】user_id为空，不进行任何检索")
             return []
-        
+
         try:
             # 确保检索器已初始化，传递query参数
             if self.retriever is None:
                 await self.initialize_retriever(query)
-            
+
             # 使用HyDE技术生成假设性文档
             logger.info(f"【HyDE】开始处理查询: {query}")
-            
+
             if self.thinking_callback:
                 await self.thinking_callback({
                     "type": "thinking",
                     "stage": "hyde",
                     "content": f"正在基于查询「{query}」生成假设性文档..."
                 })
-            
+
             hypothetical_doc = await self.generate_hypothetical_document(query)
-            
+
             if self.thinking_callback:
                 await self.thinking_callback({
                     "type": "thinking",
                     "stage": "hyde",
-                    "content": f"假设性文档生成完成",
+                    "content": "假设性文档生成完成",
                     "details": {
                         "hypothetical_doc_preview": hypothetical_doc[:200] + "..." if len(hypothetical_doc) > 200 else hypothetical_doc
                     }
                 })
-            
+
             # 使用假设性文档进行检索
-            logger.info(f"【HyDE】使用假设性文档进行检索")
-            
+            logger.info("【HyDE】使用假设性文档进行检索")
+
             if self.thinking_callback:
                 await self.thinking_callback({
                     "type": "thinking",
                     "stage": "retrieval",
                     "content": "正在向量数据库中检索相关文档..."
                 })
-            
+
             documents = await self.retriever.ainvoke(hypothetical_doc)
 
             # 同时检索笔记库
@@ -183,13 +187,13 @@ class RagService:
                 "stage": "reorder",
                 "content": f"正在对 {len(documents)} 个文档进行重排序..."
             })
-        
+
         result = await reorder_service.reorder_documents(query, documents, thinking_callback=self.thinking_callback)
         if result["success"]:
             # 提取重排序后的文档内容
             reordered_documents = [doc.get("document", "") for doc in result["documents"]]
             logger.info(f"【RAG】文档重排序成功，返回 {len(reordered_documents)} 个文档")
-            
+
             if self.thinking_callback:
                 score_details = []
                 for i, doc in enumerate(result["documents"], 1):
@@ -206,7 +210,7 @@ class RagService:
                         "scores": score_details
                     }
                 })
-            
+
             return reordered_documents
         else:
             logger.warning(f"【RAG】重排序失败: {result['error']}")
@@ -220,12 +224,12 @@ class RagService:
         :return: 包含文档列表和摘要的字典
         """
         if not self.user_id:
-            logger.warning(f"【RAG】user_id为空，不返回任何文档")
+            logger.warning("【RAG】user_id为空，不返回任何文档")
             return {
                 "documents": [],
                 "summary": "抱歉，我没有找到相关的信息。"
             }
-        
+
         try:
             documents = await self.retrieve_document(query)
 
@@ -255,14 +259,14 @@ class RagService:
                 # 对每个文档单独总结（使用线程池并发处理）
                 individual_summaries = []
                 max_documents = 3  # 使用前3个最相关的文档
-                
+
                 if self.thinking_callback:
                     await self.thinking_callback({
                         "type": "thinking",
                         "stage": "summarize",
                         "content": f"正在对前 {min(max_documents, len(reordered_documents))} 个最相关文档进行总结..."
                     })
-                
+
                 # 定义单个文档总结函数
                 async def summarize_document(i, doc):
                     logger.info(f"【RAG】正在总结第{i}个文档")
@@ -284,12 +288,12 @@ class RagService:
                     end_time = time.time()
                     logger.info(f"【RAG】第{i}个文档总结耗时: {end_time - start_time:.2f}秒")
                     return single_summary
-                
+
                 # 使用线程池并发处理文档总结
                 tasks = []
                 for i, doc in enumerate(reordered_documents[:max_documents], 1):
                     tasks.append(summarize_document(i, doc))
-                
+
                 # 并发执行所有总结任务，最多5个线程
                 import time
                 start_time = time.time()
@@ -299,7 +303,7 @@ class RagService:
 
                 # 如果只有一个文档，直接返回其摘要
                 if len(individual_summaries) == 1:
-                    logger.info(f"【RAG】生成摘要成功")
+                    logger.info("【RAG】生成摘要成功")
                     return {
                         "documents": reordered_documents,
                         "summary": individual_summaries[0]
@@ -310,28 +314,28 @@ class RagService:
                 for i, summary in enumerate(individual_summaries, 1):
                     combined_context += f"【文档{i}摘要】:{summary}\n\n"
 
-                logger.info(f"【RAG】合并摘要完成，开始生成最终总结")
-                
+                logger.info("【RAG】合并摘要完成，开始生成最终总结")
+
                 if self.thinking_callback:
                     await self.thinking_callback({
                         "type": "thinking",
                         "stage": "summarize",
                         "content": "正在综合多个文档生成最终回答..."
                     })
-                
+
                 # 生成最终总结
                 final_summary = await asyncio.wait_for(
                     self.chain.ainvoke({"input": query, "context": combined_context}),
                     timeout=30.0  # 最终总结超时时间
                 )
-                
-                logger.info(f"【RAG】生成摘要成功")
+
+                logger.info("【RAG】生成摘要成功")
                 return {
                     "documents": reordered_documents,
                     "summary": final_summary
                 }
-            except asyncio.TimeoutError:
-                logger.error(f"【RAG】生成摘要超时")
+            except TimeoutError:
+                logger.error("【RAG】生成摘要超时")
                 return {
                     "documents": reordered_documents,
                     "summary": "抱歉，生成摘要超时，请稍后再试。"
@@ -351,11 +355,11 @@ class RagService:
 
 if __name__ == '__main__':
     import asyncio
-    
+
     async def main():
         service = RagService()
         await service.initialize_retriever()
         result = await service.rag_summary("小户型适合什么扫地机器人")
         print(result)
-    
+
     asyncio.run(main())
