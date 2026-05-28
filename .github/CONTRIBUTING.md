@@ -39,6 +39,7 @@ npm install
 cd DjangoUserService
 uv sync
 cp .env.example .env
+python manage.py makemigrations
 python manage.py migrate
 ```
 
