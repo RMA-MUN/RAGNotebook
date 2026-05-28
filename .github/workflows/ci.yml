@@ -18,10 +18,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      - name: Install dependencies
-        run: uv sync --group dev
       - name: Run ruff
-        run: uv run ruff check .
+        run: uvx ruff check .
 
   frontend-build:
     name: Frontend Build
@@ -53,12 +51,18 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --no-build-isolation
       - name: Django check
         run: uv run python manage.py check --deploy
         env:
           DJANGO_SETTINGS_MODULE: DjangoUserService.settings
           JWT_SECRET_KEY: ci-test-key
           DB_ENGINE: django.db.backends.sqlite3
-          DB_NAME: db.sqlite3
-          CELERY_TASK_ALWAYS_EAGER: "True"
+          DB_NAME: ci_db.sqlite3
+          DB_USER: ""
+          DB_PASSWORD: ""
+          DB_HOST: ""
+          DB_PORT: ""
+          REDIS_CACHE_URL: redis://localhost:6379/1
+          CELERY_BROKER_URL: redis://localhost:6379/0
+          CELERY_RESULT_BACKEND: redis://localhost:6379/0
