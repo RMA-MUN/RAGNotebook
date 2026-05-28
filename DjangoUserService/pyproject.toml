@@ -21,6 +21,7 @@ dependencies = [
     "asgiref>=3.11",
     "setuptools<60",
     "drf-yasg>=1.21.15",
+    "drf-spectacular>=0.28.0",
     "django-shortuuidfield>=0.1.3",
     "pillow>=12.1.1",
     "mysqlclient>=2.2.8",
