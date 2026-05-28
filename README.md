@@ -360,3 +360,7 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 
 - Email: n3032747608@163.com
 - QQ: 3032747608
+
+## License
+
+本项目基于MIT开源协议， [点击跳转LICENSE](LICENSE)
