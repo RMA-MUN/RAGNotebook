@@ -17,7 +17,6 @@ from app.models.note import Note
 from app.models.review_record import ReviewRecord
 from app.schemas.models import NoteCreate, NoteResponse, NoteUpdate
 from app.utils.config import chroma_config
-from app.utils.factory import embed_model
 from app.utils.path_tool import get_abstract_path
 from app.utils.prompt_loader import load_prompt
 
@@ -47,9 +46,10 @@ class NoteService:
     - 异步自动标签生成（LLM 后台任务）
     """
 
-    def __init__(self):
+    def __init__(self, embed_model=None):
         """
         初始化 ChromaDB 笔记集合。复用现有 persist_directory 但使用独立 collection。
+        :param embed_model: 嵌入模型实例（后台初始化完成后传入）
         """
         persist_dir = get_abstract_path(chroma_config['persist_directory'])
         self._notes_store = Chroma(
@@ -376,7 +376,8 @@ class NoteService:
 
             # 惰性导入避免模块级循环依赖
             from app.db.db_config import AsyncSessionLocal
-            from app.utils.factory import chat_model
+            from app.core.background_init import init_manager
+            chat_model = init_manager.chat_model
 
             response = await chat_model.ainvoke([HumanMessage(content=prompt)])
             raw_output = response.content.strip()
@@ -431,7 +432,8 @@ class NoteService:
         try:
             from langchain_core.messages import HumanMessage
 
-            from app.utils.factory import chat_model
+            from app.core.background_init import init_manager
+            chat_model = init_manager.chat_model
 
             prompt_template = load_prompt("autocomplete_prompt")
             prompt = prompt_template.format(context=context[-200:])  # 最多取最后200字
@@ -460,7 +462,8 @@ class NoteService:
         """
         from langchain_core.messages import HumanMessage
 
-        from app.utils.factory import chat_model
+        from app.core.background_init import init_manager
+        chat_model = init_manager.chat_model
 
         prompt_template = load_prompt("write_assistant_prompt")
         prompt = prompt_template.format(content=content, action=action)
@@ -533,9 +536,13 @@ class NoteService:
         return "\n".join(lines)
 
 
-note_service = NoteService()
+_note_service_instance: "NoteService | None" = None
 
 
 def get_note_service() -> NoteService:
     """依赖注入工厂函数。"""
-    return note_service
+    global _note_service_instance
+    if _note_service_instance is None:
+        from app.core.background_init import init_manager
+        _note_service_instance = init_manager.note_service
+    return _note_service_instance

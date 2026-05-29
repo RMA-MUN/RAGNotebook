@@ -5,8 +5,8 @@ import re
 
 from langchain_core.messages import HumanMessage
 
+from app.core.background_init import init_manager
 from app.core.logger_handler import logger
-from app.utils.factory import vision_model as default_vision_model
 
 # 批量视觉识别模板：要求模型按固定格式输出每个页面的描述，
 # 格式为 "--- Page N ---" + 描述内容，便于后续用正则解析。
@@ -34,7 +34,7 @@ class VisionService:
     """
 
     def __init__(self, model=None):
-        self.model = model or default_vision_model
+        self.model = model or init_manager.vision_model
 
     def _is_ollama(self) -> bool:
         """检测当前使用的模型是否为 Ollama 本地部署模型"""

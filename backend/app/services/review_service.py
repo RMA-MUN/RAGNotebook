@@ -119,9 +119,10 @@ class ReviewService:
         try:
             from langchain_core.messages import HumanMessage
 
-            from app.utils.factory import chat_model
+            from app.core.background_init import init_manager
             from app.utils.prompt_loader import load_prompt
 
+            chat_model = init_manager.chat_model
             prompt_template = load_prompt("review_question_prompt")
             prompt = prompt_template.format(content=content[:2000])
             response = await chat_model.ainvoke([HumanMessage(content=prompt)])
