@@ -8,7 +8,6 @@ from langchain_core.documents import Document
 
 from app.core.logger_handler import logger
 from app.utils.config import chroma_config
-from app.utils.factory import embed_model
 from app.utils.image_extractor import delete_image_directory, delete_user_all_images
 from app.utils.path_tool import get_abstract_path
 
@@ -86,12 +85,18 @@ class VectorStoreService:
     def _init_chroma(self, persist_dir: str):
         self.vectors_store = Chroma(
             collection_name=chroma_config['collection_name'],
-            embedding_function=embed_model,
+            embedding_function=self._get_embed_model(),
             persist_directory=persist_dir,
         )
         self.md5_store = MD5Store()
         self.hybrid_retriever = HybridRetriever(self.vectors_store)
-        self.document_processor = DocumentProcessor(self.vectors_store, self.md5_store)
+        self.document_processor = DocumentProcessor(self.vectors_store, self.md5_store, self._get_embed_model())
+
+    @staticmethod
+    def _get_embed_model():
+        """从后台初始化管理器获取 embed_model"""
+        from app.core.background_init import init_manager
+        return init_manager.embed_model
 
     async def get_bm25_retriever(self, user_id: str = None):
         return await self.hybrid_retriever.get_bm25_retriever(user_id)

@@ -1,11 +1,7 @@
 import os
 from typing import Any
 
-import torch
 from dotenv import load_dotenv
-from modelscope import snapshot_download
-from sentence_transformers import CrossEncoder
-from tqdm import tqdm
 
 from app.core.logger_handler import logger
 
@@ -28,6 +24,9 @@ def find_model_path(base_path: str) -> str:
 
 def check_and_download_reranker_model() -> None:
     """检查并重排序模型，在FastAPI启动时执行"""
+    from modelscope import snapshot_download
+    from tqdm import tqdm
+
     LOCAL_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH", r"D:\Hugging_Face\models\Qwen3-Reranker-0.6B")
     MODELSCOPE_MODEL_NAME = "Qwen/Qwen3-Reranker-0.6B"
 
@@ -60,6 +59,8 @@ class ReorderService:
     """文档重排序服务"""
 
     def __init__(self):
+        import torch
+
         self.LOCAL_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH", r"D:\Hugging_Face\models\Qwen3-Reranker-0.6B")
         self.MODELSCOPE_MODEL_NAME = "Qwen/Qwen3-Reranker-0.6B"
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -67,6 +68,8 @@ class ReorderService:
 
     async def _get_model(self):
         """懒加载模型实例"""
+        from sentence_transformers import CrossEncoder
+
         if self._model is None:
             actual_model_path = find_model_path(self.LOCAL_MODEL_PATH)
             logger.info(f"✅ 加载重排序模型：{actual_model_path}")
@@ -115,6 +118,7 @@ class ReorderService:
             # 使用模型进行批量预测（batch_size=1避免padding令牌报错）
             model = await self.model
             # 禁用梯度计算，提高推理性能
+            import torch
             with torch.no_grad():
                 scores = model.predict(pairs, batch_size=1)
 

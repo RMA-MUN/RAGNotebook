@@ -4,23 +4,21 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langsmith import traceable
 
+from app.core.background_init import init_manager
 from app.core.logger_handler import logger
-from app.rag.reorder_service import reorder_service
 from app.rag.vector_store import VectorStoreService
-from app.services.note_service import note_service
-from app.utils.factory import chat_model
 from app.utils.prompt_loader import load_prompt
 
 
 class RagService:
     def __init__(self, user_id: str = None, thinking_callback=None):
         self.vector_store = VectorStoreService()
-        self.note_service = note_service
+        self.note_service = init_manager.note_service
         self.retriever = None
         self.user_id = user_id
         self.prompt_text = load_prompt(prompt_type="rag_summary_prompt")
         self.prompt_template = PromptTemplate.from_template(self.prompt_text)
-        self.chat_model = chat_model
+        self.chat_model = init_manager.chat_model
         self.chain = self._init_chain()
         self.hyde_prompt_template = PromptTemplate.from_template(
             "基于以下问题，生成一个详细的假设性回答，我会根据你的这个假设性回答"
@@ -188,7 +186,7 @@ class RagService:
                 "content": f"正在对 {len(documents)} 个文档进行重排序..."
             })
 
-        result = await reorder_service.reorder_documents(query, documents, thinking_callback=self.thinking_callback)
+        result = await init_manager.reorder_service.reorder_documents(query, documents, thinking_callback=self.thinking_callback)
         if result["success"]:
             # 提取重排序后的文档内容
             reordered_documents = [doc.get("document", "") for doc in result["documents"]]

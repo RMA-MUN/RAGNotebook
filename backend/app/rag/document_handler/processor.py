@@ -8,7 +8,6 @@ from langchain_core.documents import Document
 from app.core.logger_handler import logger
 from app.rag.text_spliter import AsyncTextSplitter
 from app.utils.config import chroma_config
-from app.utils.factory import embed_model
 from app.utils.file_handler import (
     get_file_md5_hex,
     listdir_allowed_type,
@@ -29,7 +28,7 @@ from app.utils.pdf_multimodal_loader import pdf_multimodal_loader, pdf_multimoda
 class DocumentProcessor:
     """文档处理器"""
 
-    def __init__(self, vectors_store: Chroma, md5_store):
+    def __init__(self, vectors_store: Chroma, md5_store, embed_model=None):
         self.vectors_store = vectors_store
         self.md5_store = md5_store
         self.spliter = AsyncTextSplitter(
