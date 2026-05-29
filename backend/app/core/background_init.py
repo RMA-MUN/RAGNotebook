@@ -91,7 +91,7 @@ class _BackgroundInitManager:
 
     async def _init_reranker(self):
         """检查并初始化重排序模型（触发 torch 等重型框架加载）"""
-        from app.rag.reorder_service import check_and_download_reranker_model, ReorderService
+        from app.rag.reorder_service import ReorderService, check_and_download_reranker_model
 
         await asyncio.to_thread(check_and_download_reranker_model)
         logger.info("✅ 重排序模型检查完成")

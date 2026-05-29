@@ -375,8 +375,8 @@ class NoteService:
             prompt = prompt_template.replace("{content}", content)
 
             # 惰性导入避免模块级循环依赖
-            from app.db.db_config import AsyncSessionLocal
             from app.core.background_init import init_manager
+            from app.db.db_config import AsyncSessionLocal
             chat_model = init_manager.chat_model
 
             response = await chat_model.ainvoke([HumanMessage(content=prompt)])
