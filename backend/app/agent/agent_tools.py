@@ -4,10 +4,10 @@ from contextvars import ContextVar
 
 from langchain_core.tools import tool
 
+from app.core.background_init import init_manager
 from app.core.logger_handler import logger
 from app.db.db_config import AsyncSessionLocal
 from app.rag.rag_service import RagService
-from app.services.note_service import note_service
 from app.services.review_service import review_service
 from app.utils.auth_utils import decode_django_jwt
 
@@ -77,7 +77,7 @@ async def search_notes_tool(query: str, top_k: int = 5) -> str:
         return "错误: 无法确定用户身份"
     async with AsyncSessionLocal() as db:
         try:
-            results = await note_service.search_notes(db, user_id, query, top_k=top_k)
+            results = await init_manager.note_service.search_notes(db, user_id, query, top_k=top_k)
             if not results:
                 return "未找到相关笔记"
             lines = [f"找到 {len(results)} 篇相关笔记：\n"]
@@ -101,7 +101,7 @@ async def get_note_stats_tool() -> str:
         return "错误: 无法确定用户身份"
     async with AsyncSessionLocal() as db:
         try:
-            stats = await note_service.get_category_stats(db, user_id)
+            stats = await init_manager.note_service.get_category_stats(db, user_id)
             lines = ["📊 笔记统计\n"]
             lines.append(f"总笔记数: {stats['total']}\n")
             lines.append("各分类:")
@@ -167,7 +167,7 @@ async def create_note_tool(title: str, content: str = "") -> str:
     async with AsyncSessionLocal() as db:
         try:
             payload = NoteCreate(title=title, content=content)
-            note = await note_service.create_note(db, user_id, payload)
+            note = await init_manager.note_service.create_note(db, user_id, payload)
             return f"✅ 笔记创建成功！\n- 标题: {note.title}\n- ID: {note.id}\n- 标签和分类正在后台生成中..."
         except Exception as e:
             logger.error(f"创建笔记失败: {e}")
@@ -181,7 +181,7 @@ async def get_related_notes_tool(note_id: str, top_k: int = 3) -> str:
         return "错误: 无法确定用户身份"
     async with AsyncSessionLocal() as db:
         try:
-            related = await note_service.get_related_notes(db, note_id, user_id, top_k=top_k)
+            related = await init_manager.note_service.get_related_notes(db, note_id, user_id, top_k=top_k)
             if not related:
                 return "未找到关联笔记或知识库文档"
             lines = [f"🔗 关联推荐（共 {len(related)} 项）\n"]

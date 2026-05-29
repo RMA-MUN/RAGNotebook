@@ -16,7 +16,7 @@ from app.schemas.models import (
     NoteListResponse,
     NoteUpdate,
 )
-from app.services.note_service import note_service
+from app.core.background_init import init_manager
 from app.utils.auth_utils import get_current_user_id
 
 note_router = APIRouter(prefix="/note", tags=["note"])
@@ -35,7 +35,7 @@ async def create_note(
     2. 立即返回笔记（tags/category 初始为空）
     3. 后台异步生成标签和回顾记录
     """
-    note = await note_service.create_note(db, user_id, payload)
+    note = await init_manager.note_service.create_note(db, user_id, payload)
     return success_response(message="笔记创建成功", data=note)
 
 
@@ -51,7 +51,7 @@ async def list_notes(
     """
     笔记列表：分页查询，支持按分类筛选。tag 筛选在内存层完成。
     """
-    notes, total = await note_service.list_notes(db, user_id, page, page_size, category, tag)
+    notes, total = await init_manager.note_service.list_notes(db, user_id, page, page_size, category, tag)
     return success_response(data=NoteListResponse(notes=notes, total_count=total))
 
 
@@ -65,7 +65,7 @@ async def search_notes(
     全文语义搜索：走 ChromaDB notes_collection 向量检索，
     返回当前用户的语义相似笔记。
     """
-    notes = await note_service.search_notes(db, user_id, q)
+    notes = await init_manager.note_service.search_notes(db, user_id, q)
     return success_response(data=NoteListResponse(notes=notes, total_count=len(notes)))
 
 
@@ -78,7 +78,7 @@ async def get_stats(
     获取用户笔记分类统计。
     返回各分类下的笔记数量及总数。
     """
-    stats = await note_service.get_category_stats(db, user_id)
+    stats = await init_manager.note_service.get_category_stats(db, user_id)
     return success_response(data=stats)
 
 
@@ -96,7 +96,7 @@ async def autocomplete(
     AI 内联补全。基于光标前上下文，调用本地 Ollama qwen3:0.8b 快速返回续写文本。
     非流式，目标延迟 300-500ms。
     """
-    result = await note_service.autocomplete(payload.context)
+    result = await init_manager.note_service.autocomplete(payload.context)
     return success_response(data=result)
 
 
@@ -119,7 +119,7 @@ async def assist_stream(
     - summarize：缩写
     """
     return StreamingResponse(
-        note_service.assist_stream(payload.content, payload.action),
+        init_manager.note_service.assist_stream(payload.content, payload.action),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -139,7 +139,7 @@ async def update_note(
     """
     更新笔记：修改 title/content，content 变更时同步更新 ChromaDB 向量。
     """
-    note = await note_service.update_note(db, note_id, user_id, payload)
+    note = await init_manager.note_service.update_note(db, note_id, user_id, payload)
     if not note:
         return success_response(message="笔记不存在")
     return success_response(message="笔记更新成功", data=note)
@@ -155,7 +155,7 @@ async def delete_note(
     """
     删除笔记：联删 MySQL 记录、ChromaDB 向量、以及级联的 review_records。
     """
-    deleted = await note_service.delete_note(db, note_id, user_id)
+    deleted = await init_manager.note_service.delete_note(db, note_id, user_id)
     if not deleted:
         return success_response(message="笔记不存在")
     return success_response(message="笔记删除成功")
@@ -170,7 +170,7 @@ async def get_note(
     """
     获取笔记详情。
     """
-    note = await note_service.get_note(db, note_id, user_id)
+    note = await init_manager.note_service.get_note(db, note_id, user_id)
     if not note:
         return success_response(message="笔记不存在")
     return success_response(data=note)
@@ -185,12 +185,12 @@ async def regenerate_tags(
     """
     手动触发重新生成标签。
     """
-    note = await note_service.get_note(db, note_id, user_id)
+    note = await init_manager.note_service.get_note(db, note_id, user_id)
     if not note:
         return success_response(message="笔记不存在")
 
     import asyncio
-    asyncio.create_task(note_service._auto_tag_and_review(note_id, user_id, note.content))
+    asyncio.create_task(init_manager.note_service._auto_tag_and_review(note_id, user_id, note.content))
     return success_response(message="标签生成任务已提交")
 
 
@@ -204,7 +204,7 @@ async def get_related_notes(
     获取当前笔记的语义相似笔记和知识库文档（Top 3），
     标注来源：note（笔记库）或 knowledge_base（知识库）。
     """
-    related = await note_service.get_related_notes(db, note_id, user_id)
+    related = await init_manager.note_service.get_related_notes(db, note_id, user_id)
     return success_response(data=related)
 
 
@@ -217,7 +217,7 @@ async def export_note(
     """
     导出单篇笔记为 Markdown 格式纯文本。
     """
-    md = await note_service.export_note_markdown(db, note_id, user_id)
+    md = await init_manager.note_service.export_note_markdown(db, note_id, user_id)
     if not md:
         return success_response(message="笔记不存在")
     return success_response(data={"markdown": md, "filename": f"{note_id}.md"})
