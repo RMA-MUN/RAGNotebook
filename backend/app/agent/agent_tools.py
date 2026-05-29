@@ -1,4 +1,5 @@
 import datetime
+from collections.abc import Callable
 from contextvars import ContextVar
 
 from langchain_core.tools import tool
@@ -11,7 +12,7 @@ from app.services.review_service import review_service
 from app.utils.auth_utils import decode_django_jwt
 
 current_user_id_var: ContextVar[str] = ContextVar('current_user_id', default=None)
-thinking_callback_var: ContextVar[callable | None] = ContextVar('thinking_callback', default=None)
+thinking_callback_var: ContextVar[Callable | None] = ContextVar('thinking_callback', default=None)
 
 def set_current_user_id(user_id: str):
     """设置当前用户ID到上下文"""
