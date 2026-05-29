@@ -21,7 +21,7 @@ async_engine = create_async_engine(
     ASYNC_DATABSE_URL,
     pool_size=10, # 连接池中保持的持久连接数
     max_overflow=20, # 连接池中允许创建的额外连接数
-    echo=True # 输出sql日志
+    echo=False # 输出sql日志
 )
 
 # 创建异步会话工厂
