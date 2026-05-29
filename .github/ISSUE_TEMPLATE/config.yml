@@ -1,8 +1,0 @@
-blank_issues_enabled: false
-contact_links:
-  - name: GitHub Discussions
-    url: https://github.com/RMA-MUN/LangChain-RAG-FastAPI-Service/discussions
-    about: 提问和讨论请使用 Discussions
-  - name: Author Email
-    url: mailto:n3032747608@163.com
-    about: 如有隐私问题或商务合作，请通过邮件联系
