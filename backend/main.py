@@ -4,11 +4,11 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from starlette.middleware.cors import CORSMiddleware
 
+from app.core.background_init import init_manager
 from app.core.failed_response_register import register_exception_handlers
 from app.core.logger_handler import logger
 from app.db.db_config import init_db
 from app.db.redis_config import close_redis, connect_redis
-from app.rag.reorder_service import check_and_download_reranker_model
 from app.router.chat import chat_router
 from app.router.health import health_router
 from app.router.knowledge_router import knowledge_router
@@ -83,9 +83,9 @@ async def startup_event():
     await connect_redis()
     logger.info("Redis连接初始化完成")
 
-    # 检查并重排序模型
-    check_and_download_reranker_model()
-    logger.info("重排序模型检查完成")
+    # 检查并重排序模型（在后台异步加载）
+    await init_manager.start()
+    logger.info("部分资源正在初始化（模型加载、ChromaDB初始化等将在后台继续加载）")
 
 @app.on_event("shutdown")
 async def shutdown_event():

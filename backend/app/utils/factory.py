@@ -191,7 +191,7 @@ class RerankerModelFactory(BaseModelFactory):
         return None
 
 
-chat_model = ChatModelFactory().generator()
-embed_model = EmbedModelFactory().generator()
+chat_model = None
+embed_model = None
 reranker_model = None
-vision_model = VisionModelFactory().generator()
+vision_model = None
