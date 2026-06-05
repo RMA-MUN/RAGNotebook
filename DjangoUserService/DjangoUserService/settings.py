@@ -15,8 +15,6 @@ from pathlib import Path
 import pymysql
 from dotenv import load_dotenv
 
-pymysql.install_as_MySQLdb()
-
 load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -27,7 +25,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('JWT_SECRET_KEY')
+SECRET_KEY = os.getenv('JWT_SECRET_KEY') or os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -47,7 +45,9 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'drf_yasg',
-    'apps.user',
+
+    
+    'apps.user.apps.UserConfig',
     'apps.file',
 ]
 
@@ -98,9 +98,26 @@ SWAGGER_SETTINGS = {
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# 数据库后端短名称 → Django 完整路径映射
+DB_ENGINE_MAP = {
+    'mysql': 'django.db.backends.mysql',
+    'postgresql': 'django.db.backends.postgresql',
+    'sqlite3': 'django.db.backends.sqlite3',
+    'oracle': 'django.db.backends.oracle',
+}
+
+raw_engine = os.getenv('DB_ENGINE', 'mysql')
+# 支持短名称 (mysql)、已有完整路径 (django.db.backends.xxx) 或其他自定义
+if raw_engine in DB_ENGINE_MAP:
+    db_engine = DB_ENGINE_MAP[raw_engine]
+elif raw_engine.startswith('django.db.backends.'):
+    db_engine = raw_engine
+else:
+    db_engine = f'django.db.backends.{raw_engine}'
+
 DATABASES = {
     'default': {
-        'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.mysql'),
+        'ENGINE': db_engine,
         'NAME': os.getenv('DB_NAME'),
         'USER': os.getenv('DB_USER'),
         'PASSWORD': os.getenv('DB_PASSWORD'),
@@ -109,13 +126,17 @@ DATABASES = {
     }
 }
 
-# MySQL 特有配置（非 SQLite 时使用）
-if DATABASES['default']['ENGINE'] != 'django.db.backends.sqlite3':
+# 仅 MySQL 才设置 utf8mb4 选项
+if db_engine == 'django.db.backends.mysql':
     DATABASES['default']['OPTIONS'] = {
         'charset': 'utf8mb4',
         'use_unicode': True,
         'init_command': 'SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci',
     }
+
+# 使用 MySQL 时，用 PyMySQL 模拟 MySQLdb
+if db_engine == 'django.db.backends.mysql':
+    pymysql.install_as_MySQLdb()
 
 # Celery 配置
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL')
