@@ -24,26 +24,6 @@ class LoginSerializer(serializers.Serializer):
         email = attrs.get('email')
         password = attrs.get('password')
 
-        # 特殊测试账户：用户名test，密码666666，直接允许登录（临时用户，不关联数据库）
-        if username == 'test' and password == '666666':
-            # 创建一个临时的虚拟用户对象（不保存到数据库）
-            from types import SimpleNamespace
-            import uuid
-            temp_user = SimpleNamespace(
-                uuid=str(uuid.uuid4()),  # 生成临时uuid
-                username='test',
-                email='test@example.com',
-                telephone=None,
-                gender=None,
-                bio='测试用户',
-                avatar=None,
-                status=UserStatusChoice.ACTIVE,
-                date_joined='2024-01-01T00:00:00Z',
-                last_login=None
-            )
-            attrs['user'] = temp_user
-            return attrs
-
         # 验证用户名或邮箱至少提供一个
         if not username and not email:
             raise serializers.ValidationError("用户名或邮箱至少提供一个")
