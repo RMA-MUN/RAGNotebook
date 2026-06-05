@@ -51,6 +51,7 @@ export const apiConfig = {
     noteSearch: '/note/search',
     noteAutoTag: (noteId) => `/note/${noteId}/auto-tag`,
     noteRelated: (noteId) => `/note/${noteId}/related`,
+    noteDownload: (noteId) => `/note/${noteId}/download`,
     noteAutocomplete: '/note/autocomplete',
     noteAssistStream: '/note/assist/stream',
     

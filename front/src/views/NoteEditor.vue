@@ -9,6 +9,7 @@
         <div class="toolbar-actions">
           <span class="toolbar-btn" @click="handleSave">{{ saving ? '保存中...' : '保存' }}</span>
           <span v-if="!isNew" class="toolbar-btn toolbar-btn--delete" @click="handleDelete">删除</span>
+          <span v-if="!isNew" class="toolbar-btn toolbar-btn--download" @click="handleDownload">下载</span>
         </div>
       </div>
 
@@ -359,6 +360,33 @@ async function handleDelete() {
   }
 }
 
+/** 下载笔记为 Markdown 文件 */
+async function handleDownload() {
+  try {
+    const res = await fetch(apiConfig.endpoints.noteDownload(noteId.value), {
+      headers: { 'Authorization': `Bearer ${token.value}` },
+    })
+    const contentType = res.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      const json = await res.json()
+      showToast(json.message || '下载失败')
+      return
+    }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${title.value || '笔记'}.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    showToast('下载成功')
+  } catch (e) {
+    showToast('下载失败')
+  }
+}
+
 /** 接受行内补全：将补全文本插入光标位置 */
 function handleAccept(completion) {
   const cm = markdownEditorRef.value?.getEditorCm()
@@ -497,6 +525,9 @@ onUnmounted(() => {
 }
 .toolbar-btn--delete {
   color: #ee0a24;
+}
+.toolbar-btn--download {
+  color: #1989fa;
 }
 
 /* 标题栏 */
