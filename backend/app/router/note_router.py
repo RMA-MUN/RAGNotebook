@@ -3,7 +3,7 @@
 """
 
 from fastapi import Depends, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from fastapi.routing import APIRouter
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -221,3 +221,36 @@ async def export_note(
     if not md:
         return success_response(message="笔记不存在")
     return success_response(data={"markdown": md, "filename": f"{note_id}.md"})
+
+
+@note_router.get("/{note_id}/download")
+async def download_note(
+    note_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    下载笔记为 Markdown 文件（浏览器触发下载）。
+    返回 Content-Disposition: attachment 的 markdown 文件响应。
+    """
+    note = await init_manager.note_service.get_note(db, note_id, user_id)
+    if not note:
+        return success_response(message="笔记不存在")
+
+    md = await init_manager.note_service.export_note_markdown(db, note_id, user_id)
+
+    import re
+    from urllib.parse import quote
+
+    safe_title = re.sub(r'[\\/:*?"<>|]', '_', note.title or note_id)
+    filename = f"{safe_title}.md"
+
+    # RFC 5987: filename* 支持 UTF-8 非 ASCII 文件名
+    # filename 作为 ASCII-only fallback（避免 latin-1 编码错误）
+    return Response(
+        content=md.encode("utf-8"),
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename=\"{note_id}.md\"; filename*=UTF-8''{quote(filename, safe='')}",
+        }
+    )
