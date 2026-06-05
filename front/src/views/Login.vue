@@ -42,10 +42,13 @@
           </van-button>
         </div>
         
-        <div class="test-user-btn">
-          <van-button round block type="default" size="large" @click="loginTestUser">
-            测试用户登录
-          </van-button>
+        <div class="test-user-hint">
+          <div class="hint-line">测试账号：admin</div>
+          <div class="hint-line">测试密码：admin1234</div>
+          <div class="hint-line note">
+            Django 端启动时自动创建
+            <span class="fill-link" @click="fillTestUser">一键填充</span>
+          </div>
         </div>
         
         <div class="register-link">
@@ -113,9 +116,9 @@ const goToRegister = () => {
   router.push('/register');
 };
 
-const loginTestUser = () => {
-  username.value = 'test';
-  password.value = '666666';
+const fillTestUser = () => {
+  username.value = 'admin';
+  password.value = 'admin1234';
 };
 </script>
 
@@ -172,8 +175,24 @@ const loginTestUser = () => {
   margin: 24px 16px;
 }
 
-.test-user-btn {
-  margin: 0 16px;
+.test-user-hint {
+  margin: 12px 16px 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text-lighter);
+  line-height: 1.8;
+}
+
+.hint-line.note {
+  color: var(--color-text-lightest);
+  font-size: 11px;
+}
+
+.fill-link {
+  color: var(--color-primary);
+  cursor: pointer;
+  text-decoration: underline;
+  margin-left: 4px;
 }
 
 .register-link {

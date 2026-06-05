@@ -29,31 +29,6 @@ export const useUserStore = defineStore('user', {
   actions: {
     async login(userData) {
       try {
-        const TEST_USER = {
-          username: 'test',
-          password: '666666',
-          token: 'test_token_for_unlogin',
-          user: {
-            id: 1,
-            username: 'test',
-            email: 'test@example.com',
-            bio: '测试用户'
-          }
-        };
-
-        if (userData.username === TEST_USER.username && userData.password === TEST_USER.password) {
-          localStorage.setItem('jwt_token', TEST_USER.token);
-          
-          this.userInfo = TEST_USER.user;
-          this.token = TEST_USER.token;
-          this.isLogin = true;
-          
-          return {
-            success: true,
-            message: '测试用户登录成功'
-          };
-        }
-
         const response = await axios.post(apiConfig.endpoints.login, {
           username: userData.username,
           password: userData.password
