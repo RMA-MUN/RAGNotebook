@@ -22,6 +22,15 @@ from app.utils.auth_utils import get_current_user_id
 note_router = APIRouter(prefix="/note", tags=["note"])
 
 
+async def ensure_note_service():
+    """依赖：等待 NoteService 后台初始化完成后再处理请求。"""
+    await init_manager.note_service_ready.wait()
+    return init_manager.note_service
+
+
+note_router.dependencies = [Depends(ensure_note_service)]
+
+
 @note_router.post("/create")
 async def create_note(
     payload: NoteCreate,

@@ -132,12 +132,16 @@ class NoteCreate(BaseModel):
     """创建笔记请求模型"""
     title: str
     content: str
+    category: str | None = None
+    tags: list[str] | None = None
 
 
 class NoteUpdate(BaseModel):
     """更新笔记请求模型（所有字段可选）"""
     title: str | None = None
     content: str | None = None
+    category: str | None = None
+    tags: list[str] | None = None
 
 
 class NoteResponse(BaseModel):
@@ -183,3 +187,4 @@ class PageRequest(BaseModel):
     page_size: int = 20
     category: str | None = None
     tag: str | None = None
+

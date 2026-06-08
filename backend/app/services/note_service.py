@@ -80,10 +80,10 @@ class NoteService:
     async def create_note(self, db: AsyncSession, user_id: str, payload: NoteCreate) -> NoteResponse:
         """
         创建笔记：
-        1. MySQL 写入笔记（tags/category 暂为空）
+        1. MySQL 写入笔记（若用户提供了 tags/category 直接写入）
         2. ChromaDB 写入向量
         3. 立即返回笔记 ID
-        4. 后台异步任务：LLM 生成标签 + 创建回顾记录
+        4. 若用户未提供 tags/category，后台异步任务自动生成
         """
         note_id = str(uuid.uuid4())
         note = Note(
@@ -91,6 +91,8 @@ class NoteService:
             user_id=user_id,
             title=payload.title,
             content=payload.content,
+            tags=payload.tags,
+            category=payload.category,
         )
         db.add(note)
         await db.commit()
@@ -111,15 +113,17 @@ class NoteService:
         except Exception as e:
             logger.error(f"笔记向量化失败 note_id={note_id}: {e}")
 
-        # 触发后台异步标签生成（不阻塞创建响应）
-        asyncio.create_task(self._auto_tag_and_review(note_id, user_id, payload.content))
+        # 若用户已提供 tags/category，跳过自动标签生成
+        user_provided_meta = payload.tags is not None or payload.category is not None
+        if not user_provided_meta:
+            asyncio.create_task(self._auto_tag_and_review(note_id, user_id, payload.content))
 
         return self._doc_to_response(note)
 
     async def update_note(self, db: AsyncSession, note_id: str, user_id: str, payload: NoteUpdate) -> NoteResponse | None:
         """
         更新笔记：
-        1. 更新 MySQL 中的 title/content
+        1. 更新 MySQL 中的 title/content/category/tags
         2. 如果 content 变更，删除旧向量并写入新向量
         """
         stmt = select(Note).where(Note.id == note_id, Note.user_id == user_id)
@@ -134,6 +138,10 @@ class NoteService:
             note.title = payload.title
         if payload.content is not None:
             note.content = payload.content
+        if payload.category is not None:
+            note.category = payload.category
+        if payload.tags is not None:
+            note.tags = payload.tags
 
         await db.commit()
         await db.refresh(note)
@@ -305,6 +313,7 @@ class NoteService:
                     "id": meta_note_id,
                     "title": doc.metadata.get("title", "无标题"),
                     "content_preview": doc.page_content[:150],
+                    "content": doc.page_content,
                     "similarity": round(score, 4),
                     "source": "note",
                 })
