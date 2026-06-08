@@ -92,10 +92,16 @@ class RegisterSerializer(serializers.ModelSerializer):
     """用户注册序列化器"""
     password = serializers.CharField(max_length=20, min_length=6, required=True, help_text="密码", write_only=True)
     confirm_password = serializers.CharField(max_length=20, min_length=6, required=True, help_text="确认密码", write_only=True)
+    telephone = serializers.CharField(max_length=11, required=False, allow_blank=True, allow_null=True)
     
     class Meta:
         model = User
         fields = ('username', 'email', 'telephone', 'password', 'confirm_password')
+    
+    def validate_telephone(self, value):
+        if not value:
+            return None
+        return value
     
     def validate(self, attrs):
         """验证注册信息"""
