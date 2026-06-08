@@ -96,6 +96,7 @@ ehthumbs_vista.db
 # AI agent/Claude config
 .agents/
 .claude/
+skills-lock.json
 
 # CodeGraph index
 .codegraph/
