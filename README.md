@@ -55,11 +55,11 @@ AI 驱动的个人知识管理工具，融合 **笔记管理 + RAG 知识库 + A
 - **间隔重复回顾**：艾宾浩斯遗忘曲线算法，对抗遗忘
 - **AI 写作辅助**：联机补全、续写/扩写/摘要、关联笔记推荐
 
-系统支持会话持久化（MySQL）、向量检索（ChromaDB）、JWT 用户隔离，前端采用 Vue 3 + Vant 4 移动端友好的界面。
+系统支持会话持久化（MySQL）、向量检索（ChromaDB）、JWT 用户隔离，前端采用React+Tailwind CSS构建现代化界面。
 
 ## 核心特性
 
-- **📝 笔记管理**：Markdown 编辑器（bytemd），支持新建、编辑、删除、分类筛选、分页列表
+- **📝 笔记管理**：Markdown 编辑器，支持新建、编辑、删除、分类筛选、分页列表
 - **🏷️ 智能标签**：保存笔记后 LLM 异步生成标签和分类（工作/学习/生活/项目），无需手动归类
 - **🔍 语义搜索**：基于向量嵌入的笔记全文搜索，告别关键词匹配
 - **🔄 间隔重复回顾**：艾宾浩斯遗忘曲线（1/2/4/7/15/30 天）
@@ -74,14 +74,12 @@ AI 驱动的个人知识管理工具，融合 **笔记管理 + RAG 知识库 + A
 
 ## 项目演示
 
-| 功能模块 | 界面展示 | 功能说明 |
-|---------|:--------|---------|
-| 📒编辑 | ![笔记编辑](./images/editor_note.png) | 在线markdown编辑器，支持行内AI补全、相关笔记推荐 |
-| 📝 笔记 | ![笔记列表](./images/note.png) | 笔记列表，自动分类、打标签 |
-| 🔄 每日回顾 | ![回顾](./images/review.png) | 艾宾浩斯遗忘曲线算法 ，每日提醒需要回顾的内容 |
-| 💬 AI 聊天 | ![AI聊天](./images/aichat.png) | RAG 智能问答，支持上下文对话和文档引用 |
-| 📚 知识库 | ![知识库](./images/knowledge_manager.png) | 多格式文档上传和管理 |
-| ✂️ 文档切片 | ![切片](./images/text_spliter.png) | 可视化文档切片详情 |
+| 功能模块 | 界面展示 |
+|---------|:--------|
+| 笔记编辑 | ![笔记编辑](./images/editor_note.png) |
+| 笔记列表 | ![笔记列表](./images/note.png) |
+| AI 聊天 | ![AI 聊天](./images/aichat.png) |
+| 知识库 | ![知识库](./images/knowledge_manager.png) |
 
 ## 快速开始
 
@@ -112,8 +110,6 @@ uv sync
 ```bash
 cd front
 npm install
-# 或使用 pnpm
-pnpm install
 ```
 
 ### 环境配置
@@ -252,15 +248,17 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 
 | 技术 | 说明 |
 |------|------|
-| Vue 3 | 现代化前端框架（Composition API） |
+| React 19 | 现代化前端框架 |
+| TypeScript | 类型安全 |
 | Vite | 极速构建工具 |
-| Vant 4 | 移动端 UI 组件库 |
-| bytemd | Markdown 编辑器（Web Component） |
-| Vue Router | 路由管理（路由守卫 + JWT 校验） |
-| Pinia | 状态管理 |
-| Vue i18n | 国际化（中/英） |
+| Tailwind CSS | 原子化 CSS 框架 |
+| Radix UI | 无头 UI 组件库 |
+| Tiptap | 富文本 Markdown 编辑器 |
+| React Router DOM | 路由管理（路由守卫 + JWT 校验） |
+| Zustand | 轻量状态管理 |
+| i18next | 国际化（中/英） |
 | Axios | HTTP 客户端 |
-| highlight.js | 代码语法高亮 |
+| react-markdown + rehype-highlight | Markdown 渲染与代码高亮 |
 | dompurify | HTML 安全过滤 |
 
 ## 项目结构
@@ -301,30 +299,44 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 │   ├── data/                    # 数据存储目录
 │   ├── main.py                  # 应用入口
 │   └── pyproject.toml
-├── front/                       # Vue 3 前端项目
+├── front/                       # React 前端项目
 │   ├── src/
-│   │   ├── components/          # 通用组件
-│   │   │   ├── MarkdownEditor.vue   # bytemd 封装
-│   │   │   ├── RelatedNotes.vue     # 关联笔记侧边栏
-│   │   │   ├── InlineCompletion.vue # AI 联机补全
-│   │   │   ├── ReviewCard.vue       # 回顾卡片
-│   │   │   ├── TagBadge.vue         # 标签徽章
-│   │   │   ├── TabBar.vue           # 底部导航
-│   │   │   └── QuickToolbar.vue     # 快捷工具栏
-│   │   ├── views/              # 页面视图
-│   │   │   ├── NoteEditor.vue       # 笔记编辑器
-│   │   │   ├── NoteList.vue         # 笔记列表
-│   │   │   ├── DailyReview.vue      # 每日回顾
-│   │   │   ├── AIChat.vue           # AI 聊天
-│   │   │   ├── Sessions.vue         # 会话管理
-│   │   │   ├── KnowledgeBase.vue    # 知识库管理
-│   │   │   ├── Login.vue / Register.vue
-│   │   │   ├── My.vue / Profile.vue / Settings.vue
-│   │   │   └── AboutUs.vue
-│   │   ├── router/index.js     # 路由配置
-│   │   ├── store/              # Pinia 状态管理
-│   │   ├── i18n/               # 国际化（中/英）
-│   │   └── config/api.js       # API 地址配置
+│   │   ├── api/                 # API 请求层
+│   │   │   ├── auth.ts          # 认证接口
+│   │   │   ├── chat.ts          # 聊天接口
+│   │   │   ├── notes.ts         # 笔记接口
+│   │   │   ├── knowledge.ts     # 知识库接口
+│   │   │   ├── review.ts        # 回顾接口
+│   │   │   └── sessions.ts      # 会话接口
+│   │   ├── components/          # 组件
+│   │   │   ├── common/          # 通用组件（TagBadge, ConfirmDialog, EmptyState 等）
+│   │   │   ├── knowledge/       # 知识库组件
+│   │   │   ├── layout/          # 布局组件（Sidebar）
+│   │   │   ├── note/            # 笔记组件（OutlinePanel, RelatedFragments）
+│   │   │   └── TiptapEditor.tsx # 富文本编辑器
+│   │   ├── hooks/               # 自定义 Hooks
+│   │   │   └── useSSE.ts        # SSE 流式处理
+│   │   ├── i18n/                # 国际化（中/英）
+│   │   ├── layouts/             # 页面布局（AuthLayout, MainLayout）
+│   │   ├── pages/               # 页面
+│   │   │   ├── NoteEditor.tsx   # 笔记编辑器
+│   │   │   ├── NoteList.tsx     # 笔记列表
+│   │   │   ├── DailyReview.tsx  # 每日回顾
+│   │   │   ├── AIChat.tsx       # AI 聊天
+│   │   │   ├── Sessions.tsx     # 会话管理
+│   │   │   ├── KnowledgeBase.tsx# 知识库管理
+│   │   │   ├── Login.tsx / Register.tsx
+│   │   │   ├── Profile.tsx / Settings.tsx
+│   │   │   └── AboutUs.tsx
+│   │   ├── router/index.tsx     # 路由配置
+│   │   ├── stores/              # Zustand 状态管理
+│   │   │   ├── useUserStore.ts
+│   │   │   ├── useSessionStore.ts
+│   │   │   ├── useThemeStore.ts
+│   │   │   └── useLanguageStore.ts
+│   │   ├── types/api.ts         # TypeScript 类型定义
+│   │   ├── App.tsx              # 应用入口组件
+│   │   └── main.tsx             # 应用入口
 │   └── package.json
 ├── DjangoUserService/           # Django 用户服务
 │   ├── apps/
