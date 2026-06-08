@@ -1,34 +1,60 @@
+import asyncio
 import json
 import os
 from typing import Any
 
 import redis.asyncio as redis
+from redis.asyncio import ConnectionPool
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_DB = int(os.getenv("REDIS_DB", "3"))
 
-# 全局redis客户端对象
-redis_client = None
+# 全局连接池
+_pool: ConnectionPool | None = None
+_pool_loop_id: int | None = None
+
+
+async def _get_pool() -> ConnectionPool:
+    """获取或创建Redis连接池，如果event loop发生变化则重建"""
+    global _pool, _pool_loop_id
+    current_loop_id = id(asyncio.get_running_loop())
+
+    if _pool is not None and _pool_loop_id != current_loop_id:
+        try:
+            await _pool.disconnect()
+        except Exception:
+            pass
+        _pool = None
+
+    if _pool is None:
+        _pool = ConnectionPool(
+            host=REDIS_HOST,
+            port=REDIS_PORT,
+            db=REDIS_DB,
+            decode_responses=True,
+        )
+        _pool_loop_id = current_loop_id
+
+    return _pool
+
 
 async def connect_redis():
-    """连接Redis"""
-    global redis_client
-    if redis_client is None:
-        redis_client = redis.Redis(
-            host=REDIS_HOST, # redis主机地址
-            port=REDIS_PORT, # redis端口号
-            db=REDIS_DB,     # redis数据库编号(0-15)
-            decode_responses=True # 是否对返回值进行解码(True:返回字符串,False:返回字节)
-        )
-    return redis_client
+    """从连接池获取Redis客户端"""
+    pool = await _get_pool()
+    return redis.Redis(connection_pool=pool)
+
 
 async def close_redis():
-    """关闭Redis连接"""
-    global redis_client
-    if redis_client:
-        await redis_client.aclose()
-        redis_client = None
+    """关闭Redis连接池"""
+    global _pool, _pool_loop_id
+    if _pool:
+        try:
+            await _pool.disconnect()
+        except Exception:
+            pass
+        _pool = None
+        _pool_loop_id = None
 
 async def check_redis_connection() -> bool:
     """检查Redis连接"""
