@@ -163,6 +163,8 @@ class AgentFactory:
             tools=tools,
             verbose=verbose,
             return_intermediate_steps=return_intermediate_steps,
+            handle_parsing_errors=True,
+            max_iterations=5,
             **kwargs
         )
 
@@ -359,10 +361,12 @@ async def get_agent_stream_response(
         await sm.session_manager.add_message(session_id, user_id, query, response)
         logger.info("【Agent流式响应】添加到会话历史成功")
 
-        # 发送回答内容
-        for char in response:
-            yield f"data: {json.dumps({'type': 'response', 'content': char}, ensure_ascii=False)}\n\n"
-            await asyncio.sleep(0.02)
+        # 发送回答内容（按chunk发送，减少SSE事件数）
+        chunk_size = 15
+        for i in range(0, len(response), chunk_size):
+            chunk = response[i:i + chunk_size]
+            yield f"data: {json.dumps({'type': 'response', 'content': chunk}, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(0.03)
 
         # 发送结束标记
         yield f"data: {json.dumps({'type': 'done', 'session_id': session_id}, ensure_ascii=False)}\n\n"
