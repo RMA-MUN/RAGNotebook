@@ -247,7 +247,7 @@ class NoteService:
                 self._notes_store.similarity_search,
                 query,
                 k=top_k,
-                filter={"user_id": user_id, "doc_type": "note"},
+                filter={"$and": [{"user_id": user_id}, {"doc_type": "note"}]},
             )
         except Exception as e:
             logger.error(f"笔记语义搜索失败: {e}")
