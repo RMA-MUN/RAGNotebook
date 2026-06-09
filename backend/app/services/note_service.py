@@ -491,20 +491,15 @@ class NoteService:
 
     async def get_category_stats(self, db: AsyncSession, user_id: str) -> dict:
         """
-        获取用户的笔记分类统计 —— 按 category 分组计数。
+        获取用户的笔记分类统计 —— 动态查询所有存在的分类并计数。
         """
+        stmt = select(Note.category, func.count(Note.id)).where(
+            Note.user_id == user_id,
+            Note.category.isnot(None),
+        ).group_by(Note.category)
+        result = await db.execute(stmt)
+        categories = [{"category": cat, "count": count} for cat, count in result]
 
-        categories = []
-        for cat in ['work', 'study', 'life', 'project']:
-            count_stmt = select(func.count(Note.id)).where(
-                Note.user_id == user_id,
-                Note.category == cat,
-            )
-            result = await db.execute(count_stmt)
-            count = result.scalar() or 0
-            categories.append({"category": cat, "count": count})
-
-        # 无分类的笔记数
         count_stmt = select(func.count(Note.id)).where(
             Note.user_id == user_id,
             Note.category.is_(None),
@@ -521,6 +516,36 @@ class NoteService:
             "categories": categories,
             "uncategorized": uncategorized,
         }
+
+    async def delete_category(self, db: AsyncSession, user_id: str, category: str) -> int:
+        """
+        删除某个分类及其下所有笔记。
+        返回被删除的笔记数量。
+        """
+        stmt = select(Note).where(
+            Note.user_id == user_id,
+            Note.category == category,
+        )
+        result = await db.execute(stmt)
+        notes = result.scalars().all()
+        note_ids = [n.id for n in notes]
+        if not note_ids:
+            return 0
+
+        await db.execute(
+            delete(Note).where(Note.user_id == user_id, Note.category == category)
+        )
+        await db.commit()
+
+        for nid in note_ids:
+            try:
+                await asyncio.to_thread(
+                    lambda id=nid: self._notes_store.delete(where={"note_id": id})
+                )
+            except Exception as e:
+                logger.error(f"删除分类笔记向量失败 note_id={nid}: {e}")
+
+        return len(note_ids)
 
     async def export_note_markdown(self, db: AsyncSession, note_id: str, user_id: str) -> str | None:
         """
