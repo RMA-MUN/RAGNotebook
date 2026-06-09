@@ -11,6 +11,9 @@ import TableHeader from '@tiptap/extension-table-header'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import Underline from '@tiptap/extension-underline'
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
+import { common, createLowlight } from 'lowlight'
+import rehypeHighlight from 'rehype-highlight'
 import { marked } from 'marked'
 import TurndownService from 'turndown'
 import ReactMarkdown from 'react-markdown'
@@ -52,6 +55,8 @@ turndown.addRule('taskListItem', {
     return `- [${checked ? 'x' : ' '}] ${text}\n`
   },
 })
+
+const lowlight = createLowlight(common)
 
 // ── Types ──
 
@@ -175,6 +180,38 @@ function EditorToolbar({ editor }: { editor: Editor | null }) {
           label="</>"
           title="代码块"
         />
+        {editor.isActive('codeBlock') && (
+          <select
+            className="toolbar-select"
+            value={editor.getAttributes('codeBlock').language || 'plaintext'}
+            onChange={(e) => {
+              editor.chain().focus().updateAttributes('codeBlock', { language: e.target.value }).run()
+            }}
+            title="编程语言"
+          >
+            <option value="plaintext">Plain Text</option>
+            <option value="javascript">JavaScript</option>
+            <option value="typescript">TypeScript</option>
+            <option value="python">Python</option>
+            <option value="html">HTML</option>
+            <option value="css">CSS</option>
+            <option value="json">JSON</option>
+            <option value="xml">XML</option>
+            <option value="bash">Bash</option>
+            <option value="sql">SQL</option>
+            <option value="go">Go</option>
+            <option value="rust">Rust</option>
+            <option value="java">Java</option>
+            <option value="c">C</option>
+            <option value="cpp">C++</option>
+            <option value="php">PHP</option>
+            <option value="ruby">Ruby</option>
+            <option value="yaml">YAML</option>
+            <option value="markdown">Markdown</option>
+            <option value="dockerfile">Dockerfile</option>
+            <option value="graphql">GraphQL</option>
+          </select>
+        )}
         <ToolbarBtn
           onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3 }).run()}
           label="⊞"
@@ -220,7 +257,9 @@ const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value,
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3, 4, 5, 6] },
+        codeBlock: false,
       }),
+      CodeBlockLowlight.configure({ lowlight }),
       Placeholder.configure({ placeholder }),
       ImageExtension,
       LinkExtension.configure({ openOnClick: false }),
@@ -421,7 +460,7 @@ const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value,
     return (
       <div className="tiptap-wrapper h-full overflow-auto">
         <div className="max-w-3xl mx-auto px-10 py-10 prose prose-sm dark:prose-invert">
-          <ReactMarkdown>{value}</ReactMarkdown>
+          <ReactMarkdown rehypePlugins={[rehypeHighlight]}>{value}</ReactMarkdown>
         </div>
       </div>
     )

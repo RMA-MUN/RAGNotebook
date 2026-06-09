@@ -286,10 +286,63 @@ body {
   margin: 1.5em 0;
 }
 
-/* Code block language label */
+/* Editor code block */
+.tiptap-wrapper .ProseMirror pre {
+  background: #2d2d3a;
+  border-radius: 8px;
+  padding: 1em 1.2em;
+  margin: 1em 0;
+  overflow-x: auto;
+  position: relative;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #e1e4e8;
+}
+.tiptap-wrapper .ProseMirror pre code {
+  color: inherit;
+}
 .tiptap-wrapper .ProseMirror pre .hljs {
   background: transparent;
 }
+.tiptap-wrapper .ProseMirror pre::before {
+  content: attr(data-language);
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #7a7a8a;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-family: inherit;
+}
+
+/* Syntax highlighting — editor code blocks */
+.tiptap-wrapper .ProseMirror pre .hljs-keyword,
+.tiptap-wrapper .ProseMirror pre .hljs-selector-tag,
+.tiptap-wrapper .ProseMirror pre .hljs-type    { color: #ff7b72; }
+.tiptap-wrapper .ProseMirror pre .hljs-literal { color: #79c0ff; }
+.tiptap-wrapper .ProseMirror pre .hljs-string,
+.tiptap-wrapper .ProseMirror pre .hljs-addition,
+.tiptap-wrapper .ProseMirror pre .hljs-regexp  { color: #a5d6ff; }
+.tiptap-wrapper .ProseMirror pre .hljs-number  { color: #79c0ff; }
+.tiptap-wrapper .ProseMirror pre .hljs-comment { color: #8b949e; font-style: italic; }
+.tiptap-wrapper .ProseMirror pre .hljs-built_in,
+.tiptap-wrapper .ProseMirror pre .hljs-title,
+.tiptap-wrapper .ProseMirror pre .hljs-title.class_ { color: #d2a8ff; }
+.tiptap-wrapper .ProseMirror pre .hljs-attr   { color: #79c0ff; }
+.tiptap-wrapper .ProseMirror pre .hljs-attribute { color: #ff7b72; }
+.tiptap-wrapper .ProseMirror pre .hljs-variable { color: #ffa657; }
+.tiptap-wrapper .ProseMirror pre .hljs-selector-class { color: #d2a8ff; }
+.tiptap-wrapper .ProseMirror pre .hljs-selector-id { color: #79c0ff; }
+.tiptap-wrapper .ProseMirror pre .hljs-symbol { color: #79c0ff; }
+.tiptap-wrapper .ProseMirror pre .hljs-section { color: #79c0ff; font-weight: bold; }
+.tiptap-wrapper .ProseMirror pre .hljs-link { color: #79c0ff; text-decoration: underline; }
+.tiptap-wrapper .ProseMirror pre .hljs-meta { color: #8b949e; }
+.tiptap-wrapper .ProseMirror pre .hljs-punctuation { color: #e1e4e8; }
+.tiptap-wrapper .ProseMirror pre .hljs-deletion { color: #ff7b72; }
+.tiptap-wrapper .ProseMirror pre .hljs-addition { color: #a5d6ff; }
 
 /* ==== Tiptap Toolbar ==== */
 
