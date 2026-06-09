@@ -10,8 +10,7 @@ import {
   User,
   Info,
   LogOut,
-  ChevronLeft,
-  ChevronRight,
+  Columns2,
 } from 'lucide-react'
 import { useUserStore } from '../../stores/useUserStore'
 import { authApi } from '../../api/auth'
@@ -63,7 +62,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           className="p-1.5 rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)] transition-colors"
           title={collapsed ? t('nav.expand') : t('nav.collapse')}
         >
-          {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          <Columns2 size={18} className={`transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`} />
         </button>
       </div>
 

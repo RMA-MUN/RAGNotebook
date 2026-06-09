@@ -42,6 +42,18 @@ const enUS = {
     draftSaved: 'Draft saved',
     outline: 'Outline',
     empty: 'No notes yet. Start writing one!',
+    batch: {
+      selectHint: 'Long press a note to enter multi-select mode',
+      selected: '{{count}} selected',
+      cancel: 'Cancel',
+      deleteConfirm: 'Delete {{count}} selected notes?',
+      deleteSuccess: 'Batch delete successful',
+      downloadSuccess: 'Download successful',
+      categoryTitle: 'Select Category',
+      categorySuccess: 'Category updated successfully',
+      categoryCustom: 'Custom Category',
+      categoryCustomPlaceholder: 'Enter category name',
+    },
   },
   chat: {
     title: 'AI Assistant',

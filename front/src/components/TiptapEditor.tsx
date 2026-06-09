@@ -23,6 +23,21 @@ const turndown = new TurndownService({
   bulletListMarker: '-',
   emDelimiter: '*',
   strongDelimiter: '**',
+  escape: (s: string) => {
+    return s
+      .replace(/[\\]/g, '\\\\')
+      .replace(/[*]/g, '\\*')
+      .replace(/^-/g, '\\-')
+      .replace(/^\+ /g, '\\+ ')
+      .replace(/^(=+)/g, '\\$1')
+      .replace(/^(#{1,6}) /g, '\\$1 ')
+      .replace(/[`]/g, '\\`')
+      .replace(/^~~~/g, '\\~~~')
+      .replace(/[[]/g, '\\[')
+      .replace(/[\]]/g, '\\]')
+      .replace(/^>/g, '\\>')
+      .replace(/[_]/g, '\\_')
+  },
 })
 
 // Custom rule: Tiptap task list items → GFM checklist syntax
@@ -378,11 +393,12 @@ const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value,
   useImperativeHandle(ref, () => ({
     scrollToHeading: (text: string, level: number) => {
       if (!editor) return
+      const normalize = (s: string) => s.replace(/\\([.!\[\]()*_`~\-])/g, '$1')
       const { doc } = editor.state
-      const target = text.trim().toLowerCase()
+      const target = normalize(text.trim().toLowerCase())
       doc.descendants((node, pos) => {
         if (node.type.name === 'heading' && node.attrs.level === level) {
-          const nodeText = node.textContent.trim().toLowerCase()
+          const nodeText = normalize(node.textContent.trim().toLowerCase())
           if (nodeText === target || nodeText.startsWith(target) || target.startsWith(nodeText)) {
             const headingEl = editor.view.nodeDOM(pos)
             if (headingEl instanceof HTMLElement) {

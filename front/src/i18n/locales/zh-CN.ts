@@ -42,6 +42,18 @@ const zhCN = {
     draftSaved: '草稿已保存',
     outline: '目录',
     empty: '还没有笔记，开始写一篇吧',
+    batch: {
+      selectHint: '长按笔记进入多选模式',
+      selected: '已选 {{count}} 项',
+      cancel: '取消',
+      deleteConfirm: '确定要删除选中的 {{count}} 篇笔记吗？',
+      deleteSuccess: '批量删除成功',
+      downloadSuccess: '下载成功',
+      categoryTitle: '选择分类',
+      categorySuccess: '分类更新成功',
+      categoryCustom: '自定义分类',
+      categoryCustomPlaceholder: '输入新分类名称',
+    },
   },
   chat: {
     title: 'AI 助手',
