@@ -2,7 +2,7 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Generic, TypeVar
 
-from app.db.redis_config import get_redis_cache_json, get_redis_cache_str, redis_client, set_redis_cache
+from app.db.redis_config import connect_redis, get_redis_cache_json, get_redis_cache_str, set_redis_cache
 
 T = TypeVar('T')
 
@@ -120,6 +120,7 @@ class RedisCache(Generic[T]):
         :return: 是否删除成功
         """
         try:
+            redis_client = await connect_redis()
             await redis_client.delete(key)
             return True
         except Exception as e:
@@ -135,6 +136,7 @@ class RedisCache(Generic[T]):
         :return: 删除的缓存数量
         """
         try:
+            redis_client = await connect_redis()
             keys = await redis_client.keys(pattern)
             if keys:
                 return await redis_client.delete(*keys)
