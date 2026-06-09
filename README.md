@@ -157,7 +157,7 @@ LANGCHAIN_API_KEY=your_langsmith_api_key
 LANGCHAIN_PROJECT=my-fastapi-langchain-project
 
 # ==================== 重排序模型配置 ====================
-RERANKER_MODEL_PATH=D:\Hugging_Face\models\Qwen3-Reranker-0.6B
+RERANKER_MODEL_PATH=D:\Hugging_Face\models\bge-reranker-v2-m3
 
 # ==================== JWT 身份验证配置 ====================
 SECRET_KEY=MY_JWT_SECRET_KEY
@@ -241,7 +241,7 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 | Redis | 缓存 |
 | DashScope API | 大语言模型服务（Qwen3-Max） |
 | Ollama | 本地模型部署（qwen3.5:0.8b 联机补全） |
-| Hugging Face | 重排序模型（Qwen3-Reranker-0.6B） |
+| Hugging Face / ModelScope | 重排序模型（BAAI/bge-reranker-v2-m3） |
 | Sentence-Transformers | 句子嵌入模型 |
 
 ### 前端技术
@@ -374,7 +374,7 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 
 ### 重排序模型
 
-下载 Qwen3-Reranker-0.6B 模型并配置 `RERANKER_MODEL_PATH` 路径，参考 [模型配置指南](./docs/modelscope_model.md)。
+下载 BAAI/bge-reranker-v2-m3 模型并配置 `RERANKER_MODEL_PATH` 路径，参考 [模型配置指南](./docs/modelscope_model.md)。
 
 ## 故障排除
 

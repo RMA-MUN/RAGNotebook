@@ -27,8 +27,8 @@ def check_and_download_reranker_model() -> None:
     from modelscope import snapshot_download
     from tqdm import tqdm
 
-    LOCAL_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH", r"D:\Hugging_Face\models\Qwen3-Reranker-0.6B")
-    MODELSCOPE_MODEL_NAME = "Qwen/Qwen3-Reranker-0.6B"
+    LOCAL_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH", r"D:\Hugging_Face\models\bge-reranker-v2-m3")
+    MODELSCOPE_MODEL_NAME = "BAAI/bge-reranker-v2-m3"
 
     try:
         if os.path.exists(LOCAL_MODEL_PATH) and os.path.isdir(LOCAL_MODEL_PATH):
@@ -61,8 +61,8 @@ class ReorderService:
     def __init__(self):
         import torch
 
-        self.LOCAL_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH", r"D:\Hugging_Face\models\Qwen3-Reranker-0.6B")
-        self.MODELSCOPE_MODEL_NAME = "Qwen/Qwen3-Reranker-0.6B"
+        self.LOCAL_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH", r"D:\Hugging_Face\models\bge-reranker-v2-m3")
+        self.MODELSCOPE_MODEL_NAME = "BAAI/bge-reranker-v2-m3"
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self._model = None
 
