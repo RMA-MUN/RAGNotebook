@@ -39,6 +39,16 @@ export interface NoteListResponse {
   total_count: number
 }
 
+export interface NoteStats {
+  total: number
+  categories: { category: string; count: number }[]
+  uncategorized: number
+}
+
+export interface DeleteCategoryResponse {
+  deleted_count: number
+}
+
 export interface ChatSession {
   id: string
   user_id?: string
@@ -96,6 +106,15 @@ export interface RelatedFragment {
   content: string
   similarity: number
   source: 'knowledge_base' | 'note'
+}
+
+export interface BatchIdsRequest {
+  ids: string[]
+}
+
+export interface BatchCategoryRequest {
+  ids: string[]
+  category: string
 }
 
 export interface ReviewItem {

@@ -1,6 +1,6 @@
 import client from './client'
 import { endpoints } from './endpoints'
-import type { ApiResponse, Note, NoteListResponse, RelatedFragment } from '../types/api'
+import type { ApiResponse, DeleteCategoryResponse, Note, NoteListResponse, NoteStats, RelatedFragment } from '../types/api'
 
 export const notesApi = {
   list: async (params: { page?: number; page_size?: number; category?: string; tag?: string }) => {
@@ -28,6 +28,11 @@ export const notesApi = {
     return res.data
   },
 
+  stats: async () => {
+    const res = await client.get<ApiResponse<NoteStats>>(endpoints.noteStats)
+    return res.data
+  },
+
   search: async (query: string) => {
     const res = await client.get<ApiResponse<NoteListResponse>>(endpoints.noteSearch, { params: { q: query } })
     return res.data
@@ -45,6 +50,26 @@ export const notesApi = {
 
   autocomplete: async (context: string) => {
     const res = await client.post<ApiResponse<{ completion: string }>>(endpoints.noteAutocomplete, { context })
+    return res.data
+  },
+
+  batchDelete: async (ids: string[]) => {
+    const res = await client.post<ApiResponse<null>>(endpoints.noteBatchDelete, { ids })
+    return res.data
+  },
+
+  batchDownload: async (ids: string[]) => {
+    const res = await client.post<Blob>(endpoints.noteBatchDownload, { ids }, { responseType: 'blob' })
+    return res.data
+  },
+
+  batchUpdateCategory: async (ids: string[], category: string) => {
+    const res = await client.put<ApiResponse<null>>(endpoints.noteBatchCategory, { ids, category })
+    return res.data
+  },
+
+  deleteCategory: async (category: string) => {
+    const res = await client.delete<ApiResponse<DeleteCategoryResponse>>(endpoints.noteCategoryDelete(category))
     return res.data
   },
 }

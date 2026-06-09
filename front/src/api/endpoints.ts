@@ -47,7 +47,14 @@ export const endpoints = {
   noteRelated: (id: string) => `/note/${id}/related`,
   noteDownload: (id: string) => `/note/${id}/download`,
   noteAutocomplete: '/note/autocomplete',
+  noteStats: '/note/stats',
   noteAssistStream: '/note/assist/stream',
+
+  // Batch operations
+  noteBatchDelete: '/note/batch/delete',
+  noteBatchDownload: '/note/batch/download',
+  noteBatchCategory: '/note/batch/category',
+  noteCategoryDelete: (category: string) => `/note/category/${encodeURIComponent(category)}`,
 
   // Review
   reviewToday: '/review/today',
