@@ -89,6 +89,12 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """应用关闭时关闭Redis连接"""
+    """应用关闭时清理资源"""
+    # 关闭 Redis 连接
     await close_redis()
     logger.info("Redis连接已关闭")
+
+    # 关闭 SQLAlchemy 引擎（释放 aiomysql 连接池，避免 GC 时事件循环已关闭）
+    from app.db.db_config import async_engine
+    await async_engine.dispose()
+    logger.info("数据库引擎已关闭")
