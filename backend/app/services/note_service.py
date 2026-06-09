@@ -2,8 +2,11 @@
 笔记服务层 —— 包含 CRUD、向量双写、异步自动标签等核心业务逻辑。
 """
 import asyncio
+import io
 import json
+import re
 import uuid
+import zipfile
 from datetime import datetime, timedelta
 
 from langchain_chroma import Chroma
@@ -543,6 +546,75 @@ class NoteService:
         lines.append(note.content)
 
         return "\n".join(lines)
+
+
+    async def batch_delete_notes(self, db: AsyncSession, user_id: str, note_ids: list[str]) -> int:
+        """
+        批量删除笔记：
+        1. MySQL 批量删除（级联 review_records）
+        2. ChromaDB 逐个清理向量
+        返回实际删除数量。
+        """
+        if not note_ids:
+            return 0
+
+        stmt = select(Note).where(Note.id.in_(note_ids), Note.user_id == user_id)
+        result = await db.execute(stmt)
+        existing = result.scalars().all()
+        existing_ids = [n.id for n in existing]
+
+        if not existing_ids:
+            return 0
+
+        await db.execute(delete(Note).where(Note.id.in_(existing_ids), Note.user_id == user_id))
+        await db.commit()
+
+        for nid in existing_ids:
+            try:
+                await asyncio.to_thread(
+                    lambda id=nid: self._notes_store.delete(where={"note_id": id})
+                )
+            except Exception as e:
+                logger.error(f"批量删除向量失败 note_id={nid}: {e}")
+
+        return len(existing_ids)
+
+    async def batch_update_category(
+        self, db: AsyncSession, user_id: str, note_ids: list[str], category: str
+    ) -> int:
+        """
+        批量更新笔记分类。
+        返回实际更新的数量。
+        """
+        if not note_ids:
+            return 0
+
+        stmt = (
+            update(Note)
+            .where(Note.id.in_(note_ids), Note.user_id == user_id)
+            .values(category=category)
+        )
+        result = await db.execute(stmt)
+        await db.commit()
+        return result.rowcount
+
+    async def batch_export_zip(self, db: AsyncSession, user_id: str, note_ids: list[str]) -> bytes:
+        """
+        批量导出笔记为 ZIP 压缩包（内含 .md 文件）。
+        """
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for nid in note_ids:
+                note = await self.get_note(db, nid, user_id)
+                if not note:
+                    continue
+                md = await self.export_note_markdown(db, nid, user_id)
+                if not md:
+                    continue
+                safe_title = re.sub(r'[\\/:*?"<>|]', '_', note.title or nid)[:80]
+                zf.writestr(f"{safe_title}.md", md.encode("utf-8"))
+        buf.seek(0)
+        return buf.getvalue()
 
 
 _note_service_instance: "NoteService | None" = None
