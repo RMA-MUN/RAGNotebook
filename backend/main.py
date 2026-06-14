@@ -13,6 +13,7 @@ from app.router.chat import chat_router
 from app.router.health import health_router
 from app.router.knowledge_router import knowledge_router
 from app.router.note_router import note_router
+from app.router.note_template_router import note_template_router
 from app.router.review_router import review_router
 from app.router.user import user_router
 from app.services.database_session_manager import init_database_session_manager
@@ -42,6 +43,7 @@ app.include_router(knowledge_router)
 app.include_router(health_router)
 app.include_router(user_router)
 app.include_router(note_router)
+app.include_router(note_template_router)
 app.include_router(review_router)
 
 
