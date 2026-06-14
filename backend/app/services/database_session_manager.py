@@ -162,10 +162,13 @@ class DatabaseSessionManager:
             return [session.id for session in sessions]
 
     async def get_user_sessions(self, user_id: str) -> list[dict]:
-        """获取用户所有会话详细信息"""
+        """获取用户所有会话详细信息，按更新时间降序排列"""
         async with AsyncSessionLocal() as db:
             sessions = await db.run_sync(
-                lambda session: session.query(ChatSession).filter(ChatSession.user_id == user_id).all()
+                lambda session: session.query(ChatSession)
+                .filter(ChatSession.user_id == user_id)
+                .order_by(ChatSession.updated_at.desc())
+                .all()
             )
             return [
                 {
