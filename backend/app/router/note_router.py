@@ -15,6 +15,7 @@ from app.db.db_config import get_db
 from app.schemas.models import (
     BatchCategoryRequest,
     BatchIdsRequest,
+    BatchPinRequest,
     NoteCreate,
     NoteListResponse,
     NoteUpdate,
@@ -58,11 +59,12 @@ async def list_notes(
     page_size: int = Query(20, ge=1, le=100),
     category: str = Query(None),
     tag: str = Query(None),
+    sort_by: str = Query("updated_at", pattern="^(updated_at|created_at|title)$"),
 ):
     """
-    笔记列表：分页查询，支持按分类筛选。tag 筛选在内存层完成。
+    笔记列表：分页查询，支持按分类筛选和排序。tag 筛选在内存层完成。
     """
-    notes, total = await init_manager.note_service.list_notes(db, user_id, page, page_size, category, tag)
+    notes, total = await init_manager.note_service.list_notes(db, user_id, page, page_size, category, tag, sort_by)
     return success_response(data=NoteListResponse(notes=notes, total_count=total))
 
 
@@ -131,6 +133,20 @@ async def batch_update_category(
     """
     updated = await init_manager.note_service.batch_update_category(db, user_id, payload.ids, payload.category)
     return success_response(message=f"成功更新 {updated} 篇笔记的分类")
+
+
+@note_router.put("/batch/pin")
+async def batch_pin_notes(
+    payload: BatchPinRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(rate_limit(limit=10, window=60)),
+):
+    """
+    批量置顶/取消置顶笔记。
+    """
+    updated = await init_manager.note_service.batch_update_pin(db, user_id, payload.ids, payload.is_pinned)
+    return success_response(message=f"成功更新 {updated} 篇笔记的置顶状态")
 
 
 @note_router.get("/stats")
@@ -222,6 +238,23 @@ async def update_note(
     if not note:
         return success_response(message="笔记不存在")
     return success_response(message="笔记更新成功", data=note)
+
+
+@note_router.put("/{note_id}/pin")
+async def toggle_pin(
+    note_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    切换笔记置顶状态。
+    """
+    note = await init_manager.note_service.get_note(db, note_id, user_id)
+    if not note:
+        return success_response(message="笔记不存在")
+    new_pinned = not note.is_pinned
+    updated = await init_manager.note_service.update_note(db, note_id, user_id, NoteUpdate(is_pinned=new_pinned))
+    return success_response(message="置顶已更新", data=updated)
 
 
 @note_router.delete("/{note_id}")

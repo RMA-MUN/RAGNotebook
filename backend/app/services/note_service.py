@@ -76,6 +76,7 @@ class NoteService:
             content=note.content,
             tags=note.tags if note.tags else None,
             category=note.category,
+            is_pinned=note.is_pinned if note.is_pinned else False,
             created_at=str(note.created_at) if note.created_at else None,
             updated_at=str(note.updated_at) if note.updated_at else None,
         )
@@ -145,6 +146,8 @@ class NoteService:
             note.category = payload.category
         if payload.tags is not None:
             note.tags = payload.tags
+        if payload.is_pinned is not None:
+            note.is_pinned = payload.is_pinned
 
         await db.commit()
         await db.refresh(note)
@@ -215,10 +218,10 @@ class NoteService:
         page_size: int = 20,
         category: str | None = None,
         tag: str | None = None,
+        sort_by: str = "updated_at",
     ) -> tuple[list[NoteResponse], int]:
         """
-        分页查询笔记列表，支持按分类筛选。
-        tag 筛选为内存过滤（JSON 字段不支持直接 SQL 过滤）。
+        分页查询笔记列表，支持按分类筛选和排序。tag 筛选为内存过滤。
         """
         conditions = [Note.user_id == user_id]
         if category:
@@ -229,11 +232,22 @@ class NoteService:
         result = await db.execute(count_stmt)
         total = result.scalar() or 0
 
-        # 分页查询，按更新时间倒序
+        sort_column = {
+            "updated_at": Note.updated_at,
+            "created_at": Note.created_at,
+            "title": Note.title,
+        }.get(sort_by, Note.updated_at)
+
+        if sort_by == "title":
+            order = sort_column.asc()
+        else:
+            order = sort_column.desc()
+
+        # 分页查询，置顶优先 + 指定排序
         stmt = (
             select(Note)
             .where(*conditions)
-            .order_by(Note.updated_at.desc())
+            .order_by(Note.is_pinned.desc(), order)
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
@@ -640,6 +654,25 @@ class NoteService:
                 zf.writestr(f"{safe_title}.md", md.encode("utf-8"))
         buf.seek(0)
         return buf.getvalue()
+
+    async def batch_update_pin(
+        self, db: AsyncSession, user_id: str, note_ids: list[str], is_pinned: bool
+    ) -> int:
+        """
+        批量置顶/取消置顶笔记。
+        返回实际更新的数量。
+        """
+        if not note_ids:
+            return 0
+
+        stmt = (
+            update(Note)
+            .where(Note.id.in_(note_ids), Note.user_id == user_id)
+            .values(is_pinned=is_pinned)
+        )
+        result = await db.execute(stmt)
+        await db.commit()
+        return result.rowcount
 
 
 _note_service_instance: "NoteService | None" = None
