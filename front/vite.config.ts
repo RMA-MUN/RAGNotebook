@@ -23,6 +23,7 @@ export default defineConfig({
       '/chat/reorder': { target: BACKEND_TARGET, changeOrigin: true },
       '/knowledge/': { target: BACKEND_TARGET, changeOrigin: true },
       '/note/': { target: BACKEND_TARGET, changeOrigin: true },
+      '/note-template/': { target: BACKEND_TARGET, changeOrigin: true },
       '/review/': { target: BACKEND_TARGET, changeOrigin: true },
       '/health': { target: BACKEND_TARGET, changeOrigin: true },
       '/user': { target: USER_TARGET, changeOrigin: true },

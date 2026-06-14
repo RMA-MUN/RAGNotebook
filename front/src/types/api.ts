@@ -40,6 +40,20 @@ export interface NoteListResponse {
   total_count: number
 }
 
+export interface NoteTemplate {
+  id: string
+  user_id: string
+  name: string
+  icon: string
+  category: string
+  title: string
+  content: string
+  tags: string[]
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface NoteStats {
   total: number
   categories: { category: string; count: number }[]
