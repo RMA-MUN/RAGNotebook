@@ -46,6 +46,7 @@ export const endpoints = {
   noteAutoTag: (id: string) => `/note/${id}/auto-tag`,
   noteRelated: (id: string) => `/note/${id}/related`,
   noteDownload: (id: string) => `/note/${id}/download`,
+  notePin: (id: string) => `/note/${id}/pin`,
   noteAutocomplete: '/note/autocomplete',
   noteStats: '/note/stats',
   noteAssistStream: '/note/assist/stream',
@@ -54,10 +55,18 @@ export const endpoints = {
   noteBatchDelete: '/note/batch/delete',
   noteBatchDownload: '/note/batch/download',
   noteBatchCategory: '/note/batch/category',
+  noteBatchPin: '/note/batch/pin',
   noteCategoryDelete: (category: string) => `/note/category/${encodeURIComponent(category)}`,
 
   // Review
   reviewToday: '/review/today',
   reviewDone: (id: string) => `/review/done/${id}`,
   reviewQuestion: (id: string) => `/review/question/${id}`,
+
+  // Note Templates
+  noteTemplateList: '/note-template/list',
+  noteTemplateCreate: '/note-template/create',
+  noteTemplateUpdate: (id: string) => `/note-template/${id}`,
+  noteTemplateDelete: (id: string) => `/note-template/${id}`,
+  noteTemplateReorder: '/note-template/reorder',
 } as const

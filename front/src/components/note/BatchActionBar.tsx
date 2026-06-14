@@ -1,4 +1,4 @@
-import { Trash2, Download, FolderTree, X } from 'lucide-react'
+import { Trash2, Download, FolderTree, X, Pin } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 interface BatchActionBarProps {
@@ -6,6 +6,7 @@ interface BatchActionBarProps {
   onDelete: () => void
   onDownload: () => void
   onCategory: () => void
+  onPin: () => void
   onCancel: () => void
 }
 
@@ -14,6 +15,7 @@ export default function BatchActionBar({
   onDelete,
   onDownload,
   onCategory,
+  onPin,
   onCancel,
 }: BatchActionBarProps) {
   const { t } = useTranslation()
@@ -35,6 +37,13 @@ export default function BatchActionBar({
       </div>
 
       <div className="flex items-center gap-2">
+        <button
+          onClick={onPin}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text)] transition-colors"
+        >
+          <Pin size={14} />
+          {'置顶'}
+        </button>
         <button
           onClick={onCategory}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text)] transition-colors"

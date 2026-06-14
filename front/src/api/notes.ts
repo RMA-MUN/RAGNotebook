@@ -3,7 +3,7 @@ import { endpoints } from './endpoints'
 import type { ApiResponse, DeleteCategoryResponse, Note, NoteListResponse, NoteStats, RelatedFragment } from '../types/api'
 
 export const notesApi = {
-  list: async (params: { page?: number; page_size?: number; category?: string; tag?: string }) => {
+  list: async (params: { page?: number; page_size?: number; category?: string; tag?: string; sort_by?: string }) => {
     const res = await client.get<ApiResponse<NoteListResponse>>(endpoints.noteList, { params })
     return res.data
   },
@@ -68,8 +68,18 @@ export const notesApi = {
     return res.data
   },
 
+  batchPin: async (ids: string[], is_pinned: boolean) => {
+    const res = await client.put<ApiResponse<null>>(endpoints.noteBatchPin, { ids, is_pinned })
+    return res.data
+  },
+
   deleteCategory: async (category: string) => {
     const res = await client.delete<ApiResponse<DeleteCategoryResponse>>(endpoints.noteCategoryDelete(category))
+    return res.data
+  },
+
+  pin: async (id: string) => {
+    const res = await client.put<ApiResponse<Note>>(endpoints.notePin(id))
     return res.data
   },
 }

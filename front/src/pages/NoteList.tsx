@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Plus, Search, FileText, Tag, CheckSquare, Square, Settings2 } from 'lucide-react'
+import { Plus, Search, FileText, Tag, CheckSquare, Square, Settings2, Pin } from 'lucide-react'
 import { notesApi } from '../api/notes'
 import type { Note, NoteListResponse } from '../types/api'
 import EmptyState from '../components/common/EmptyState'
@@ -171,6 +171,26 @@ export default function NoteList() {
     return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
   }
 
+  const handlePin = async (e: React.MouseEvent, noteId: string) => {
+    e.stopPropagation()
+    try {
+      await notesApi.pin(noteId)
+      setNotes((prev) => {
+        const updated = prev.map((n) =>
+          n.id === noteId ? { ...n, is_pinned: !n.is_pinned } : n
+        )
+        updated.sort((a, b) => {
+          if (a.is_pinned && !b.is_pinned) return -1
+          if (!a.is_pinned && b.is_pinned) return 1
+          return 0
+        })
+        return updated
+      })
+    } catch {
+      // ignore
+    }
+  }
+
   const clearLongPress = () => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current)
@@ -237,6 +257,29 @@ export default function NoteList() {
   const exitSelectMode = () => {
     setSelectMode(false)
     setSelectedIds(new Set())
+  }
+
+  const handleBatchPin = async () => {
+    const selectedNotes = notes.filter((n) => selectedIds.has(n.id))
+    const allPinned = selectedNotes.every((n) => n.is_pinned)
+    const newPinned = !allPinned
+    try {
+      await notesApi.batchPin(Array.from(selectedIds), newPinned)
+      setNotes((prev) => {
+        const updated = prev.map((n) =>
+          selectedIds.has(n.id) ? { ...n, is_pinned: newPinned } : n
+        )
+        updated.sort((a, b) => {
+          if (a.is_pinned && !b.is_pinned) return -1
+          if (!a.is_pinned && b.is_pinned) return 1
+          return 0
+        })
+        return updated
+      })
+      exitSelectMode()
+    } catch {
+      // ignore
+    }
   }
 
   const handleBatchDelete = async () => {
@@ -357,6 +400,7 @@ export default function NoteList() {
           onDelete={() => setDeleteConfirmOpen(true)}
           onDownload={handleBatchDownload}
           onCategory={() => setCategoryModalOpen(true)}
+          onPin={handleBatchPin}
           onCancel={exitSelectMode}
         />
       )}
@@ -397,7 +441,21 @@ export default function NoteList() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between mb-1">
                       <h3 className="text-sm font-medium text-[var(--color-text)] truncate">{note.title || '无标题'}</h3>
-                      <span className="text-xs text-[var(--color-text-tertiary)] shrink-0 ml-3">{formatDate(note.created_at)}</span>
+                      <div className="flex items-center gap-1 shrink-0 ml-3">
+                        <button
+                          onClick={(e) => handlePin(e, note.id)}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onPointerUp={(e) => e.stopPropagation()}
+                          className="p-0.5 rounded hover:bg-[var(--color-bg-secondary)] transition-colors"
+                          title={note.is_pinned ? '取消置顶' : '置顶'}
+                        >
+                          <Pin
+                            size={14}
+                            className={note.is_pinned ? 'text-[var(--color-accent)] fill-[var(--color-accent)]' : 'text-[var(--color-text-tertiary)]'}
+                          />
+                        </button>
+                        <span className="text-xs text-[var(--color-text-tertiary)]">{formatDate(note.created_at)}</span>
+                      </div>
                     </div>
                     <p className="text-xs text-[var(--color-text-secondary)] line-clamp-2 mb-2">{note.content?.slice(0, 200)}</p>
                     <div className="flex items-center gap-2 flex-wrap">
