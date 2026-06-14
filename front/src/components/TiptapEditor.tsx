@@ -26,21 +26,6 @@ const turndown = new TurndownService({
   bulletListMarker: '-',
   emDelimiter: '*',
   strongDelimiter: '**',
-  escape: (s: string) => {
-    return s
-      .replace(/[\\]/g, '\\\\')
-      .replace(/[*]/g, '\\*')
-      .replace(/^-/g, '\\-')
-      .replace(/^\+ /g, '\\+ ')
-      .replace(/^(=+)/g, '\\$1')
-      .replace(/^(#{1,6}) /g, '\\$1 ')
-      .replace(/[`]/g, '\\`')
-      .replace(/^~~~/g, '\\~~~')
-      .replace(/[[]/g, '\\[')
-      .replace(/[\]]/g, '\\]')
-      .replace(/^>/g, '\\>')
-      .replace(/[_]/g, '\\_')
-  },
 })
 
 // Custom rule: Tiptap task list items → GFM checklist syntax
@@ -98,6 +83,9 @@ function EditorToolbar({ editor }: { editor: Editor | null }) {
   const currentLevel = headingLevels.find(l =>
     editor.isActive('heading', { level: l })
   )
+  const inTable = editor.isActive('table')
+  const [showTableGrid, setShowTableGrid] = useState(false)
+  const [tableGridHover, setTableGridHover] = useState({ rows: 0, cols: 0 })
 
   return (
     <div className="tiptap-toolbar">
@@ -212,11 +200,81 @@ function EditorToolbar({ editor }: { editor: Editor | null }) {
             <option value="graphql">GraphQL</option>
           </select>
         )}
-        <ToolbarBtn
-          onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3 }).run()}
-          label="⊞"
-          title="表格"
-        />
+
+        <div style={{ position: 'relative' }}>
+          <ToolbarBtn
+            onClick={() => { if (inTable) return; setShowTableGrid((v) => !v) }}
+            active={inTable}
+            label="⊞"
+            title={inTable ? '表格操作' : '插入表格'}
+          />
+          {showTableGrid && !inTable && (
+            <div
+              style={{ position: 'absolute', top: '100%', left: 0, zIndex: 50, background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 8, padding: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+              onMouseLeave={() => setShowTableGrid(false)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                  {tableGridHover.rows > 0 ? `${tableGridHover.rows} × ${tableGridHover.cols}` : '选择表格大小'}
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 20px)', gap: 2 }}>
+                {Array.from({ length: 8 }, (_, r) =>
+                  Array.from({ length: 8 }, (_, c) => (
+                    <div
+                      key={`${r}-${c}`}
+                      onMouseEnter={() => setTableGridHover({ rows: r + 1, cols: c + 1 })}
+                      onClick={() => {
+                        editor.chain().focus().insertTable({ rows: r + 1, cols: c + 1, withHeaderRow: true }).run()
+                        setShowTableGrid(false)
+                      }}
+                      style={{
+                        width: 20, height: 20,
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 2,
+                        background: r < tableGridHover.rows && c < tableGridHover.cols
+                          ? 'var(--color-accent)' : 'var(--color-bg-secondary)',
+                        cursor: 'pointer',
+                        transition: 'background 0.1s',
+                      }}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {inTable && (
+          <>
+            <span className="toolbar-divider" />
+            <ToolbarBtn
+              onClick={() => editor.chain().focus().addColumnAfter().run()}
+              label="+列"
+              title="在右侧添加列"
+            />
+            <ToolbarBtn
+              onClick={() => editor.chain().focus().addRowAfter().run()}
+              label="+行"
+              title="在下方添加行"
+            />
+            <ToolbarBtn
+              onClick={() => editor.chain().focus().deleteColumn().run()}
+              label="-列"
+              title="删除当前列"
+            />
+            <ToolbarBtn
+              onClick={() => editor.chain().focus().deleteRow().run()}
+              label="-行"
+              title="删除当前行"
+            />
+            <ToolbarBtn
+              onClick={() => editor.chain().focus().deleteTable().run()}
+              label="删表"
+              title="删除整个表格"
+            />
+          </>
+        )}
         <ToolbarBtn
           onClick={() => editor.chain().focus().setHorizontalRule().run()}
           label="—"
