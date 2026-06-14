@@ -60,6 +60,13 @@ export default function NoteEditor() {
   const [showDelete, setShowDelete] = useState(false)
   const [showRelated, setShowRelated] = useState(false)
   const [showOutline, setShowOutline] = useState(false)
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false)
+  const [showTemplateManager, setShowTemplateManager] = useState(false)
+  const [templateName, setTemplateName] = useState('')
+  const [editingTemplate, setEditingTemplate] = useState<NoteTemplate | null>(null)
+  const [showNewTemplateForm, setShowNewTemplateForm] = useState(false)
+  const [showSaveAsTemplate, setShowSaveAsTemplate] = useState(false)
+  const templateApplied = useRef(false)
   const editorRef = useRef<TiptapEditorHandle>(null)
   const isNew = !id || id === 'new'
 
