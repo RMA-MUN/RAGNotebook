@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Upload, FileText, Trash2, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { knowledgeApi } from '../api/knowledge'
 import { useSSE } from '../hooks/useSSE'
@@ -35,7 +36,9 @@ export default function KnowledgeBase() {
       const res = await knowledgeApi.list()
       const documents = (res.data as { documents: Array<{ id: string; filename: string; chunk_count: number; created_at: string }> } | undefined)?.documents || []
       setDocs(documents)
-    } catch { /* ignore */ } finally {
+    } catch {
+      toast.error('加载文档列表失败')
+    } finally {
       setLoading(false)
     }
   }
@@ -108,7 +111,9 @@ export default function KnowledgeBase() {
     try {
       await knowledgeApi.deleteByFilename(deleteTarget.filename)
       setDocs((prev) => prev.filter((d) => d.id !== deleteTarget.id))
-    } catch { /* ignore */ }
+    } catch {
+      toast.error('删除文档失败')
+    }
     setDeleteTarget(null)
   }
 
@@ -116,7 +121,9 @@ export default function KnowledgeBase() {
     try {
       await knowledgeApi.cleanAll()
       setDocs([])
-    } catch { /* ignore */ }
+    } catch {
+      toast.error('清空知识库失败')
+    }
     setShowClean(false)
   }
 

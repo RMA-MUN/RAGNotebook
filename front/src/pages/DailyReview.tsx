@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { GraduationCap, CheckCircle2, XCircle, ChevronRight, RefreshCw } from 'lucide-react'
 import { reviewApi } from '../api/review'
 import type { ReviewItem, ReviewQuestion } from '../types/api'
@@ -20,7 +21,9 @@ export default function DailyReview() {
   useEffect(() => {
     reviewApi.today().then((data) => {
       setItems(data.reviews || [])
-    }).catch(() => {}).finally(() => setLoading(false))
+    }).catch(() => {
+      toast.error('加载复习内容失败')
+    }).finally(() => setLoading(false))
   }, [])
 
   const current = items[currentIndex]
@@ -39,7 +42,9 @@ export default function DailyReview() {
       if (q) {
         setQuizNotes((prev) => ({ ...prev, [noteId]: q }))
       }
-    } catch { /* ignore */ }
+    } catch {
+      toast.error('获取题目失败')
+    }
     setQuestionLoading(false)
   }
 
@@ -72,7 +77,9 @@ export default function DailyReview() {
       if (q) {
         setQuizNotes((prev) => ({ ...prev, [current.note_id]: q }))
       }
-    } catch { /* ignore */ }
+    } catch {
+      toast.error('重新生成题目失败')
+    }
     setQuestionLoading(false)
   }
 

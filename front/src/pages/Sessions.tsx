@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Plus, MessageSquare, Trash2 } from 'lucide-react'
 import { sessionsApi } from '../api/sessions'
 import { useSessionStore } from '../stores/useSessionStore'
@@ -24,7 +25,7 @@ export default function Sessions() {
       const sessionList = (res.data as { sessions: ChatSession[] } | undefined)?.sessions || []
       setSessions(sessionList as ChatSession[])
     } catch {
-      // ignore
+      toast.error('加载会话列表失败')
     } finally {
       setLoading(false)
     }
@@ -38,7 +39,7 @@ export default function Sessions() {
       await sessionsApi.delete(deleteTarget.id)
       removeSession(deleteTarget.id)
     } catch {
-      // ignore
+      toast.error('删除会话失败')
     }
     setDeleteTarget(null)
   }
