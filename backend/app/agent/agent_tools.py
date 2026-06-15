@@ -6,7 +6,7 @@ from langchain_core.tools import tool
 from app.core.logger_handler import logger
 from app.rag.rag_service import RagService
 from app.rag.reorder_service import reorder_service
-from app.utils.auth_utils import decode_django_jwt
+from app.utils.auth_utils import decode_jwt
 
 import datetime
 
@@ -65,7 +65,7 @@ async def reorder_documents_tools(query: str, documents: List[str]) -> str:
 @tool(description="当用户明确问自己的ID和用户名时，从JWT中获取当前用户ID和用户名，参数为完整的JWT token字符串")
 async def get_user_info_tools(token: str) -> str:
     """获取用户信息工具"""
-    payload = decode_django_jwt(token)
+    payload = decode_jwt(token)
     if payload:
         user_id = payload.get("user_id", "未知")
         user_name = payload.get("user_name", "未知")
