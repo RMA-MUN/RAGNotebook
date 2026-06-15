@@ -57,6 +57,7 @@ export default function NoteEditor() {
   const [tags, setTags] = useState<string[]>(() => draftField<string[]>(id, 'tags', []))
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'unsaved' | 'saved'>('unsaved')
   const [showDelete, setShowDelete] = useState(false)
   const [showRelated, setShowRelated] = useState(false)
   const [showOutline, setShowOutline] = useState(false)
@@ -66,12 +67,33 @@ export default function NoteEditor() {
   const [editingTemplate, setEditingTemplate] = useState<NoteTemplate | null>(null)
   const [showNewTemplateForm, setShowNewTemplateForm] = useState(false)
   const [showSaveAsTemplate, setShowSaveAsTemplate] = useState(false)
+  const [templates, setTemplates] = useState<NoteTemplate[]>([])
+  const [templateItems, setTemplateItems] = useState<NoteTemplate[]>([])
+  const [editForm, setEditForm] = useState({ name: '', title: '', content: '', category: '', tags: '' })
+  const [newTemplateForm, setNewTemplateForm] = useState({ name: '', title: '', content: '', category: '', tags: '' })
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const templateApplied = useRef(false)
   const editorRef = useRef<TiptapEditorHandle>(null)
+  const dragItem = useRef<number | null>(null)
   const isNew = !id || id === 'new'
 
+  const loadTemplateOrder = (): string[] => {
+    try {
+      const raw = localStorage.getItem('template_order')
+      return raw ? JSON.parse(raw) : []
+    } catch {
+      return []
+    }
+  }
+  const saveTemplateOrder = (ids: string[]) => {
+    localStorage.setItem('template_order', JSON.stringify(ids))
+  }
+
   useEffect(() => {
-    if (isNew || !id) return
+    if (isNew) {
+      setShowTemplatePicker(true)
+      return
+    }
     setLoading(true)
     notesApi.get(id).then((res) => {
       const note = res.data as Note
@@ -86,6 +108,7 @@ export default function NoteEditor() {
     if (isNew) {
       const draft: Draft = { title, content, tags, category }
       localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+      setSaveStatus('saved')
     }
   }, [title, content, tags, category, isNew])
 
@@ -270,6 +293,12 @@ export default function NoteEditor() {
 
   const handleSaveRef = useRef(handleSave)
   handleSaveRef.current = handleSave
+
+  useEffect(() => {
+    if (showTemplatePicker) {
+      refreshTemplates()
+    }
+  }, [showTemplatePicker])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
