@@ -111,98 +111,45 @@ class AsyncTextSplitter:
     
     def _optimize_chunks_sync(self, chunks: List[str]) -> List[str]:
         """
-        同步优化分割结果
-        
-        Args:
-            chunks: 初步分割的文本片段列表
-            
-        Returns:
-            List[str]: 优化后的文本片段列表
+        同步优化分割结果 — 一次 embed_documents 批量拿到所有向量，再在内存中算相似度
         """
-        optimized_chunks = []
-        current_chunk = chunks[0]
-        
+        if not chunks:
+            return chunks
+
+        # 一次调用拿到所有 chunk 的向量
+        embeddings = self.embedding_model.embed_documents(chunks)
+
+        optimized_chunks = [chunks[0]]
         for i in range(1, len(chunks)):
-            similarity = self._calculate_similarity_sync(current_chunk, chunks[i])
-            
+            similarity = self._cosine_similarity(embeddings[i - 1], embeddings[i])
+
             if similarity > 0.7:
-                current_chunk += " " + chunks[i]
+                optimized_chunks[-1] += " " + chunks[i]
             else:
-                optimized_chunks.append(current_chunk)
-                current_chunk = chunks[i]
-        
-        optimized_chunks.append(current_chunk)
+                optimized_chunks.append(chunks[i])
+
         return optimized_chunks
-    
-    def _calculate_similarity_sync(self, text1: str, text2: str) -> float:
-        """
-        同步计算两个文本片段的语义相似度
-        
-        Args:
-            text1: 第一个文本片段
-            text2: 第二个文本片段
-            
-        Returns:
-            float: 两个文本片段的相似度，范围0-1
-        """
-        if not self.embedding_model:
-            return 0.0
-        
-        embedding1 = self.embedding_model.embed_query(text1)
-        embedding2 = self.embedding_model.embed_query(text2)
-        
-        return self._cosine_similarity(embedding1, embedding2)
     
     async def _optimize_chunks(self, chunks: List[str]) -> List[str]:
         """
-        使用嵌入模型优化分割结果，确保语义完整性
-        
-        Args:
-            chunks: 初步分割的文本片段列表
-            
-        Returns:
-            List[str]: 优化后的文本片段列表
+        使用嵌入模型优化分割结果 — 一次 embed_documents 批量拿到所有向量，再在内存中算相似度
         """
-        optimized_chunks = []
-        current_chunk = chunks[0]
-        
+        if not chunks or not self.embedding_model:
+            return chunks
+
+        # 一次调用拿到所有 chunk 的向量（同步方法在 executor 中执行）
+        embeddings = await asyncio.to_thread(self.embedding_model.embed_documents, chunks)
+
+        optimized_chunks = [chunks[0]]
         for i in range(1, len(chunks)):
-            # 计算当前片段与下一个片段的语义相似度
-            similarity = await self._calculate_similarity(current_chunk, chunks[i])
-            
-            # 如果相似度高于阈值，合并两个片段
-            if similarity > 0.7:  # 相似度阈值
-                current_chunk += " " + chunks[i]
+            similarity = self._cosine_similarity(embeddings[i - 1], embeddings[i])
+
+            if similarity > 0.7:
+                optimized_chunks[-1] += " " + chunks[i]
             else:
-                optimized_chunks.append(current_chunk)
-                current_chunk = chunks[i]
-        
-        # 添加最后一个片段
-        optimized_chunks.append(current_chunk)
-        
+                optimized_chunks.append(chunks[i])
+
         return optimized_chunks
-    
-    async def _calculate_similarity(self, text1: str, text2: str) -> float:
-        """
-        计算两个文本片段的语义相似度
-        
-        Args:
-            text1: 第一个文本片段
-            text2: 第二个文本片段
-            
-        Returns:
-            float: 两个文本片段的相似度，范围0-1
-        """
-        if not self.embedding_model:
-            return 0.0
-        
-        embedding1 = self.embedding_model.embed_query(text1)
-        embedding2 = self.embedding_model.embed_query(text2)
-        
-        # 计算余弦相似度
-        similarity = self._cosine_similarity(embedding1, embedding2)
-        
-        return similarity
     
     def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
         """

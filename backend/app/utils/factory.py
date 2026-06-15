@@ -27,18 +27,23 @@ class DashScopeEmbeddingsWrapper(Embeddings):
             raise ImportError("需要安装 dashscope 库: pip install dashscope")
     
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        """批量嵌入文档"""
+        """批量嵌入文档 — DashScope API 限制每批最多 10 条"""
+        if not texts:
+            return []
+
         results = []
-        for text in texts:
+        batch_size = 10
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
             resp = self.dashscope.TextEmbedding.call(
                 model=self.model_name,
-                input=text
+                input=batch
             )
             if resp.status_code == 200:
-                results.append(resp.output['embeddings'][0]['embedding'])
+                results.extend(item['embedding'] for item in resp.output['embeddings'])
             else:
-                logger.error(f"阿里云嵌入调用失败: {resp.message}")
-                results.append([])
+                logger.error(f"阿里云嵌入批量调用失败(第{i//batch_size}批): {resp.message}")
+                results.extend([] for _ in batch)
         return results
     
     def embed_query(self, text: str) -> List[float]:
