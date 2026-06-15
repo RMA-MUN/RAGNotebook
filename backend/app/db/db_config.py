@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.core.logger_handler import logger
 from app.models.chat_history import Base
 
 # 加载环境变量
@@ -76,7 +77,7 @@ async def _migrate_columns(conn):
 # 初始化数据库，创建所有表
 async def init_db():
     # 确保所有 Model 已导入，注册到 Base.metadata
-    from app.models import chat_history, note, note_template, review_record  # noqa: F401
+    from app.models import chat_history, note, note_template, review_record, user_model  # noqa: F401
 
     async with async_engine.begin() as conn:
         # 先删除旧表，然后创建新表
@@ -99,6 +100,29 @@ async def get_db():
             await session.close()
 
 
+
+
+async def seed_test_user():
+    from app.models.user_model import User, UserStatusChoice
+    from app.utils.auth_utils import hash_password
+    from sqlalchemy import select
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(User).where(User.username == "admin"))
+        if result.scalar_one_or_none():
+            logger.info("测试用户 admin 已存在，跳过创建")
+            return
+
+        user = User(
+            username="admin",
+            email="admin@example.com",
+            password=hash_password("admin1234"),
+            status=UserStatusChoice.ACTIVE,
+            is_active=True,
+        )
+        session.add(user)
+        await session.commit()
+        logger.info("测试用户 admin / admin1234 已自动创建")
 
 
 async def check_mysql_connection() -> bool:
