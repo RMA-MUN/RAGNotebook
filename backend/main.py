@@ -1,13 +1,15 @@
+import os
 import time
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from starlette.middleware.cors import CORSMiddleware
+from starlette.staticfiles import StaticFiles
 
 from app.core.background_init import init_manager
 from app.core.failed_response_register import register_exception_handlers
 from app.core.logger_handler import logger
-from app.db.db_config import init_db
+from app.db.db_config import init_db, seed_test_user
 from app.db.redis_config import close_redis, connect_redis
 from app.router.chat import chat_router
 from app.router.health import health_router
@@ -15,7 +17,7 @@ from app.router.knowledge_router import knowledge_router
 from app.router.note_router import note_router
 from app.router.note_template_router import note_template_router
 from app.router.review_router import review_router
-from app.router.user import user_router
+from app.router.user import file_router, user_router
 from app.services.database_session_manager import init_database_session_manager
 
 # 加载环境变量
@@ -42,6 +44,7 @@ app.include_router(chat_router)
 app.include_router(knowledge_router)
 app.include_router(health_router)
 app.include_router(user_router)
+app.include_router(file_router)
 app.include_router(note_router)
 app.include_router(note_template_router)
 app.include_router(review_router)
@@ -56,6 +59,11 @@ app.add_middleware(
     allow_methods=["*"], # 允许的请求方法
     allow_headers=["*"], # 允许的请求头
 )
+
+# 挂载媒体文件目录（头像等上传文件）
+media_dir = os.path.join(os.path.dirname(__file__), "media")
+os.makedirs(media_dir, exist_ok=True)
+app.mount("/media", StaticFiles(directory=media_dir), name="media")
 
 # 注册异常处理函数
 register_exception_handlers(app)
@@ -73,9 +81,12 @@ async def say_hello(name: str):
 @app.on_event("startup")
 async def startup_event():
     """应用启动时初始化会话管理器"""
-    # 初始化数据库表结构
+    # 初始化数据库表结构（自动创建/迁移）
     await init_db()
     logger.info("数据库表结构初始化完成")
+
+    # 确保测试用户存在
+    await seed_test_user()
 
     # 使用数据库版本的会话管理器
     await init_database_session_manager()

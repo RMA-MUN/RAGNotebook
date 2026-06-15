@@ -19,7 +19,7 @@ dependencies = [
     "langchain-community~=0.4.1",
     "python-jose~=3.5.0",
     "PyYAML~=6.0.3",
-    "pydantic~=2.12.5",
+    "pydantic[email]~=2.12.5",
     "requests~=2.32.5",
     "uvicorn==0.21.1",
     "aiomysql>=0.3.2",
@@ -45,7 +45,10 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "pymupdf>=1.25.0",
     "pillow>=10.0.0",
+    "passlib>=1.7.4",
+    "shortuuid>=1.0.11",
     "imagehash>=4.3.0",
+    "bcrypt>=4.3.0",
 ]
 
 # 开发依赖
@@ -62,7 +65,7 @@ include = ["app*"]
 
 [tool.ruff]
 target-version = "py312"
-line-length = 150
+line-length = 180
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
@@ -80,6 +83,7 @@ default = true
 [[tool.uv.index]]
 name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
+explicit = true
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu126" }
