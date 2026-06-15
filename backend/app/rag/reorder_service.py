@@ -26,8 +26,8 @@ def find_model_path(base_path: str) -> str:
 
 def check_and_download_reranker_model() -> None:
     """检查并重排序模型，在FastAPI启动时执行"""
-    LOCAL_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH", r"D:\Hugging_Face\models\Qwen3-Reranker-0.6B")
-    MODELSCOPE_MODEL_NAME = "Qwen/Qwen3-Reranker-0.6B"
+    LOCAL_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH", r"D:\Hugging_Face\models\bge-reranker-v2-m3")
+    MODELSCOPE_MODEL_NAME = "BAAI/bge-reranker-v2-m3"
 
     try:
         if os.path.exists(LOCAL_MODEL_PATH) and os.path.isdir(LOCAL_MODEL_PATH):
@@ -58,8 +58,8 @@ class ReorderService:
     """文档重排序服务"""
     
     def __init__(self):
-        self.LOCAL_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH", r"D:\Hugging_Face\models\Qwen3-Reranker-0.6B")
-        self.MODELSCOPE_MODEL_NAME = "Qwen/Qwen3-Reranker-0.6B"
+        self.LOCAL_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH", r"D:\Hugging_Face\models\bge-reranker-v2-m3")
+        self.MODELSCOPE_MODEL_NAME = "BAAI/bge-reranker-v2-m3"
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self._model = None
     
