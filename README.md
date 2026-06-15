@@ -148,9 +148,6 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_DB=0
 
-# ==================== 服务配置 ====================
-DJANGO_API_URL=http://127.0.0.1:8001
-
 # ==================== LangSmith 调试追踪 ====================
 LANGCHAIN_TRACING_V2=true
 LANGCHAIN_API_KEY=your_langsmith_api_key
@@ -164,38 +161,7 @@ SECRET_KEY=MY_JWT_SECRET_KEY
 ALGORITHM=HS256
 ```
 
-#### 创建用户服务环境变量文件
 
-在 `DjangoUserService` 目录下创建 `.env` 文件：
-
-```env
-# JWT 配置
-JWT_SECRET_KEY=YOUR_JWT_SECRET_KEY
-
-# 数据库配置
-DB_PORT=3306
-DB_NAME=user_service
-DB_USER=root
-DB_PASSWORD=root
-DB_HOST=localhost
-
-# Celery 配置
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/0
-CELERY_TASK_TIME_LIMIT=300
-CELERY_TASK_SOFT_TIME_LIMIT=250
-CELERY_RESULT_EXPIRES=3600
-
-# Redis 配置
-REDIS_CACHE_URL=redis://localhost:6379/1
-```
-
-配置好 env 文件后，执行 Django ORM 迁移：
-
-```bash
-python manage.py makemigrations
-python manage.py migrate
-```
 
 ### 向量数据库配置
 
@@ -221,7 +187,7 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 |------|------|------|
 | 后端服务 | `cd backend && uvicorn main:app --reload` | 8000 |
 | 前端服务 | `cd front && npm run dev` | 3000 |
-| 用户服务 | `cd DjangoUserService && uv run python manage.py runserver 8001` | 8001 |
+
 | MySQL | `net start mysql` | 3306 |
 | Redis | `redis-server` 或 `net start redis` | 6379 |
 | Ollama | `ollama serve` | 11434 |
@@ -236,7 +202,7 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 | LangChain | 大语言模型应用开发框架（AgentExecutor + Tools） |
 | ChromaDB | 轻量级向量数据库（rag_collection + notes_collection） |
 | SQLAlchemy | 异步 ORM，管理 MySQL |
-| Django | 用户认证和管理系统 |
+
 | MySQL | 关系型数据库（chat_history / notes / reviews） |
 | Redis | 缓存 |
 | DashScope API | 大语言模型服务（Qwen3-Max） |
@@ -338,12 +304,6 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 │   │   ├── App.tsx              # 应用入口组件
 │   │   └── main.tsx             # 应用入口
 │   └── package.json
-├── DjangoUserService/           # Django 用户服务
-│   ├── apps/
-│   │   ├── user/               # 用户注册/登录/认证
-│   │   ├── file/               # 头像上传
-│   │   └── utils/              # 工具函数
-│   └── api.md                  # 用户服务 API 文档
 ├── docs/                        # 项目文档
 │   ├── modelscope_model.md     # 模型下载和配置
 │   └── troubleshooting.md      # 故障排除
@@ -357,11 +317,6 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 
 完整的 OpenAPI 规范文件：[backend/openapi.json](./backend/openapi.json)
 		启动服务后访问交互式文档：[http://localhost:8000/docs](http://localhost:8000/docs)
-
-### Django 用户服务 API
-
-详细文档：[DjangoUserService/api.md](./DjangoUserService/api.md)
-		交互式文档（启动后）：[http://localhost:8001/docs/](http://localhost:8001/docs/)
 
 ## 配置说明
 
