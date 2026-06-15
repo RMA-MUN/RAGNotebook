@@ -3,7 +3,6 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 const BACKEND_TARGET = process.env.VITE_BACKEND_TARGET || 'http://127.0.0.1:8000'
-const USER_TARGET = process.env.VITE_USER_TARGET || 'http://127.0.0.1:8001'
 
 export default defineConfig({
   plugins: [react()],
@@ -26,8 +25,9 @@ export default defineConfig({
       '/note-template/': { target: BACKEND_TARGET, changeOrigin: true },
       '/review/': { target: BACKEND_TARGET, changeOrigin: true },
       '/health': { target: BACKEND_TARGET, changeOrigin: true },
-      '/user': { target: USER_TARGET, changeOrigin: true },
-      '/file': { target: USER_TARGET, changeOrigin: true },
+      '/user': { target: BACKEND_TARGET, changeOrigin: true },
+      '/file': { target: BACKEND_TARGET, changeOrigin: true },
+      '/media': { target: BACKEND_TARGET, changeOrigin: true },
     },
   },
 })
