@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy import text
 from app.models.chat_history import Base
+from app.models.user_model import User  # noqa: F401 — 注册 User 模型确保建表
 
 # 加载环境变量
 load_dotenv()

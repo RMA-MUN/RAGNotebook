@@ -18,6 +18,8 @@ from app.core.rate_limit import RateLimitMiddleware
 from app.core.logger_handler import logger
 
 from app.rag.reorder_service import check_and_download_reranker_model
+from app.models.user_model import User
+from app.utils.auth_utils import hash_password, create_access_token
 
 # 加载环境变量
 load_dotenv()
@@ -86,6 +88,32 @@ async def startup_event():
     # 检查并重排序模型
     check_and_download_reranker_model()
     logger.info("重排序模型检查完成")
+
+    # 自动创建测试用户
+    await _ensure_test_user()
+
+
+async def _ensure_test_user():
+    """确保测试用户存在（开箱即用：前端可用 test/666666 登录）"""
+    from app.db.db_config import AsyncSessionLocal
+    from sqlalchemy import select
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(User).where(User.username == "test"))
+        user = result.scalar_one_or_none()
+        if user is None:
+            user = User(
+                uuid=User.generate_uuid(),
+                username="test",
+                email="test@example.com",
+                telephone=None,
+                hashed_password=hash_password("666666"),
+                status=1,
+            )
+            db.add(user)
+            await db.commit()
+            logger.info("测试用户已创建：test / 666666")
+        else:
+            logger.info("测试用户已存在：test")
 
 @app.on_event("shutdown")
 async def shutdown_event():
