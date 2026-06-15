@@ -75,6 +75,10 @@ chromadb/
 .opencode/
 .omo/
 .codegraph/
+.agents/
+.claude/
+.mimocode/
+skills-lock.json
 
 # Windows
 Thumbs.db
