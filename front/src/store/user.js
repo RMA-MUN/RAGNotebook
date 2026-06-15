@@ -2,15 +2,6 @@ import { defineStore } from 'pinia';
 import axios from 'axios';
 import { apiConfig } from '../config/api';
 
-// 从cookie中获取CSRF token
-const getCsrfToken = () => {
-  const cookieValue = document.cookie
-    .split('; ')
-    .find(row => row.startsWith('csrftoken='))
-    ?.split('=')[1];
-  return cookieValue || '';
-};
-
 export const useUserStore = defineStore('user', {
   state: () => ({
     userInfo: null,
@@ -29,38 +20,9 @@ export const useUserStore = defineStore('user', {
   actions: {
     async login(userData) {
       try {
-        const TEST_USER = {
-          username: 'test',
-          password: '666666',
-          token: 'test_token_for_unlogin',
-          user: {
-            id: 1,
-            username: 'test',
-            email: 'test@example.com',
-            bio: '测试用户'
-          }
-        };
-
-        if (userData.username === TEST_USER.username && userData.password === TEST_USER.password) {
-          localStorage.setItem('jwt_token', TEST_USER.token);
-          
-          this.userInfo = TEST_USER.user;
-          this.token = TEST_USER.token;
-          this.isLogin = true;
-          
-          return {
-            success: true,
-            message: '测试用户登录成功'
-          };
-        }
-
         const response = await axios.post(apiConfig.endpoints.login, {
           username: userData.username,
           password: userData.password
-        }, {
-          headers: {
-            'X-CSRFTOKEN': getCsrfToken()
-          }
         });
         
         // 检查响应状态
@@ -103,8 +65,7 @@ export const useUserStore = defineStore('user', {
         if (token) {
           await axios.post(apiConfig.endpoints.logout, {}, {
             headers: {
-              Authorization: `Bearer ${token}`,
-              'X-CSRFTOKEN': getCsrfToken()
+              Authorization: `Bearer ${token}`
             }
           });
         }
@@ -136,8 +97,7 @@ export const useUserStore = defineStore('user', {
         // 发送获取用户信息请求
         const response = await axios.get(apiConfig.endpoints.profile, {
           headers: {
-            Authorization: `Bearer ${token}`,
-            'X-CSRFTOKEN': getCsrfToken()
+            Authorization: `Bearer ${token}`
           }
         });
         
@@ -184,7 +144,6 @@ export const useUserStore = defineStore('user', {
         const response = await axios.put('/user/update/', userData, {
           headers: {
             Authorization: `Bearer ${token}`,
-            'X-CSRFTOKEN': getCsrfToken(),
             'Content-Type': 'application/json'
           }
         });
@@ -241,7 +200,6 @@ export const useUserStore = defineStore('user', {
         }, {
           headers: {
             Authorization: `Bearer ${token}`,
-            'X-CSRFTOKEN': getCsrfToken(),
             'Content-Type': 'application/json'
           }
         });
@@ -280,11 +238,6 @@ export const useUserStore = defineStore('user', {
           telephone: userData.telephone || '',
           password: userData.password,
           confirm_password: userData.confirm_password
-        }, {
-          headers: {
-            'X-CSRFTOKEN': getCsrfToken(),
-            'Content-Type': 'application/json'
-          }
         });
         
         console.log('=== 注册响应 ===');

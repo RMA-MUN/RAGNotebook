@@ -42,7 +42,7 @@
       </van-cell-group>
 
       <h3 class="section-title">技术栈</h3>
-      <div class="tech-list">LangChain · FastAPI · Django · Vue3</div>
+      <div class="tech-list">LangChain · FastAPI  · Vue3</div>
 
       <h3 class="section-title">功能特点</h3>
       <van-cell-group inset>

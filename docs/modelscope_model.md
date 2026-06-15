@@ -2,10 +2,10 @@
 
 ## 模型介绍
 
-Qwen3-Reranker-0.6B 是阿里巴巴推出的轻量化中文重排序模型，专为中文文本相关性排序设计：
-- **轻量级**：仅0.6B参数，适合本地部署
+BAAI/bge-reranker-v2-m3 是北京智源人工智能研究院（BAAI）推出的多语言重排序模型，基于 XLMRobertaForSequenceClassification 架构：
+- **多语言支持**：支持中英文等多种语言的重排序
 - **高性能**：能够准确评估查询与文档的相关性
-- **中文优化**：针对中文文本进行了特别优化
+- **CrossEncoder 原生支持**：sentence-transformers.CrossEncoder 直接支持，无需额外包装
 
 ## 安装步骤
 
@@ -33,10 +33,10 @@ uv add sentence-transformers torch
 #### 方法二：手动从Hugging Face下载
 
 如果需要手动下载：
-1. 访问模型页面：[千问3-Reranker-0.6B · 模型库](https://www.modelscope.cn/models/Qwen/Qwen3-Reranker-0.6B)
+1. 访问模型页面：[BAAI/bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3)
 2. 下载完整模型文件到本地目录，推荐路径：
    ```
-   D:\Hugging_Face\models\Qwen3-Reranker-0.6B
+   D:\Hugging_Face\models\bge-reranker-v2-m3
    ```
 
 ## 环境变量配置
@@ -45,7 +45,7 @@ uv add sentence-transformers torch
 
 ```env
 # 重排序模型配置（可选）
-RERANKER_MODEL_PATH=D:\Hugging_Face\models\Qwen3-Reranker-0.6B
+RERANKER_MODEL_PATH=D:\Hugging_Face\models\bge-reranker-v2-m3
 ```
 
 ### 硬件要求
@@ -60,12 +60,12 @@ RERANKER_MODEL_PATH=D:\Hugging_Face\models\Qwen3-Reranker-0.6B
 ## 性能优化建议
 
 1. **GPU加速**：确保安装了CUDA版本的PyTorch以获得最佳性能
-2. **批量处理**：虽然当前设置 `batch_size=1` 避免padding错误，但在文档数量较少时可以尝试增加批次大小
+2. **批量处理**：当前设置 `batch_size=1` 避免padding错误，在文档数量较少时可以尝试增加批次大小
 3. **模型缓存**：模型会在服务启动时加载一次，后续请求无需重新加载
 
 ## 版本信息
 
-- 模型版本：Qwen3-Reranker-0.6B
+- 模型版本：BAAI/bge-reranker-v2-m3
 - sentence-transformers：2.2.0+
 - PyTorch：2.0+
 

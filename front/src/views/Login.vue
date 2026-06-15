@@ -113,9 +113,41 @@ const goToRegister = () => {
   router.push('/register');
 };
 
-const loginTestUser = () => {
+const loginTestUser = async () => {
   username.value = 'test';
   password.value = '666666';
+
+  showToast({
+    type: 'loading',
+    message: '测试用户登录中...',
+    forbidClick: true,
+    duration: 0
+  });
+
+  try {
+    const result = await userStore.login({
+      username: username.value,
+      password: password.value
+    });
+
+    if (result.success) {
+      showToast({
+        type: 'success',
+        message: result.message
+      });
+      router.push('/');
+    } else {
+      showToast({
+        type: 'fail',
+        message: result.message
+      });
+    }
+  } catch (error) {
+    showToast({
+      type: 'fail',
+      message: '登录失败，请稍后再试'
+    });
+  }
 };
 </script>
 

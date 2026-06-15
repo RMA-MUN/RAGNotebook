@@ -38,52 +38,8 @@
 - **多语言支持** 🌐：前端集成 i18n，支持中英文界面切换
 - **文档管理** 📄：前端可视化文档上传、管理(查看细致的切片、原文档等信息)
 - **安全性** ⛑️：对不同用户的知识库进行隔离，RAG检索只能检索到自己上传的文档
-- **微服务架构** 🏗️：分离的用户服务和对话服务，易于扩展和维护
+- **微服务架构** 🏗️：模块化设计，用户认证与RAG对话服务分层清晰，易于扩展和维护
 - **高性能** ⚡：基于 FastAPI 和 ChromaDB，提供卓越的性能表现
-
-## 项目架构
-
-```mermaid
-flowchart TD
-    subgraph "前端层"
-        A["用户界面 (Vue 3)"] -->|发送查询| B["API请求 (Axios)"]
-        C["会话管理 (Pinia)"] -->|状态管理| B
-        D["用户认证 (Vue Router)"] -->|路由守卫| B
-    end
-
-    subgraph "API路由层"
-        B -->|REST API| E["聊天路由 (FastAPI)"]
-        E -->|认证| F["认证中间件 (JWT)"]
-        E -->|限流| G["限流控制 (Redis)"]
-    end
-
-    subgraph "业务服务层"
-        E -->|代理查询| H["ChatService (Python)"]
-        H -->|会话管理| I["SessionManager (MySQL)"]
-        H -->|RAG检索| J["RagService (LangChain)"]
-        H -->|向量存储| K["VectorStoreService (ChromaDB)"]
-        H -->|智能代理| L["Agent (LangChain)"]
-        H -->|文档重排序| M["ReorderService (Hugging Face)"]
-    end
-
-    subgraph "数据存储层"
-        I -->|存储会话| N["MySQL数据库"]
-        K -->|向量存储| O["ChromaDB向量库"]
-        K -->|文件存储| P["文件系统"]
-        G -->|缓存| Q["Redis缓存"]
-    end
-
-    subgraph "AI模型服务"
-        L -->|LLM调用| R["DashScope API (Qwen3-Max)"]
-        J -->|嵌入模型| S["文本嵌入 (text-embedding-v4)"]
-        M -->|重排序模型| T["Qwen3-Reranker-0.6B"]
-    end
-
-    subgraph "用户服务"
-        U["Django用户服务"] -->|认证授权| F
-        U -->|用户管理| V["MySQL用户数据库"]
-    end
-```
 
 ## 项目演示
 
@@ -168,55 +124,37 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_DB=0
 
-# ==================== 服务配置 ====================
-DJANGO_API_URL=http://127.0.0.1:8001
-
 # ==================== LangSmith 调试追踪 ====================
 LANGCHAIN_TRACING_V2=true
 LANGCHAIN_API_KEY=your_langsmith_api_key
 LANGCHAIN_PROJECT=my-fastapi-langchain-project
 
 # ==================== 重排序模型配置 ====================
-RERANKER_MODEL_PATH=D:\Hugging_Face\models\Qwen3-Reranker-0.6B
+RERANKER_MODEL_PATH=D:\Hugging_Face\models\bge-reranker-v2-m3
 
 # ==================== JWT 身份验证配置 ====================
 SECRET_KEY=MY_JWT_SECRET_KEY
 ALGORITHM=HS256
 ```
 
-#### 创建用户服务环境变量文件
+#### 初始化数据库
 
-在 `DjangoUserService` 目录下创建 `.env` 文件：
-
-```env
-# JWT 配置
-JWT_SECRET_KEY=YOUR_JWT_SECRET_KEY
-
-# 数据库配置
-DB_PORT=3306
-DB_NAME=user_service
-DB_USER=root
-DB_PASSWORD=root
-DB_HOST=localhost
-
-# Celery 配置
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/0
-CELERY_TASK_TIME_LIMIT=300
-CELERY_TASK_SOFT_TIME_LIMIT=250
-CELERY_RESULT_EXPIRES=3600
-
-# Redis 配置
-REDIS_CACHE_URL=redis://localhost:6379/1
-```
-
-配置好env文件后，我们需要执行Django ORM的迁移命令来迁移数据库表：
+用户服务已集成在 FastAPI 后端中，执行以下命令创建数据库表：
 
 ```bash
-python manage.py makemigrations
-python manage.py migrate
-```
-
+cd backend
+uv run python -c "
+import asyncio
+from app.db.db_config import engine
+from app.models.user_model import Base
+from app.models.chat_history import Base as ChatBase
+async def init():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(ChatBase.metadata.create_all)
+asyncio.run(init())
+print('数据库表创建完成')
+"```
 
 
 ### 向量数据库配置
@@ -243,7 +181,6 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 |------|------|------|
 | 后端服务 | `cd backend && uvicorn main:app --reload` | 8000 |
 | 前端服务 | `cd front && npm run dev` | 3000 |
-| 用户服务 | `cd DjangoUserService && uv run python manage.py runserver 8001` | 8001 |
 | MySQL | `net start mysql` | 3306 |
 | Redis | `redis-server` 或 `net start redis` | 6379 |
 | Ollama | `ollama serve` | 11434 |
@@ -257,7 +194,6 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 | FastAPI | 高性能异步 Web 框架 |
 | LangChain | 大语言模型应用开发框架 |
 | ChromaDB | 轻量级向量数据库 |
-| Django | 用户认证和管理系统 |
 | MySQL | 关系型数据库 |
 | Redis | 缓存数据库 |
 | DashScope API | 大语言模型服务 |
@@ -295,7 +231,6 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 │   ├── src/                  # 源代码
 │   ├── public/               # 静态资源
 │   └── package.json          # 前端依赖配置
-├── DjangoUserService/        # Django 用户服务
 └── README.md                 # 项目说明文档
 ```
 
@@ -306,10 +241,9 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 - **[API 规范](./backend/openapi.json)**：后端 OpenAPI 规范文件
 - **[交互式文档](http://localhost:8000/docs)**：启动服务后访问自动生成的交互式文档
 
-### Django 用户服务 API
+### 用户服务 API
 
-- **[API 文档](./DjangoUserService/api.md)**：详细的用户服务 API 文档
-- **[交互式文档](http://localhost:8001/api/)**：启动服务后访问用户服务 API 文档
+用户注册、登录、信息管理等接口已集成在 FastAPI 后端中，通过 FastAPI 交互式文档即可查看和测试所有用户相关接口。
 
 ## 开发指南
 
@@ -344,7 +278,6 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 - **[ModelScope 模型配置](./docs/modelscope_model.md)**：详细的模型下载和配置说明
 - **[故障排除](./docs/troubleshooting.md)**：常见问题和解决方案
 - **[API 文档](./backend/openapi.json)**：后端 API 接口文档
-- **[用户服务 API](./DjangoUserService/api.md)**：用户服务 API 文档
 
 ## Star History
 

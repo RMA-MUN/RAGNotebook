@@ -4,7 +4,7 @@
     <div class="user-info" @click="goToProfile" v-if="isLogin">
       <div class="avatar">
         <div v-if="userInfo && userInfo.avatar" class="avatar-img">
-          <van-image round width="72" height="72" :src="`http://localhost:8001${userInfo.avatar}`" />
+          <van-image round width="72" height="72" :src="`http://localhost:8000${userInfo.avatar}`" />
         </div>
         <div v-else class="avatar-letter">
           {{ (userInfo?.username || '?')[0].toUpperCase() }}
