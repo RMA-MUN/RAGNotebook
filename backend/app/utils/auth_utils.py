@@ -1,34 +1,57 @@
-import os
 import json
-from typing import Optional, Dict, Any
-import requests
-from dotenv import load_dotenv
-from jose import JWTError, jwt
-from fastapi import HTTPException, status, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import os
+import time
+import uuid
+from typing import Any, Dict, Optional, Tuple
 
-from app.core.failed_response import logger
+import bcrypt
+from dotenv import load_dotenv
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
+from sqlalchemy import select
+
+from app.db.db_config import AsyncSessionLocal
 from app.db.redis_config import connect_redis, set_redis_cache
+from app.models.user_model import User
 
 load_dotenv()
 
-# Django JWT配置
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
 
-# 创建Bearer认证方案
 security = HTTPBearer()
 
 
-def decode_django_jwt(token: str) -> Optional[Dict[str, Any]]:
-    """解析Django生成的JWT token
-    
-    Args:
-        token: JWT token字符串
-        
-    Returns:
-        解析后的payload，如果解析失败返回None
-    """
+def hash_password(password: str) -> str:
+    """使用 bcrypt 对密码进行哈希"""
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """验证密码"""
+    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+
+
+def create_access_token(user: User) -> Tuple[str, int]:
+    """为用户签发 JWT token（payload 结构与 Django 保持一致）"""
+    expire_time = int(time.time()) + 60 * 60 * 24  # 24小时过期
+    payload = {
+        "user_id": user.uuid,
+        "username": user.username,
+        "email": user.email,
+        "exp": expire_time,
+        "iat": int(time.time()),
+        "jti": str(uuid.uuid4()),
+    }
+    token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    if isinstance(token, bytes):
+        token = token.decode("utf-8")
+    return token, expire_time
+
+
+def decode_jwt(token: str) -> Optional[Dict[str, Any]]:
+    """解析 JWT token"""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
@@ -36,21 +59,29 @@ def decode_django_jwt(token: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+# 向后兼容别名
+decode_django_jwt = decode_jwt
+
+
+async def blacklist_token(token: str):
+    """将 token 加入 Redis 黑名单"""
+    payload = decode_jwt(token)
+    if payload is None:
+        return
+    jti = payload.get("jti")
+    exp = payload.get("exp")
+    if jti and exp:
+        current_time = int(time.time())
+        ttl = exp - current_time if exp > current_time else 0
+        redis_client = await connect_redis()
+        await redis_client.set(f"blacklist:{jti}", "1", ex=ttl if ttl > 0 else 60 * 60 * 24)
+
+
 async def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    """从Django JWT中获取当前用户UUID
-    
-    Args:
-        credentials: HTTP认证凭据
-        
-    Returns:
-        用户的UUID
-        
-    Raises:
-        HTTPException: 认证失败时抛出
-    """
+    """从 JWT 中获取当前用户 UUID"""
     token = credentials.credentials
-    payload = decode_django_jwt(token)
-    
+    payload = decode_jwt(token)
+
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -58,129 +89,88 @@ async def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depend
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # 检查JWT是否在黑名单中
+    # 检查 JWT 是否在黑名单中
     jti = payload.get("jti")
     if jti:
         redis_client = await connect_redis()
-        # 使用通配符查询所有可能的黑名单键格式
-        # 匹配任何前缀的blacklist键，如:1:blacklist:{jti}、blacklist:{jti}等
-        wildcard_pattern = f"*blacklist:{jti}"
-        
-        # 获取所有匹配的键
-        matching_keys = await redis_client.keys(wildcard_pattern)
-        
-        # 如果有匹配的键，说明JWT在黑名单中
-        if matching_keys:
+        is_blacklisted = await redis_client.get(f"blacklist:{jti}")
+        if is_blacklisted:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token has been revoked",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-    # 从Django JWT中提取user_id（uuid）
     user_id: str = payload.get("user_id")
-    
     if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not find user ID in token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     return user_id
 
 
-async def fetch_user_info_from_django_api(token: str, url: str) -> Optional[Dict[str, Any]]:
-    """从Django API获取用户信息
-    
-    Args:
-        token: JWT token字符串
-        
-    Returns:
-        用户信息字典，如果获取失败返回None
-    """
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
+    """从 JWT 获取当前用户完整对象"""
+    user_id = await get_current_user_id(credentials)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(User).where(User.uuid == user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+            )
+        if user.status != 1:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User account is disabled or locked",
+            )
+        return user
+
+
+async def get_user_from_db(user_id: str) -> Optional[User]:
+    """根据 uuid 查询用户"""
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(User).where(User.uuid == user_id))
+        return result.scalar_one_or_none()
+
+
+async def get_user_info_from_redis(user_id: str) -> Optional[Dict[str, Any]]:
+    """从 Redis 读取用户信息，miss 则从数据库查询并回填缓存"""
+    redis_client = await connect_redis()
+    key = f"user:{user_id}"
 
     try:
-        # 构建请求头
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
-        # 调用Django API
-        response = requests.get(
-            url=url,
-            headers=headers
-        )
-        
-        if response.status_code == 200:
-            user_data = response.json()
-            logger.info(f"【debug】 从Django API获取用户信息成功", extra={"path": "auth_utils.fetch_user_info_from_django_api"})
-            return user_data
-        else:
-            logger.error(f"【debug】 从Django API获取用户信息失败，status_code: {response.status_code}", extra={"path": "auth_utils.fetch_user_info_from_django_api"})
-            return None
-    except Exception as e:
-        logger.error(f"【debug】 调用Django API时出错: {str(e)}", extra={"path": "auth_utils.fetch_user_info_from_django_api"})
+        cached = await redis_client.get(key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except json.JSONDecodeError:
+                await redis_client.delete(key)
+    except Exception:
+        pass
+
+    # Redis miss → 查数据库
+    user = await get_user_from_db(user_id)
+    if user is None:
         return None
 
+    user_info = {
+        "id": user.uuid,
+        "username": user.username,
+        "email": user.email,
+        "avatar": user.avatar,
+        "telephone": user.telephone,
+        "gender": user.gender,
+        "bio": user.bio,
+        "status": user.status,
+        "create_time": user.date_joined.isoformat() if user.date_joined else None,
+        "last_login": user.last_login.isoformat() if user.last_login else None,
+    }
 
-async def get_user_info_from_redis(user_id: str, credentials: HTTPAuthorizationCredentials):
-    """从Redis中获取用户信息
-    
-    Args:
-        user_id: 用户ID
-        credentials: HTTP认证凭据
-        
-    Returns:
-        用户信息
-    """
-    redis_client = await connect_redis()
-    key = f":1:user:{user_id}"
-    
-    try:
-        # 从Redis中获取用户信息
-        user_info = await redis_client.get(key)
-        if user_info is None:
-            # 降级调用django查询用户信息
-            user_data = await fetch_user_info_from_django_api(credentials.credentials, os.getenv("DJANGO_API_URL") + "/user/detail/")
-            if user_data:
-                # 将用户信息存入Redis，设置过期时间为1小时
-                await set_redis_cache(
-                    key,
-                    user_data,
-                    expire=3600
-                )
-                user_info = user_data
-        else:
-            # 如果从Redis中获取到数据，尝试将其解析为字典
-            try:
-                
-                user_info = json.loads(user_info)
-            except json.JSONDecodeError:
-                # 如果解析失败，删除旧数据并重新获取
-                await redis_client.delete(key)
-                user_data = await fetch_user_info_from_django_api(credentials.credentials, os.getenv("DJANGO_API_URL") + "/user/detail/")
-                if user_data:
-                    await set_redis_cache(
-                        key,
-                        user_data,
-                        expire=3600
-                    )
-                    user_info = user_data
-                else:
-                    user_info = None
-    except UnicodeDecodeError:
-        # 处理解码错误，删除旧数据并重新获取
-        await redis_client.delete(key)
-        user_data = await fetch_user_info_from_django_api(credentials.credentials, os.getenv("DJANGO_API_URL") + "/user/detail/")
-        if user_data:
-            await set_redis_cache(
-                key,
-                user_data,
-                expire=3600
-            )
-            user_info = user_data
-        else:
-            user_info = None
-
+    # 回填 Redis 缓存 1 小时
+    await set_redis_cache(key, user_info, expire=3600)
     return user_info
