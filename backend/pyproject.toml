@@ -46,6 +46,7 @@ dependencies = [
     "pymupdf>=1.25.0",
     "pillow>=10.0.0",
     "imagehash>=4.3.0",
+    "passlib[bcrypt]>=1.7.4",
 ]
 
 # 开发依赖
