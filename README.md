@@ -148,11 +148,6 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_DB=0
 
-# ==================== LangSmith 调试追踪 ====================
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_API_KEY=your_langsmith_api_key
-LANGCHAIN_PROJECT=my-fastapi-langchain-project
-
 # ==================== 重排序模型配置 ====================
 RERANKER_MODEL_PATH=D:\Hugging_Face\models\bge-reranker-v2-m3
 

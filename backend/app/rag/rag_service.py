@@ -2,7 +2,6 @@ import asyncio
 
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
-from langsmith import traceable
 
 from app.core.background_init import init_manager
 from app.core.logger_handler import logger
@@ -58,7 +57,6 @@ class RagService:
         )
         return chain
 
-    @traceable
     async def generate_hypothetical_document(self, query: str) -> str:
         """
         使用HyDE技术生成假设性文档
@@ -78,7 +76,6 @@ class RagService:
             logger.error(f"【HyDE】生成假设性文档失败: {e}")
             return query
 
-    @traceable
     async def retrieve_document(self, query: str) -> list:
         """使用HyDE技术 从向量数据库里检索文档"""
         if not self.user_id:
@@ -171,7 +168,6 @@ class RagService:
             logger.error(f"【HyDE】检索文档失败: {e}")
             return []
 
-    @traceable
     async def reorder_documents(self, query: str, documents: list) -> list:
         """
         对文档进行重排序
@@ -214,7 +210,6 @@ class RagService:
             logger.warning(f"【RAG】重排序失败: {result['error']}")
             return documents
 
-    @traceable
     async def get_documents_and_summary(self, query: str) -> dict:
         """
         获取文档列表和摘要
@@ -345,7 +340,6 @@ class RagService:
                 "summary": "抱歉，处理您的请求时出现了错误。"
             }
 
-    @traceable
     async def rag_summary(self, query: str) -> str:
         """RAG 摘要"""
         result = await self.get_documents_and_summary(query)

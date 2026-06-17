@@ -9,7 +9,6 @@ from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import BaseTool
 from langchain_ollama import ChatOllama
-from langsmith import traceable
 
 from app.agent.agent_middleware import get_middleware
 from app.agent.agent_tools import (
@@ -249,7 +248,6 @@ async def get_agent_response(
             "steps": []
         }
 
-@traceable
 async def get_agent_stream_response(
         query: str,
         session_id: str,
