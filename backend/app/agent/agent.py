@@ -18,7 +18,6 @@ from app.agent.agent_tools import (
     get_today_reviews_tool,
     get_user_info_tools,
     mark_reviewed_tool,
-    rag_summary_tools,
     search_notes_tool,
     set_current_user_id,
     set_thinking_callback,
@@ -63,7 +62,6 @@ class AgentFactory:
     def _get_default_tools() -> list[BaseTool]:
         """获取默认工具列表"""
         return [
-            rag_summary_tools,
             what_time_is_now,
             get_user_info_tools,
             search_notes_tool,
@@ -253,6 +251,7 @@ async def get_agent_stream_response(
         session_id: str,
         user_id: str,
         custom_tools: list[BaseTool] | None = None,
+        rag_context: str = "",
         **kwargs
 ) -> AsyncGenerator[str, None]:
     """
@@ -261,6 +260,7 @@ async def get_agent_stream_response(
     :param session_id: 会话 ID
     :param user_id: 用户 ID
     :param custom_tools: 自定义工具（可选）
+    :param rag_context: 预检索的 RAG 上下文（由路由层注入，为空则跳过）
     :param kwargs: 其他参数
     :return: 流式响应生成器
     """
@@ -292,12 +292,23 @@ async def get_agent_stream_response(
 
             agent_executor = agent_factory.create_agent_executor(custom_tools=custom_tools, **kwargs)
 
+            # 根据是否有 RAG 上下文决定 system prompt 内容
+            if rag_context:
+                system_prompt = f"""你是用户的智能助手。
+
+以下是与用户问题相关的参考资料：
+{rag_context}
+
+请基于以上资料回答用户的问题。如果资料中没有相关信息，请如实告知。"""
+            else:
+                system_prompt = agent_factory.default_system_prompt
+
             full_response = []
 
             async for chunk in agent_executor.astream({
                 "input": query,
                 "chat_history": chat_history,
-                "system_prompt": agent_factory.default_system_prompt
+                "system_prompt": system_prompt
             }):
                 if "output" in chunk:
                     full_response.append(chunk["output"])
