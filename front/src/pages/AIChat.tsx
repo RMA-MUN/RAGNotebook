@@ -17,9 +17,9 @@ interface Message {
 }
 
 const quickQuestions = [
-  '帮我写一篇关于机器学习的笔记',
-  '总结一下今天要复习的内容',
-  'RAG 是什么？',
+  '帮我解释一下量子计算',
+  '写一首关于春天的诗',
+  '推荐几本提升思维的书',
 ]
 
 export default function AIChat() {
@@ -109,7 +109,7 @@ export default function AIChat() {
         onThinking: (stage, content) => {
           if (!steps.includes(stage)) steps.push(stage)
           setCurrentSteps([...steps])
-          setCurrentThinking(content || '')
+          setCurrentThinking(prev => prev ? `${prev}\n${content}` : (content || ''))
         },
         onResponse: (content, sessionId) => {
           if (!hasResponseStarted) {
@@ -231,7 +231,7 @@ export default function AIChat() {
                           </button>
                           {showThinking && currentThinking && (
                             <div className="px-4 pb-3">
-                              <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">{currentThinking}</p>
+                              <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-line">{currentThinking}</p>
                             </div>
                           )}
                         </div>
@@ -277,7 +277,7 @@ export default function AIChat() {
                     </button>
                     {showThinking && currentThinking && (
                       <div className="px-4 pb-3">
-                        <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">{currentThinking}</p>
+                        <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-line">{currentThinking}</p>
                       </div>
                     )}
                   </div>
