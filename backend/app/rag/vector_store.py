@@ -121,6 +121,26 @@ class VectorStoreService:
         """获取嵌入模型（延迟加载包装器，模型在首次调用时解析）"""
         return _LazyEmbedding()
 
+    async def compute_route_score(self, query: str, user_id: str) -> float:
+        """快速计算查询与用户知识库的相关度（<10ms）
+
+        用 ChromaDB 做 Top-1 检索，返回 L2 距离转换后的相似度分数。
+        分数越高表示与用户知识库越相关，用于路由层判断是否需要 RAG 前置管线。
+        """
+        try:
+            results = await asyncio.to_thread(
+                self.vectors_store.similarity_search_with_score,
+                query,
+                k=1,
+                filter={"user_id": user_id}
+            )
+            if not results:
+                return 0.0
+            distance = results[0][1]
+            return 1 / (1 + distance)
+        except Exception:
+            return 0.0
+
     async def get_bm25_retriever(self, user_id: str = None):
         return await self.hybrid_retriever.get_bm25_retriever(user_id)
 
