@@ -4,23 +4,19 @@
 """
 import json
 import re
-from typing import Any
+from typing import Any, AsyncIterator
+
+from langchain_community.chat_models.tongyi import ChatTongyi
+from langchain_core.messages import AIMessageChunk
 
 
 def normalize_function_arguments(arguments: Any) -> str:
     """
     标准化模型返回的函数参数，确保是合法 JSON。
-
-    Qwen3 模型有时会返回：
-    1. 不完整的 JSON（缺少闭合括号）
-    2. 单引号而非双引号
-    3. 带有额外文本的 JSON
-    4. Python 字典格式（True/False/null）
     """
     if not arguments:
         return "{}"
 
-    # 如果已经是 dict，直接序列化
     if isinstance(arguments, dict):
         return json.dumps(arguments, ensure_ascii=False)
 
@@ -36,7 +32,7 @@ def normalize_function_arguments(arguments: Any) -> str:
 
     fixed = arguments.strip()
 
-    # 1. 提取 JSON 对象（找到第一个 { 和最后一个 }）
+    # 1. 提取 JSON 对象
     json_match = re.search(r'\{.*\}', fixed, re.DOTALL)
     if json_match:
         fixed = json_match.group()
@@ -49,7 +45,7 @@ def normalize_function_arguments(arguments: Any) -> str:
     fixed = fixed.replace('False', 'false')
     fixed = fixed.replace('None', 'null')
 
-    # 4. 修复不完整的 JSON（添加缺失的闭合括号）
+    # 4. 修复不完整的 JSON
     open_braces = fixed.count('{') - fixed.count('}')
     open_brackets = fixed.count('[') - fixed.count(']')
     if open_braces > 0:
@@ -64,7 +60,7 @@ def normalize_function_arguments(arguments: Any) -> str:
     except json.JSONDecodeError:
         pass
 
-    # 6. 最后尝试：提取键值对重新构建
+    # 6. 提取键值对重新构建
     return _extract_and_rebuild_json(arguments)
 
 
@@ -72,7 +68,6 @@ def _extract_and_rebuild_json(text: str) -> str:
     """从非结构化文本中提取键值对并重建 JSON。"""
     result = {}
 
-    # 匹配 key: value 或 key="value" 模式
     patterns = [
         r'(\w+)\s*:\s*"([^"]*)"',
         r"(\w+)\s*:\s*'([^']*)'",
@@ -99,22 +94,50 @@ def _extract_and_rebuild_json(text: str) -> str:
     return "{}"
 
 
-def patch_tongyi_model(model):
-    """
-    给 ChatTongyi 模型打补丁，在流式输出时标准化函数参数。
-    """
-    original_astream = model.astream
+def _normalize_chunk(chunk: AIMessageChunk) -> AIMessageChunk:
+    """标准化 AIMessageChunk 中的工具调用参数。"""
+    if not hasattr(chunk, 'tool_calls') or not chunk.tool_calls:
+        return chunk
 
-    async def patched_astream(*args, **kwargs):
-        async for chunk in original_astream(*args, **kwargs):
-            # 标准化工具调用的函数参数
-            if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
-                for tool_call in chunk.tool_calls:
-                    if isinstance(tool_call, dict):
-                        func = tool_call.get('function', {})
-                        if 'arguments' in func:
-                            func['arguments'] = normalize_function_arguments(func['arguments'])
-            yield chunk
+    # 创建新的 tool_calls 列表
+    normalized_calls = []
+    for tool_call in chunk.tool_calls:
+        if isinstance(tool_call, dict):
+            func = tool_call.get('function', {})
+            if 'arguments' in func:
+                original = func['arguments']
+                normalized = normalize_function_arguments(original)
+                if original != normalized:
+                    func['arguments'] = normalized
+            normalized_calls.append(tool_call)
+        else:
+            normalized_calls.append(tool_call)
 
-    model.astream = patched_astream
-    return model
+    # 创建新的 chunk（AIMessageChunk 是不可变的，需要重建）
+    return AIMessageChunk(
+        content=chunk.content,
+        tool_calls=normalized_calls,
+        response_metadata=chunk.response_metadata,
+        id=chunk.id,
+    )
+
+
+class NormalizedChatTongyi(ChatTongyi):
+    """
+    包装 ChatTongyi，在流式输出时自动标准化函数参数。
+    """
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    async def astream(
+        self, messages, *, stop=None, callbacks=None, **kwargs
+    ) -> AsyncIterator[AIMessageChunk]:
+        """流式输出时标准化函数参数。"""
+        async for chunk in super().astream(messages, stop=stop, callbacks=callbacks, **kwargs):
+            yield _normalize_chunk(chunk)
+
+
+def create_normalized_tongyi(**kwargs) -> NormalizedChatTongyi:
+    """创建标准化的 Tongyi 模型。"""
+    return NormalizedChatTongyi(**kwargs)
