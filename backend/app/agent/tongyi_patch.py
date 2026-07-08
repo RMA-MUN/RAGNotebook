@@ -131,10 +131,10 @@ class NormalizedChatTongyi(ChatTongyi):
         arbitrary_types_allowed = True
 
     async def astream(
-        self, messages, *, stop=None, callbacks=None, **kwargs
+        self, input, config=None, *, stop=None, **kwargs
     ) -> AsyncIterator[AIMessageChunk]:
         """流式输出时标准化函数参数。"""
-        async for chunk in super().astream(messages, stop=stop, callbacks=callbacks, **kwargs):
+        async for chunk in super().astream(input, config, stop=stop, **kwargs):
             yield _normalize_chunk(chunk)
 
 
