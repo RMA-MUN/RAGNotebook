@@ -35,4 +35,4 @@ def load_prompt(prompt_type: str = 'main_prompt'):
         raise e
 
 if __name__ == '__main__':
-    print(load_prompt('report_prompt'))
+    logger.debug(load_prompt('report_prompt'))

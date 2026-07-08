@@ -4,16 +4,7 @@ Input sanitization for RAG content to prevent data poisoning.
 import re
 
 # Maximum content length to prevent oversized inputs
-MAX_CONTENT_LENGTH = 100_000  # 100KB
-
-# Patterns that may indicate prompt injection attempts
-SUSPICIOUS_PATTERNS = [
-    re.compile(r'(?i)ignore\s+(all\s+)?previous\s+instructions'),
-    re.compile(r'(?i)you\s+are\s+now\s+(a|an)\s+'),
-    re.compile(r'(?i)system\s*:\s*'),
-    re.compile(r'(?i)<\|(im_start|im_end|system|user|assistant)\|>'),
-    re.compile(r'(?i)\[INST\]|\[/INST\]'),
-]
+MAX_CONTENT_LENGTH = 100_000  # 100K characters
 
 
 def sanitize_content(content: str) -> str:

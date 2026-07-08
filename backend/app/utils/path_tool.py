@@ -1,5 +1,7 @@
 import os
 
+from app.core.logger_handler import logger
+
 
 def get_project_root() -> str:
     """
@@ -39,6 +41,6 @@ def get_config_path() -> str:
 
 
 if __name__ == '__main__':
-    print(f"项目根目录: {get_project_root()}")
-    print(f"数据目录: {get_data_path()}")
-    print(f"配置目录: {get_config_path()}")
+    logger.debug(f"项目根目录: {get_project_root()}")
+    logger.debug(f"数据目录: {get_data_path()}")
+    logger.debug(f"配置目录: {get_config_path()}")

@@ -1,3 +1,4 @@
+from app.core.logger_handler import logger
 from app.utils.config_handler import load_config
 from app.utils.path_tool import get_abstract_path
 
@@ -6,6 +7,6 @@ prompt_config = load_config(config_path=get_abstract_path('app/config/prompt.yam
 agent_config = load_config(config_path=get_abstract_path('app/config/agent.yaml'))
 
 if __name__ == '__main__':
-    print(chroma_config)
-    print(prompt_config)
-    print(agent_config)
+    logger.debug(chroma_config)
+    logger.debug(prompt_config)
+    logger.debug(agent_config)
