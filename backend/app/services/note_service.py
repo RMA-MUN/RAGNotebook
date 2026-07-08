@@ -20,6 +20,7 @@ from app.models.note import Note
 from app.models.review_record import ReviewRecord
 from app.schemas.models import NoteCreate, NoteResponse, NoteUpdate
 from app.utils.config import chroma_config
+from app.utils.input_sanitizer import sanitize_content
 from app.utils.path_tool import get_abstract_path
 from app.utils.prompt_loader import load_prompt
 
@@ -105,7 +106,7 @@ class NoteService:
         # 向量化写入 ChromaDB
         try:
             doc = Document(
-                page_content=payload.content,
+                page_content=sanitize_content(payload.content),
                 metadata={
                     "user_id": user_id,
                     "note_id": note_id,
@@ -160,7 +161,7 @@ class NoteService:
                     lambda: self._notes_store.delete(where={"note_id": note_id})
                 )
                 doc = Document(
-                    page_content=note.content,
+                    page_content=sanitize_content(note.content),
                     metadata={
                         "user_id": user_id,
                         "note_id": note_id,
