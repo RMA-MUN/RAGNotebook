@@ -105,13 +105,19 @@ class AgentFactory:
 
             logger.info(f"🤖 Agent使用阿里云百炼模型: {model_name}")
 
-            return ChatTongyi(
+            model = ChatTongyi(
                 model=model_name,
                 api_key=api_key,
                 base_url=base_url,
                 streaming=True,
                 top_p=0.7,
             )
+
+            # 应用 JSON 标准化补丁
+            from app.agent.tongyi_patch import patch_tongyi_model
+            model = patch_tongyi_model(model)
+
+            return model
 
         else:
             raise ValueError(f"不支持的LLM_TYPE: {llm_type}，可选值: ALIYUN, OLLAMA")
