@@ -6,6 +6,8 @@ from typing import Any
 import redis.asyncio as redis
 from redis.asyncio import ConnectionPool
 
+from app.core.logger_handler import logger
+
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_DB = int(os.getenv("REDIS_DB", "3"))
@@ -63,7 +65,7 @@ async def check_redis_connection() -> bool:
         await redis_client.ping()
         return True
     except Exception as e:
-        print(f"Redis连接失败: {e}")
+        logger.error(f"Redis连接失败: {e}")
         return False
 
 # 设置和读取redis
@@ -73,7 +75,7 @@ async def get_redis_cache_str(key: str) -> str | None:
         redis_client = await connect_redis()
         return await redis_client.get(key)
     except Exception as e:
-        print(f"获取redis缓存失败: {e}")
+        logger.warning(f"获取redis缓存失败: {e}")
         return None
 
 async def get_redis_cache_json(key: str) -> dict | None:
@@ -85,7 +87,7 @@ async def get_redis_cache_json(key: str) -> dict | None:
             return json.loads(data)
         return None
     except Exception as e:
-        print(f"获取redis的JSON缓存失败: {e}")
+        logger.warning(f"获取redis的JSON缓存失败: {e}")
         return None
 
 async def set_redis_cache(key: str, value: Any, expire: int = 3600) -> bool:
@@ -111,5 +113,5 @@ async def set_redis_cache(key: str, value: Any, expire: int = 3600) -> bool:
         return True
 
     except Exception as e:
-        print(f"设置redis缓存失败: {e}")
+        logger.error(f"设置redis缓存失败: {e}")
         return False

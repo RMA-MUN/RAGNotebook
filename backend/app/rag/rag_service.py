@@ -352,6 +352,6 @@ if __name__ == '__main__':
         service = RagService()
         await service.initialize_retriever()
         result = await service.rag_summary("小户型适合什么扫地机器人")
-        print(result)
+        logger.debug(f"RAG结果: {result}")
 
     asyncio.run(main())

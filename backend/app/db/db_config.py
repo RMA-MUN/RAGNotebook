@@ -69,7 +69,7 @@ async def _migrate_columns(conn):
                     if col.default is not None and col.default.is_scalar:
                         default = f" DEFAULT {repr(col.default.arg)}"
                     sql = f"ALTER TABLE {table.name} ADD COLUMN {col.name} {ddl}{nullable}{default}"
-                    print(f"[migrate] {sql}")
+                    logger.info(f"[migrate] {sql}")
                     sync_conn.execute(text(sql))
     await conn.run_sync(_check)
 
@@ -133,5 +133,5 @@ async def check_mysql_connection() -> bool:
             await conn.execute(text("SELECT 1"))
         return True
     except Exception as e:
-        print(f"MySQL连接失败: {e}")
+        logger.error(f"MySQL连接失败: {e}")
         return False

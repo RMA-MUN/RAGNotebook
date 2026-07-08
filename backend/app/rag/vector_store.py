@@ -504,8 +504,8 @@ if __name__ == '__main__':
 
         retriever = await store.get_retriever()
         results = await retriever.ainvoke('扫地')
-        print(f"检索结果数量: {len(results)}")
+        logger.debug(f"检索结果数量: {len(results)}")
         for result in results:
-            print(result)
+            logger.debug(f"检索结果: {result}")
 
     asyncio.run(main())

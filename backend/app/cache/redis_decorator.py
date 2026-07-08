@@ -2,6 +2,7 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Generic, TypeVar
 
+from app.core.logger_handler import logger
 from app.db.redis_config import connect_redis, get_redis_cache_json, get_redis_cache_str, set_redis_cache
 
 T = TypeVar('T')
@@ -46,7 +47,7 @@ class RedisCache(Generic[T]):
         if cached_data is not None:
             return cached_data
 
-        print("【RedisCache】 redis缓存不存在")
+        logger.debug("【RedisCache】 redis缓存不存在")
 
         # 缓存不存在，执行函数
         result = await func(*args, **kwargs)
@@ -75,16 +76,16 @@ class RedisCache(Generic[T]):
                 try:
                     return str(obj)
                 except Exception as e:
-                    print(f"转换对象为字符串时出错: {e}")
+                    logger.warning(f"转换对象为字符串时出错: {e}")
                     return None
 
         # 转换结果
         serializable_result = convert_to_serializable(result)
 
         # 缓存结果
-        print(f"【RedisCache】设置缓存，key: {cache_key}，value类型: {type(serializable_result)}")
+        logger.debug(f"【RedisCache】设置缓存，key: {cache_key}，value类型: {type(serializable_result)}")
         success = await set_redis_cache(cache_key, serializable_result, expire)
-        print(f"【RedisCache】缓存设置结果: {success}")
+        logger.debug(f"【RedisCache】缓存设置结果: {success}")
         return result
 
     @staticmethod
@@ -124,7 +125,7 @@ class RedisCache(Generic[T]):
             await redis_client.delete(key)
             return True
         except Exception as e:
-            print(f"删除redis缓存失败: {e}")
+            logger.error(f"删除redis缓存失败: {e}")
             return False
 
     @staticmethod
@@ -142,7 +143,7 @@ class RedisCache(Generic[T]):
                 return await redis_client.delete(*keys)
             return 0
         except Exception as e:
-            print(f"删除redis缓存失败: {e}")
+            logger.error(f"删除redis缓存失败: {e}")
             return 0
 
 
