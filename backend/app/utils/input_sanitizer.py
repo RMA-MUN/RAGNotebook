@@ -1,40 +1,27 @@
 """
-Input sanitization for RAG content to prevent data poisoning.
+RAG 内容输入清洗模块。
 """
 import re
-
-# Maximum content length to prevent oversized inputs
-MAX_CONTENT_LENGTH = 100_000  # 100K characters
 
 
 def sanitize_content(content: str) -> str:
     """
-    Sanitize user-provided content before storing in vector database.
+    在存入向量数据库之前，对用户提供的内容进行清洗。
 
-    This function:
-    1. Strips excessive whitespace
-    2. Truncates to max length
-
-    Note: We intentionally do NOT block content with suspicious patterns because:
-    - Users may legitimately discuss AI topics
-    - False positives would degrade user experience
-    - The real defense is at retrieval time, not storage time
+    该函数执行以下操作：
+    1. 去除多余空白字符（连续换行、连续空格）
 
     Args:
-        content: Raw user content
+        content: 原始用户内容
 
     Returns:
-        Sanitized content safe for storage
+        清洗后的内容
     """
     if not content:
         return content
 
-    # Strip excessive whitespace (newlines, spaces)
+    # 去除多余空白字符（换行、空格）
     content = re.sub(r'\n{3,}', '\n\n', content)
     content = re.sub(r' {2,}', ' ', content)
-
-    # Truncate if too long
-    if len(content) > MAX_CONTENT_LENGTH:
-        content = content[:MAX_CONTENT_LENGTH]
 
     return content.strip()
