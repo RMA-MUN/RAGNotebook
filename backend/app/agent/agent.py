@@ -28,6 +28,48 @@ from app.services import session_manager as sm
 from app.utils.prompt_loader import load_prompt
 
 
+class _NormalizedTongyi(ChatTongyi):
+    """
+    ChatTongyi wrapper：修复 Qwen3 流式 tool_calls arguments 格式问题。
+
+    根因：Tongyi SDK 的 subtract_client_response 用字符串替换计算 arguments
+    增量（如 '{"title": "量子"}'.replace('{"title":', '') → ': "量子"}'），
+    产生非法 JSON 片段，check_response 报错。
+    解决：重写 subtract_client_response，对 arguments 使用完整替换而非增量减法。
+    """
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    def subtract_client_response(self, resp, prev_resp):
+        """重写 delta 计算：arguments 使用完整值而非增量减法。"""
+        import json as _json
+
+        resp_copy = _json.loads(_json.dumps(resp))
+        choice = resp_copy["output"]["choices"][0]
+        message = choice["message"]
+
+        prev_resp_copy = _json.loads(_json.dumps(prev_resp))
+        prev_choice = prev_resp_copy["output"]["choices"][0]
+        prev_message = prev_choice["message"]
+
+        message["content"] = message["content"].replace(prev_message["content"], "")
+
+        if message.get("tool_calls"):
+            for index, tool_call in enumerate(message["tool_calls"]):
+                function = tool_call["function"]
+                if prev_message.get("tool_calls") and index < len(prev_message["tool_calls"]):
+                    prev_function = prev_message["tool_calls"][index]["function"]
+                    if "name" in function:
+                        function["name"] = function["name"].replace(
+                            prev_function["name"], ""
+                        )
+                    # 关键修复：arguments 不做增量减法，保留完整值
+                    # 原始逻辑会产生非法 JSON 片段
+
+        return resp_copy
+
+
 class AgentFactory:
     """
     生产 Agent 工厂类
@@ -105,8 +147,7 @@ class AgentFactory:
 
             logger.info(f"🤖 Agent使用阿里云百炼模型: {model_name}")
 
-            from app.agent.tongyi_patch import create_normalized_tongyi
-            return create_normalized_tongyi(
+            return _NormalizedTongyi(
                 model=model_name,
                 api_key=api_key,
                 base_url=base_url,
@@ -156,6 +197,9 @@ class AgentFactory:
         agent = create_tool_calling_agent(chat_model, tools, prompt)
 
         # 3. 创建 Executor
+        # stream_runnable=False: 禁用 agent planning 阶段的流式调用，
+        # 避免 Qwen3 流式 tool_call_chunks 的 arguments 增量片段无法正确聚合。
+        # LLM 的 token 级流式输出仍通过 executor 的 astream 正常工作。
         return AgentExecutor(
             agent=agent,
             tools=tools,
@@ -163,6 +207,7 @@ class AgentFactory:
             return_intermediate_steps=return_intermediate_steps,
             handle_parsing_errors=True,
             max_iterations=5,
+            stream_runnable=False,
             **kwargs
         )
 
