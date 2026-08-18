@@ -7,7 +7,6 @@ from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import BaseTool
-from langchain_ollama import ChatOllama
 
 from app.agent.agent_middleware import get_middleware
 from app.agent.agent_tools import (
@@ -81,24 +80,17 @@ class AgentFactory:
         return load_prompt('main_prompt')
 
     def _create_chat_model(self, custom_model: str | None = None):
-        """内部方法：根据LLM_TYPE创建聊天模型实例（统一 OpenAI 兼容协议）"""
-        from app.utils.factory import create_chat_openai, resolve_chat_config
+        """内部方法：创建聊天模型实例（统一 OpenAI 兼容协议）"""
+        from app.utils.factory import create_chat_openai
 
-        cfg = resolve_chat_config(custom_model)
-
-        if cfg["llm_type"] == "OLLAMA":
-            logger.info(f"🤖 Agent使用Ollama模型: {cfg['model']}")
-            return ChatOllama(
-                model=cfg["model"],
-                base_url=cfg["base_url"],
-                streaming=True,
-                top_p=0.7,
-            )
-
-        logger.info(f"🤖 Agent使用OpenAI兼容模型: {cfg['model']}")
+        model = custom_model or os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini")
+        logger.info(f"🤖 Agent使用OpenAI兼容模型: {model}")
         return create_chat_openai(
-            model=cfg["model"], api_key=cfg["api_key"], base_url=cfg["base_url"],
-            streaming=True, top_p=0.7,
+            model=model,
+            api_key=os.getenv("OPENAI_API_KEY"),
+            base_url=os.getenv("OPENAI_BASE_URL"),
+            streaming=True,
+            top_p=0.7,
         )
 
     def _create_prompt(self, custom_system_prompt: str | None = None) -> ChatPromptTemplate:
