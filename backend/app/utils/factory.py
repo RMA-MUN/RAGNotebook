@@ -23,7 +23,7 @@ def create_chat_openai(model: str, api_key: str | None, base_url: str | None,
     )
 
 
-def resolve_openai_config(
+def _resolve_openai_config(
     model_env: str,
     base_url_env: str = "OPENAI_BASE_URL",
     api_key_env: str = "OPENAI_API_KEY",
@@ -39,6 +39,9 @@ def resolve_openai_config(
       避免部分配置时静默使用错误供应商的凭据。
     - model 取能力专属变量（如 VISION_MODEL_NAME），为空时用 default_model。
     - 返回 {"model": str, "api_key": str | None, "base_url": str | None}
+
+    内部通用实现——各能力请通过 resolve_chat_config() / resolve_vision_config() /
+    resolve_embed_config() 调用，保证每个能力只读自己那组环境变量。
     """
     base_url = os.getenv(base_url_env)
     api_key = os.getenv(api_key_env)
@@ -47,6 +50,27 @@ def resolve_openai_config(
         api_key = os.getenv("OPENAI_API_KEY")
     model = os.getenv(model_env) or default_model
     return {"model": model, "api_key": api_key, "base_url": base_url}
+
+
+def resolve_chat_config() -> dict:
+    """对话模型的配置（只读 OPENAI_BASE_URL / OPENAI_API_KEY / OPENAI_MODEL_NAME）"""
+    return _resolve_openai_config("OPENAI_MODEL_NAME", default_model="gpt-4o-mini")
+
+
+def resolve_vision_config() -> dict:
+    """视觉模型的配置（读 VISION_*；仅当 url 与 key 都为空时整体回落 OPENAI_*）"""
+    return _resolve_openai_config(
+        "VISION_MODEL_NAME", "VISION_BASE_URL", "VISION_API_KEY",
+        fallback_to_openai=True, default_model="qwen-vl-max",
+    )
+
+
+def resolve_embed_config() -> dict:
+    """嵌入模型的配置（读 EMBED_*；仅当 url 与 key 都为空时整体回落 OPENAI_*）"""
+    return _resolve_openai_config(
+        "EMBED_MODEL_NAME", "EMBED_BASE_URL", "EMBED_API_KEY",
+        fallback_to_openai=True, default_model="text-embedding-v3",
+    )
 
 
 class BaseModelFactory(ABC):
@@ -63,7 +87,7 @@ class ChatModelFactory(BaseModelFactory):
 
     def generator(self) -> Embeddings | BaseChatModel | None:
         """根据 OPENAI_* 环境变量生成聊天模型（统一 OpenAI 兼容协议）"""
-        cfg = resolve_openai_config("OPENAI_MODEL_NAME", default_model="gpt-4o-mini")
+        cfg = resolve_chat_config()
         logger.info(f"📦 ChatModel 使用OpenAI兼容模型: {cfg['model']}")
         return create_chat_openai(
             model=cfg["model"], api_key=cfg["api_key"], base_url=cfg["base_url"],
@@ -76,10 +100,7 @@ class EmbedModelFactory(BaseModelFactory):
     def generator(self) -> Embeddings | BaseChatModel | None:
         """根据 EMBED_* 环境变量生成嵌入模型（统一 OpenAI 兼容 /v1/embeddings）"""
         from langchain_openai import OpenAIEmbeddings
-        cfg = resolve_openai_config(
-            "EMBED_MODEL_NAME", "EMBED_BASE_URL", "EMBED_API_KEY",
-            fallback_to_openai=True, default_model="text-embedding-v3",
-        )
+        cfg = resolve_embed_config()
         if not (cfg["base_url"] and cfg["api_key"]):
             raise ValueError(
                 "嵌入模型配置不完整：请同时提供 EMBED_BASE_URL 与 EMBED_API_KEY；"
@@ -108,10 +129,7 @@ class VisionModelFactory(BaseModelFactory):
             return None
 
         # VISION_ENABLED=true 或未设置：统一 OpenAI 兼容（VISION_* 全空时原子回落 OPENAI_*）
-        cfg = resolve_openai_config(
-            "VISION_MODEL_NAME", "VISION_BASE_URL", "VISION_API_KEY",
-            fallback_to_openai=True, default_model="qwen-vl-max",
-        )
+        cfg = resolve_vision_config()
         if not (cfg["base_url"] and cfg["api_key"]):
             logger.warning("🎨 视觉配置不完整（缺少 VISION_BASE_URL/VISION_API_KEY 且无完整 OPENAI_* 回落），视觉已关闭（降级纯文本）")
             return None
