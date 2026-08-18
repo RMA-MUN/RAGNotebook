@@ -10,7 +10,7 @@ authors = [
 dependencies = [
     "python-dotenv==1.2.2",
     "SQLAlchemy==2.0.48",
-    "langchain-core==1.2.17",
+    "langchain-core==1.2.31",
     "aiofiles==25.1.0",
     "langchain-text-splitters==1.1.1",
     "fastapi==0.123.0",
@@ -28,7 +28,6 @@ dependencies = [
     "langchain==1.2.13",
     "langchain-chroma==1.1.0",
     "python-multipart==0.0.22",
-    "dashscope==1.25.14",
     "pypdf==6.9.2",
     "python-magic==0.4.27",
     "python-magic-bin==0.4.14; sys_platform == 'win32' or sys_platform == 'darwin'",
@@ -38,7 +37,6 @@ dependencies = [
     "torch==2.11.0",
     "torchvision==0.26.0",
     "torchaudio==2.11.0",
-    "langchain-dashscope==0.1.8",
     "unstructured[all-docs]==0.22.20",
     "langgraph-cli[inmem]==0.1.54",
     "rank-bm25==0.2.2",
@@ -48,6 +46,7 @@ dependencies = [
     "shortuuid==1.0.11",
     "imagehash==4.3.0",
     "bcrypt==4.3.0",
+    "langchain-openai==1.1.14",
 ]
 
 # 开发依赖

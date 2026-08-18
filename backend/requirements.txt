@@ -11,9 +11,7 @@ aiofiles==25.1.0
 aiohappyeyeballs==2.6.1
     # via aiohttp
 aiohttp==3.13.5
-    # via
-    #   dashscope
-    #   langchain-community
+    # via langchain-community
 aiomysql==0.3.2
     # via backend (pyproject.toml)
 aiosignal==1.4.0
@@ -27,6 +25,8 @@ annotated-types==0.7.0
 anyio==4.13.0
     # via
     #   httpx
+    #   langsmith
+    #   openai
     #   starlette
     #   watchfiles
 attrs==26.1.0
@@ -34,8 +34,10 @@ attrs==26.1.0
     #   aiohttp
     #   jsonschema
     #   referencing
-bcrypt==5.0.0
-    # via chromadb
+bcrypt==4.3.0
+    # via
+    #   backend (pyproject.toml)
+    #   chromadb
 beautifulsoup4==4.14.3
     # via unstructured
 blis==1.3.3
@@ -49,7 +51,6 @@ catalogue==2.0.10
     #   thinc
 certifi==2026.4.22
     # via
-    #   dashscope
     #   httpcore
     #   httpx
     #   kubernetes
@@ -87,7 +88,6 @@ contourpy==1.3.3
     # via matplotlib
 cryptography==48.0.0
     # via
-    #   dashscope
     #   google-auth
     #   msoffcrypto-tool
     #   pdfminer-six
@@ -98,23 +98,27 @@ cymem==2.0.13
     #   preshed
     #   spacy
     #   thinc
-dashscope==1.25.18
-    # via
-    #   backend (pyproject.toml)
-    #   langchain-dashscope
 dataclasses-json==0.6.7
     # via langchain-community
 deprecated==1.3.1
     # via pikepdf
+distro==1.9.0
+    # via
+    #   langsmith
+    #   openai
+dnspython==2.8.0
+    # via email-validator
 durationpy==0.10
     # via kubernetes
 ecdsa==0.19.2
     # via python-jose
+email-validator==2.3.0
+    # via pydantic
 emoji==2.15.0
     # via unstructured
 et-xmlfile==2.0.0
     # via openpyxl
-fastapi==0.123.10
+fastapi==0.123.0
     # via backend (pyproject.toml)
 filelock==3.29.0
     # via
@@ -181,6 +185,7 @@ httpx==0.28.1
     #   langgraph-sdk
     #   langsmith
     #   ollama
+    #   openai
     #   unstructured-client
     #   weasel
 httpx-sse==0.4.3
@@ -196,9 +201,12 @@ huggingface-hub==1.15.0
 idna==3.15
     # via
     #   anyio
+    #   email-validator
     #   httpx
     #   requests
     #   yarl
+imagehash==4.3.0
+    # via backend (pyproject.toml)
 importlib-metadata==8.7.1
     # via opentelemetry-api
 importlib-resources==7.1.0
@@ -209,6 +217,8 @@ jinja2==3.1.6
     # via
     #   spacy
     #   torch
+jiter==0.16.0
+    # via openai
 joblib==1.5.3
     # via scikit-learn
 jsonpatch==1.33
@@ -223,11 +233,11 @@ kiwisolver==1.5.0
     # via matplotlib
 kubernetes==35.0.0
     # via chromadb
-langchain==1.2.15
+langchain==1.2.13
     # via backend (pyproject.toml)
 langchain-chroma==1.1.0
     # via backend (pyproject.toml)
-langchain-classic==1.0.4
+langchain-classic==1.0.3
     # via langchain-community
 langchain-community==0.4.1
     # via backend (pyproject.toml)
@@ -239,15 +249,16 @@ langchain-core==1.2.31
     #   langchain-classic
     #   langchain-community
     #   langchain-ollama
+    #   langchain-openai
     #   langchain-text-splitters
     #   langgraph
     #   langgraph-checkpoint
     #   langgraph-prebuilt
-langchain-dashscope==0.1.8
+langchain-ollama==1.0.1
     # via backend (pyproject.toml)
-langchain-ollama==1.1.0
+langchain-openai==1.1.14
     # via backend (pyproject.toml)
-langchain-text-splitters==1.1.2
+langchain-text-splitters==1.1.1
     # via
     #   backend (pyproject.toml)
     #   langchain-classic
@@ -265,6 +276,11 @@ langgraph-prebuilt==1.0.10
     # via langgraph
 langgraph-sdk==0.3.14
     # via langgraph
+langsmith==0.11.0
+    # via
+    #   langchain-classic
+    #   langchain-community
+    #   langchain-core
 llvmlite==0.47.0
     # via numba
 lxml==6.1.0
@@ -289,7 +305,7 @@ ml-dtypes==0.5.4
     # via onnx
 mmh3==5.2.1
     # via chromadb
-modelscope==1.37.0
+modelscope==1.35.3
     # via backend (pyproject.toml)
 more-itertools==11.0.2
     # via openai-whisper
@@ -322,6 +338,7 @@ numpy==2.4.5
     #   blis
     #   chromadb
     #   contourpy
+    #   imagehash
     #   langchain-chroma
     #   langchain-community
     #   matplotlib
@@ -332,6 +349,7 @@ numpy==2.4.5
     #   openai-whisper
     #   opencv-python
     #   pandas
+    #   pywavelets
     #   rank-bm25
     #   scikit-learn
     #   scipy
@@ -356,6 +374,8 @@ onnxruntime==1.26.0
     # via
     #   chromadb
     #   unstructured-inference
+openai==2.54.0
+    # via langchain-openai
 openai-whisper==20250625
     # via unstructured
 opencv-python==4.13.0.92
@@ -412,6 +432,8 @@ pandas==2.3.3
     # via
     #   unstructured
     #   unstructured-inference
+passlib==1.7.4
+    # via backend (pyproject.toml)
 pdf2image==1.17.0
     # via unstructured
 pdfminer-six==20260107
@@ -420,8 +442,10 @@ pi-heif==1.3.0
     # via unstructured
 pikepdf==10.6.0
     # via unstructured
-pillow==12.2.0
+pillow==11.1.0
     # via
+    #   backend (pyproject.toml)
+    #   imagehash
     #   matplotlib
     #   pdf2image
     #   pi-heif
@@ -477,6 +501,7 @@ pydantic==2.12.5
     #   langgraph
     #   langsmith
     #   ollama
+    #   openai
     #   pydantic-settings
     #   spacy
     #   thinc
@@ -491,7 +516,7 @@ pydantic-settings==2.13.1
     #   langchain-community
 pygments==2.20.0
     # via rich
-pymupdf==1.27.2.3
+pymupdf==1.25.0
     # via backend (pyproject.toml)
 pymysql==1.1.3
     # via aiomysql
@@ -499,7 +524,7 @@ pypandoc-binary==1.17
     # via unstructured
 pyparsing==3.3.2
     # via matplotlib
-pypdf==6.11.0
+pypdf==6.9.2
     # via
     #   backend (pyproject.toml)
     #   unstructured
@@ -532,9 +557,9 @@ python-magic==0.4.27
     # via
     #   backend (pyproject.toml)
     #   unstructured
-python-magic-bin==0.4.14; sys_platform == 'win32' or sys_platform == 'darwin'
+python-magic-bin==0.4.14
     # via backend (pyproject.toml)
-python-multipart==0.0.28
+python-multipart==0.0.22
     # via backend (pyproject.toml)
 python-oxmsg==0.0.2
     # via unstructured
@@ -542,6 +567,8 @@ python-pptx==1.0.2
     # via unstructured
 pytz==2026.2
     # via pandas
+pywavelets==1.9.0
+    # via imagehash
 pyyaml==6.0.3
     # via
     #   backend (pyproject.toml)
@@ -561,7 +588,7 @@ rapidfuzz==3.14.5
     # via
     #   unstructured
     #   unstructured-inference
-redis==7.4.0
+redis==7.3.0
     # via backend (pyproject.toml)
 referencing==0.37.0
     # via
@@ -575,7 +602,6 @@ regex==2026.5.9
 requests==2.32.5
     # via
     #   backend (pyproject.toml)
-    #   dashscope
     #   google-api-core
     #   kubernetes
     #   langchain-classic
@@ -612,10 +638,11 @@ scikit-learn==1.8.0
     # via sentence-transformers
 scipy==1.17.1
     # via
+    #   imagehash
     #   scikit-learn
     #   sentence-transformers
     #   unstructured-inference
-sentence-transformers==5.5.0
+sentence-transformers==5.3.0
     # via backend (pyproject.toml)
 setuptools==81.0.0
     # via
@@ -625,6 +652,8 @@ setuptools==81.0.0
     #   torch
 shellingham==1.5.4
     # via typer
+shortuuid==1.0.11
+    # via backend (pyproject.toml)
 six==1.17.0
     # via
     #   ecdsa
@@ -634,6 +663,10 @@ six==1.17.0
     #   python-dateutil
 smart-open==7.6.1
     # via weasel
+sniffio==1.3.1
+    # via
+    #   langsmith
+    #   openai
 soupsieve==2.8.3
     # via beautifulsoup4
 spacy==3.8.14
@@ -642,7 +675,7 @@ spacy-legacy==3.0.12
     # via spacy
 spacy-loggers==1.0.5
     # via spacy
-sqlalchemy==2.0.49
+sqlalchemy==2.0.48
     # via
     #   backend (pyproject.toml)
     #   langchain-classic
@@ -669,7 +702,7 @@ threadpoolctl==3.6.0
     # via scikit-learn
 tiktoken==0.7.0
     # via
-    #   langchain-dashscope
+    #   langchain-openai
     #   openai-whisper
 timm==1.0.27
     # via unstructured-inference
@@ -677,7 +710,7 @@ tokenizers==0.22.2
     # via
     #   chromadb
     #   transformers
-torch==2.12.0
+torch==2.11.0+cu126
     # via
     #   backend (pyproject.toml)
     #   accelerate
@@ -686,9 +719,9 @@ torch==2.12.0
     #   timm
     #   torchvision
     #   unstructured-inference
-torchaudio==2.11.0
+torchaudio==2.11.0+cu126
     # via backend (pyproject.toml)
-torchvision==0.27.0
+torchvision==0.26.0+cu126
     # via
     #   backend (pyproject.toml)
     #   timm
@@ -697,6 +730,7 @@ tqdm==4.67.3
     #   chromadb
     #   huggingface-hub
     #   modelscope
+    #   openai
     #   openai-whisper
     #   sentence-transformers
     #   spacy
@@ -723,7 +757,9 @@ typing-extensions==4.15.0
     #   grpcio
     #   huggingface-hub
     #   langchain-core
+    #   langsmith
     #   onnx
+    #   openai
     #   opentelemetry-api
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-sdk
@@ -749,7 +785,7 @@ typing-inspection==0.4.2
     #   pydantic-settings
 tzdata==2026.2
     # via pandas
-unstructured==0.22.28
+unstructured==0.22.20
     # via backend (pyproject.toml)
 unstructured-client==0.44.0
     # via unstructured
@@ -782,11 +818,11 @@ weasel==1.0.0
 webencodings==0.5.1
     # via html5lib
 websocket-client==1.9.0
-    # via
-    #   dashscope
-    #   kubernetes
+    # via kubernetes
 websockets==16.0
-    # via uvicorn
+    # via
+    #   langsmith
+    #   uvicorn
 wrapt==2.1.2
     # via
     #   deprecated
