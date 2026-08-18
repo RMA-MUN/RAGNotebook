@@ -32,13 +32,19 @@ def resolve_openai_config(
 ) -> dict:
     """解析某个能力的 (model, api_key, base_url)，全部走 OpenAI 兼容协议。
 
-    - base_url/api_key 优先取能力专属变量（如 VISION_BASE_URL / VISION_API_KEY），
-      为空时回落 OPENAI_BASE_URL / OPENAI_API_KEY（若 fallback_to_openai=True）。
-    - model 优先取能力专属变量（如 VISION_MODEL_NAME），为空时用 default_model。
+    - 每个能力可独立配置自己的 base_url / api_key / model（支持跨平台混搭，
+      如 对话=DeepSeek、视觉=百炼、嵌入=Ollama/OpenRouter）。
+    - 回落是「原子」的：仅当该能力的 base_url 与 api_key **两者都未设置**时，
+      才整体回落 OPENAI_BASE_URL / OPENAI_API_KEY——绝不把不同平台的 url 与 key 混搭，
+      避免部分配置时静默使用错误供应商的凭据。
+    - model 取能力专属变量（如 VISION_MODEL_NAME），为空时用 default_model。
     - 返回 {"model": str, "api_key": str | None, "base_url": str | None}
     """
-    base_url = os.getenv(base_url_env) or (os.getenv("OPENAI_BASE_URL") if fallback_to_openai else None)
-    api_key = os.getenv(api_key_env) or (os.getenv("OPENAI_API_KEY") if fallback_to_openai else None)
+    base_url = os.getenv(base_url_env)
+    api_key = os.getenv(api_key_env)
+    if fallback_to_openai and not base_url and not api_key:
+        base_url = os.getenv("OPENAI_BASE_URL")
+        api_key = os.getenv("OPENAI_API_KEY")
     model = os.getenv(model_env) or default_model
     return {"model": model, "api_key": api_key, "base_url": base_url}
 
@@ -74,6 +80,12 @@ class EmbedModelFactory(BaseModelFactory):
             "EMBED_MODEL_NAME", "EMBED_BASE_URL", "EMBED_API_KEY",
             fallback_to_openai=True, default_model="text-embedding-v3",
         )
+        if not (cfg["base_url"] and cfg["api_key"]):
+            raise ValueError(
+                "嵌入模型配置不完整：请同时提供 EMBED_BASE_URL 与 EMBED_API_KEY；"
+                "或二者都留空以整体回落 OPENAI_BASE_URL/OPENAI_API_KEY。"
+                "避免跨供应商混用凭据（如只配了 EMBED_BASE_URL 却用对话的 OPENAI_API_KEY）。"
+            )
         logger.info(f"📦 EmbedModel 使用OpenAI兼容嵌入模型: {cfg['model']}")
         return OpenAIEmbeddings(model=cfg["model"], api_key=cfg["api_key"], base_url=cfg["base_url"])
 
@@ -95,13 +107,13 @@ class VisionModelFactory(BaseModelFactory):
             logger.info("🎨 视觉模型未启用（VISION_ENABLED=false），PDF 走纯文本")
             return None
 
-        # VISION_ENABLED=true 或未设置：统一 OpenAI 兼容（VISION_* 空则回落 OPENAI_*）
+        # VISION_ENABLED=true 或未设置：统一 OpenAI 兼容（VISION_* 全空时原子回落 OPENAI_*）
         cfg = resolve_openai_config(
             "VISION_MODEL_NAME", "VISION_BASE_URL", "VISION_API_KEY",
             fallback_to_openai=True, default_model="qwen-vl-max",
         )
-        if vision_enabled is not None and vision_enabled.lower() == "true" and not (cfg["base_url"] and cfg["api_key"]):
-            logger.warning("🎨 VISION_ENABLED=true 但缺少 VISION_BASE_URL/VISION_API_KEY（且无 OPENAI_* 回落），视觉已关闭（降级纯文本）")
+        if not (cfg["base_url"] and cfg["api_key"]):
+            logger.warning("🎨 视觉配置不完整（缺少 VISION_BASE_URL/VISION_API_KEY 且无完整 OPENAI_* 回落），视觉已关闭（降级纯文本）")
             return None
         logger.info(f"🎨 VisionModel 使用OpenAI兼容多模态模型: {cfg['model']}")
         return create_chat_openai(
