@@ -2,7 +2,6 @@ import os
 from abc import ABC, abstractmethod
 
 from dotenv import load_dotenv
-from langchain_community.chat_models.tongyi import ChatTongyi
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
 from langchain_ollama import ChatOllama, OllamaEmbeddings
@@ -117,54 +116,75 @@ class EmbedModelFactory(BaseModelFactory):
 
 
 class VisionModelFactory(BaseModelFactory):
-    """
-    视觉模型工厂 - 支持阿里云百炼和Ollama多模态模型。
-    用于 PDF 多模态加载场景：将 PDF 页面渲染为图片，然后调用视觉模型进行图片理解，
-    提取纯文本提取难以获取的图表、表格、流程图等视觉信息。
+    """视觉模型工厂 - 可选模块。
 
-    之所以单独为一个视觉模型工厂而不是复用 ChatModelFactory，是因为：
-    1. ChatModel 使用 streaming=True（流式输出），而视觉模型只能用 streaming=False
-       （图片理解不适合流式）
-    2. 视觉模型可能有独立的模型配置（如 VISION_OLLAMA_MODEL_NAME 区分于 OLLAMA_MODEL_NAME）
-    3. 部分用户可能希望视觉模型使用更大的参数量或专门的多模态模型（如 qwen-vl 系列）
+    VISION_ENABLED 三态：
+    - 未设置（None）: 保持旧行为（跟随 VISION_MODEL_TYPE 或 LLM_TYPE）
+    - "false"       : 彻底关闭，返回 None（PDF 走纯文本，无需任何视觉配置）
+    - "true"        : 强制使用 VISION_MODEL_TYPE（OPENAI_COMPAT / OLLAMA），
+                      配置缺失时告警并返回 None（fail-soft 降级）
+
+    统一 OpenAI 兼容协议：OPENAI_COMPAT / legacy ALIYUN 分支均使用 ChatOpenAI
+    （streaming=False，图片理解不适合流式），OLLAMA 分支保留 ChatOllama。
     """
 
     def generator(self) -> BaseChatModel | None:
-        """根据VISION_MODEL_TYPE生成对应的视觉模型"""
-        # 未设置 VISION_MODEL_TYPE 时，默认跟随 LLM_TYPE（保持向后兼容）
-        vision_type = os.getenv("VISION_MODEL_TYPE", "").upper() or os.getenv("LLM_TYPE", "ALIYUN").upper()
+        vision_enabled = os.getenv("VISION_ENABLED")
 
-        if vision_type == "OLLAMA":
-            model_name = os.getenv("VISION_OLLAMA_MODEL_NAME") or os.getenv("OLLAMA_MODEL_NAME") or "qwen-vl:7b"
-            base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        if vision_enabled is not None and vision_enabled.lower() == "false":
+            logger.info("🎨 视觉模型未启用（VISION_ENABLED=false），PDF 走纯文本")
+            return None
 
-            logger.info(f"🎨 VisionModel 使用Ollama多模态模型: {model_name}, 地址: {base_url}")
-
-            return ChatOllama(
-                model=model_name,
-                base_url=base_url,
-                # 视觉模型禁用 streaming，因为图片理解需要在完整的上下文上做推理
-                streaming=False,
-                top_p=0.7,
+        if vision_enabled is not None and vision_enabled.lower() == "true":
+            vtype = os.getenv("VISION_MODEL_TYPE", "").upper()
+            if vtype == "OLLAMA":
+                model_name = os.getenv("VISION_OLLAMA_MODEL_NAME", "qwen-vl:7b")
+                base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+                logger.info(f"🎨 VisionModel 使用Ollama多模态模型: {model_name}, 地址: {base_url}")
+                return ChatOllama(
+                    model=model_name,
+                    base_url=base_url,
+                    streaming=False,
+                    top_p=0.7,
+                )
+            base_url = os.getenv("VISION_BASE_URL") or os.getenv("ALIYUN_BASE_URL")
+            api_key = os.getenv("VISION_API_KEY") or os.getenv("ALIYUN_ACCESS_KEY_SECRET")
+            model = (os.getenv("VISION_MODEL_NAME")
+                     or os.getenv("VISION_CHAT_MODEL_NAME")
+                     or os.getenv("CHAT_MODEL_NAME") or "qwen-vl-max")
+            if not (base_url and api_key):
+                logger.warning("🎨 VISION_ENABLED=true 但缺少 VISION_BASE_URL/VISION_API_KEY，视觉已关闭（降级纯文本）")
+                return None
+            logger.info(f"🎨 VisionModel 使用OpenAI兼容多模态模型: {model}")
+            return create_chat_openai(
+                model=model, api_key=api_key, base_url=base_url,
+                streaming=False, top_p=0.7,
             )
 
-        elif vision_type == "ALIYUN":
-            model_name = os.getenv("VISION_CHAT_MODEL_NAME") or os.getenv("CHAT_MODEL_NAME") or "qwen3-max"
-            api_key = os.getenv("ALIYUN_ACCESS_KEY_SECRET")
-            base_url = os.getenv("ALIYUN_BASE_URL")
-
-            logger.info(f"🎨 VisionModel 使用阿里云百炼多模态模型: {model_name}")
-
-            return ChatTongyi(
-                model=model_name,
-                api_key=api_key,
-                base_url=base_url,
-                streaming=False,
-                top_p=0.7,
+        # 未设置 VISION_ENABLED：保持旧行为（跟随 VISION_MODEL_TYPE 或 LLM_TYPE）
+        vtype = os.getenv("VISION_MODEL_TYPE", "").upper() or os.getenv("LLM_TYPE", "ALIYUN").upper()
+        if vtype in ("OPENAI", "OPENAI_COMPAT", "ALIYUN"):
+            base_url = os.getenv("VISION_BASE_URL") or os.getenv("ALIYUN_BASE_URL")
+            api_key = os.getenv("VISION_API_KEY") or os.getenv("ALIYUN_ACCESS_KEY_SECRET")
+            model = (os.getenv("VISION_MODEL_NAME")
+                     or os.getenv("VISION_CHAT_MODEL_NAME")
+                     or os.getenv("CHAT_MODEL_NAME") or "qwen-vl-max")
+            logger.info(f"🎨 VisionModel 使用OpenAI兼容多模态模型: {model}")
+            return create_chat_openai(
+                model=model, api_key=api_key, base_url=base_url,
+                streaming=False, top_p=0.7,
             )
-
-        else:
-            raise ValueError(f"不支持的VISION_MODEL_TYPE: {vision_type}，可选值: ALIYUN, OLLAMA")
+        # OLLAMA
+        model_name = (os.getenv("VISION_OLLAMA_MODEL_NAME")
+                      or os.getenv("OLLAMA_MODEL_NAME") or "qwen-vl:7b")
+        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        logger.info(f"🎨 VisionModel 使用Ollama多模态模型: {model_name}, 地址: {base_url}")
+        return ChatOllama(
+            model=model_name,
+            base_url=base_url,
+            streaming=False,
+            top_p=0.7,
+        )
 
 
 class RerankerModelFactory(BaseModelFactory):
