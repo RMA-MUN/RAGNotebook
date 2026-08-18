@@ -24,7 +24,6 @@ dependencies = [
     "uvicorn==0.21.1",
     "aiomysql==0.3.2",
     "redis==7.3.0",
-    "langchain-ollama==1.0.1",
     "langchain==1.2.13",
     "langchain-chroma==1.1.0",
     "python-multipart==0.0.22",

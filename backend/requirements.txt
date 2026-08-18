@@ -184,7 +184,6 @@ httpx==0.28.1
     #   huggingface-hub
     #   langgraph-sdk
     #   langsmith
-    #   ollama
     #   openai
     #   unstructured-client
     #   weasel
@@ -248,14 +247,11 @@ langchain-core==1.2.31
     #   langchain-chroma
     #   langchain-classic
     #   langchain-community
-    #   langchain-ollama
     #   langchain-openai
     #   langchain-text-splitters
     #   langgraph
     #   langgraph-checkpoint
     #   langgraph-prebuilt
-langchain-ollama==1.0.1
-    # via backend (pyproject.toml)
 langchain-openai==1.1.14
     # via backend (pyproject.toml)
 langchain-text-splitters==1.1.1
@@ -366,8 +362,6 @@ olefile==0.47
     # via
     #   msoffcrypto-tool
     #   python-oxmsg
-ollama==0.6.2
-    # via langchain-ollama
 onnx==1.21.0
     # via unstructured-inference
 onnxruntime==1.26.0
@@ -500,7 +494,6 @@ pydantic==2.12.5
     #   langchain-core
     #   langgraph
     #   langsmith
-    #   ollama
     #   openai
     #   pydantic-settings
     #   spacy
