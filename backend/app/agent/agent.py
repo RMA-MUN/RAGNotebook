@@ -200,7 +200,9 @@ async def get_agent_response(
         }):
             if "output" in chunk:
                 full_response.append(chunk["output"])
-            elif "intermediate_steps" in chunk:
+            # 真实 AgentExecutor 的末帧同时携带 output 与 intermediate_steps，
+            # 因此不能用 elif，否则步骤永远不会被收集。
+            if "intermediate_steps" in chunk:
                 for action, observation in chunk["intermediate_steps"]:
                     # 记录日志
                     logger.info(f"\n\n🧠 [Agent 思考] {action.log}")
@@ -293,7 +295,9 @@ async def get_agent_stream_response(
             }):
                 if "output" in chunk:
                     full_response.append(chunk["output"])
-                elif "intermediate_steps" in chunk:
+                # 与 get_agent_response 同理：末帧同时含 output 与 intermediate_steps，
+                # 用 if 而非 elif，保证流式场景下工具调用日志也能输出。
+                if "intermediate_steps" in chunk:
                     for action, observation in chunk["intermediate_steps"]:
                         logger.info(f"\n\n🧠 [Agent 思考] {action.log}")
                         logger.info(f"🛠️ [调用工具] {action.tool}")
