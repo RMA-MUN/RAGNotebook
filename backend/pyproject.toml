@@ -52,9 +52,20 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest==8.3.4",
+    "pytest-asyncio==1.0.0",
+    "pytest-cov==6.0.0",
+    "aiosqlite==0.21.0",
     "black==24.10.0",
     "isort==5.13.2",
     "ruff==0.8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning:fastapi.*",
+    "ignore::DeprecationWarning:pydantic.*",
 ]
 
 [tool.setuptools.packages.find]
