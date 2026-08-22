@@ -108,7 +108,11 @@ class EmbedModelFactory(BaseModelFactory):
                 "避免跨供应商混用凭据（如只配了 EMBED_BASE_URL 却用对话的 OPENAI_API_KEY）。"
             )
         logger.info(f"📦 EmbedModel 使用OpenAI兼容嵌入模型: {cfg['model']}")
-        return OpenAIEmbeddings(model=cfg["model"], api_key=cfg["api_key"], base_url=cfg["base_url"])
+        return OpenAIEmbeddings(
+            model=cfg["model"], api_key=cfg["api_key"], base_url=cfg["base_url"],
+            check_embedding_ctx_length=False,  # 发送原始字符串数组；token 数组输入部分供应商（如 DashScope 兼容模式）不支持
+            chunk_size=10,                     # DashScope text-embedding-v3/v4 单次请求最多 10 条文本
+        )
 
 
 class VisionModelFactory(BaseModelFactory):

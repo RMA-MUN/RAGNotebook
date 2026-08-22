@@ -7,6 +7,7 @@ because they construct real model clients.
 import pytest
 
 from app.utils.factory import (
+    EmbedModelFactory,
     RerankerModelFactory,
     VisionModelFactory,
     _resolve_openai_config,
@@ -215,6 +216,21 @@ def test_vision_factory_default_when_unset_and_no_config(monkeypatch):
 
 def test_reranker_factory_always_returns_none():
     assert RerankerModelFactory().generator() is None
+
+
+# ---------------------------------------------------------------------------
+# EmbedModelFactory.generator()（构造 OpenAIEmbeddings 不发起网络请求）
+# ---------------------------------------------------------------------------
+def test_embed_factory_sends_raw_strings_for_dashscope(monkeypatch):
+    """DashScope 兼容模式不支持 token 数组输入，必须发送原始字符串数组"""
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("EMBED_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    monkeypatch.setenv("EMBED_API_KEY", "sk-embed")
+    monkeypatch.setenv("EMBED_MODEL_NAME", "text-embedding-v3")
+    embed = EmbedModelFactory().generator()
+    assert embed.model == "text-embedding-v3"
+    assert embed.check_embedding_ctx_length is False
+    assert embed.chunk_size == 10
 
 
 if __name__ == "__main__":
