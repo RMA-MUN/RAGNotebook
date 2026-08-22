@@ -76,8 +76,23 @@ export default function KnowledgeBase() {
               )
             )
             setUploadDone((c) => c + 1)
+          } else if (data.event_type === 'error') {
+            setUploadFiles((prev) =>
+              prev.map((uf) =>
+                uf.file.name === data.filename
+                  ? { ...uf, status: 'fail', error: data.error_message || '上传失败' }
+                  : uf
+              )
+            )
+            setUploadDone((c) => c + 1)
           } else if (data.event_type === 'finish') {
             loadDocs()
+            setUploadFiles((prev) => {
+              const allSuccess = prev.length > 0 && prev.every((uf) => uf.status === 'success')
+              return allSuccess ? [] : prev
+            })
+            setUploadTotal(0)
+            setUploadDone(0)
           }
         },
         onError: () => {
@@ -191,7 +206,11 @@ export default function KnowledgeBase() {
                 <Loader2 size={16} className="animate-spin text-[var(--color-accent)] shrink-0" />
               )}
               <span className="text-sm text-[var(--color-text)] flex-1 truncate">{uf.file.name}</span>
-              <span className="text-xs text-[var(--color-text-tertiary)]">{formatSize(uf.file.size)}</span>
+              {uf.status === 'fail' && uf.error ? (
+                <span className="text-xs text-[var(--color-danger)] truncate max-w-[240px]">{uf.error}</span>
+              ) : (
+                <span className="text-xs text-[var(--color-text-tertiary)]">{formatSize(uf.file.size)}</span>
+              )}
               {uf.status === 'uploading' && (
                 <div className="w-24 h-1.5 rounded-full bg-[var(--color-bg-tertiary)] overflow-hidden">
                   <div className="h-full bg-[var(--color-accent)] rounded-full transition-all" style={{ width: `${uf.progress}%` }} />
