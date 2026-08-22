@@ -164,7 +164,7 @@ export interface SSEMessage {
 }
 
 export interface KnowledgeSSEMessage {
-  event_type: 'processing' | 'completed' | 'finish'
+  event_type: 'processing' | 'completed' | 'error' | 'finish'
   filename?: string
   progress?: number
   current?: number
@@ -173,4 +173,5 @@ export interface KnowledgeSSEMessage {
   md5?: string
   knowledge_id?: string
   status?: string
+  error_message?: string
 }

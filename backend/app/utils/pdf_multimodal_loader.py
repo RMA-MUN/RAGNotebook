@@ -21,6 +21,8 @@ _BATCH_SIZE = int(os.getenv("VISION_BATCH_SIZE", "5"))
 _DEDUP_ENABLED = os.getenv("VISION_DEDUP_ENABLED", "true").lower() == "true"
 _DEDUP_THRESHOLD = int(os.getenv("VISION_DEDUP_THRESHOLD", "10"))
 _LOW_RES_BATCH = os.getenv("VISION_BATCH_LOW_RES", "true").lower() == "true"
+# 视觉总开关：显式设为 false 时彻底关闭（PDF 走纯文本，不渲染页面）；未设置或 true 保持旧行为
+_VISION_ENABLED = os.getenv("VISION_ENABLED", "").lower() != "false"
 
 
 @dataclass
@@ -89,6 +91,9 @@ async def pdf_multimodal_loader(file_path: str, md5: str, user_id: str) -> list[
     # 第1步：提取PDF中所有嵌入的原始图片，保存到磁盘
     images_map = extract_images_from_pdf(abs_file_path, user_id, md5)
 
+    if not _VISION_ENABLED:
+        logger.info("【多模态PDF加载】视觉未启用（VISION_ENABLED=false），全部页面走纯文本")
+
     try:
         doc = fitz.open(abs_file_path)
     except Exception as e:
@@ -112,7 +117,7 @@ async def pdf_multimodal_loader(file_path: str, md5: str, user_id: str) -> list[
         has_images = len(page_images) > 0
 
         # 第2步：判断是否需要视觉模型处理——有图片或文本太少（<100字符）时启用
-        if has_images or len(text) < 100:
+        if _VISION_ENABLED and (has_images or len(text) < 100):
             pix = page.get_pixmap(matrix=matrix)
             temp_path = None
             try:
@@ -273,6 +278,9 @@ def pdf_multimodal_loader_sync(file_path: str, md5: str, user_id: str) -> list[D
     vision = VisionService()
     images_map = extract_images_from_pdf(abs_file_path, user_id, md5)
 
+    if not _VISION_ENABLED:
+        logger.info("【多模态PDF加载·同步】视觉未启用（VISION_ENABLED=false），全部页面走纯文本")
+
     try:
         doc = fitz.open(abs_file_path)
     except Exception as e:
@@ -293,7 +301,7 @@ def pdf_multimodal_loader_sync(file_path: str, md5: str, user_id: str) -> list[D
         page_images = images_map.get(page_num, [])
         has_images = len(page_images) > 0
 
-        if has_images or len(text) < 100:
+        if _VISION_ENABLED and (has_images or len(text) < 100):
             pix = page.get_pixmap(matrix=matrix)
             temp_path = None
             try:

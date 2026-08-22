@@ -4,11 +4,9 @@ import os
 from collections.abc import AsyncGenerator
 
 from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
-from langchain_community.chat_models import ChatTongyi
 from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import BaseTool
-from langchain_ollama import ChatOllama
 
 from app.agent.agent_middleware import get_middleware
 from app.agent.agent_tools import (
@@ -26,48 +24,6 @@ from app.agent.agent_tools import (
 from app.core.logger_handler import logger
 from app.services import session_manager as sm
 from app.utils.prompt_loader import load_prompt
-
-
-class _NormalizedTongyi(ChatTongyi):
-    """
-    ChatTongyi wrapper：修复 Qwen3 流式 tool_calls arguments 格式问题。
-
-    根因：Tongyi SDK 的 subtract_client_response 用字符串替换计算 arguments
-    增量（如 '{"title": "量子"}'.replace('{"title":', '') → ': "量子"}'），
-    产生非法 JSON 片段，check_response 报错。
-    解决：重写 subtract_client_response，对 arguments 使用完整替换而非增量减法。
-    """
-
-    class Config:
-        arbitrary_types_allowed = True
-
-    def subtract_client_response(self, resp, prev_resp):
-        """重写 delta 计算：arguments 使用完整值而非增量减法。"""
-        import json as _json
-
-        resp_copy = _json.loads(_json.dumps(resp))
-        choice = resp_copy["output"]["choices"][0]
-        message = choice["message"]
-
-        prev_resp_copy = _json.loads(_json.dumps(prev_resp))
-        prev_choice = prev_resp_copy["output"]["choices"][0]
-        prev_message = prev_choice["message"]
-
-        message["content"] = message["content"].replace(prev_message["content"], "")
-
-        if message.get("tool_calls"):
-            for index, tool_call in enumerate(message["tool_calls"]):
-                function = tool_call["function"]
-                if prev_message.get("tool_calls") and index < len(prev_message["tool_calls"]):
-                    prev_function = prev_message["tool_calls"][index]["function"]
-                    if "name" in function:
-                        function["name"] = function["name"].replace(
-                            prev_function["name"], ""
-                        )
-                    # 关键修复：arguments 不做增量减法，保留完整值
-                    # 原始逻辑会产生非法 JSON 片段
-
-        return resp_copy
 
 
 class AgentFactory:
@@ -124,39 +80,18 @@ class AgentFactory:
         return load_prompt('main_prompt')
 
     def _create_chat_model(self, custom_model: str | None = None):
-        """内部方法：根据LLM_TYPE创建聊天模型实例"""
-        llm_type = os.getenv("LLM_TYPE", "ALIYUN").upper()
+        """内部方法：创建聊天模型实例（统一 OpenAI 兼容协议）"""
+        from app.utils.factory import create_chat_openai
 
-        if llm_type == "OLLAMA":
-            model_name = custom_model or os.getenv("OLLAMA_MODEL_NAME", self.model)
-            base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-
-            logger.info(f"🤖 Agent使用Ollama模型: {model_name}")
-
-            return ChatOllama(
-                model=model_name,
-                base_url=base_url,
-                streaming=True,
-                top_p=0.7,
-            )
-
-        elif llm_type == "ALIYUN":
-            api_key = os.getenv("ALIYUN_ACCESS_KEY_SECRET")
-            base_url = os.getenv("ALIYUN_BASE_URL")
-            model_name = custom_model or os.getenv("ALIYUN_MODEL_NAME", self.model)
-
-            logger.info(f"🤖 Agent使用阿里云百炼模型: {model_name}")
-
-            return _NormalizedTongyi(
-                model=model_name,
-                api_key=api_key,
-                base_url=base_url,
-                streaming=True,
-                top_p=0.7,
-            )
-
-        else:
-            raise ValueError(f"不支持的LLM_TYPE: {llm_type}，可选值: ALIYUN, OLLAMA")
+        model = custom_model or os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini")
+        logger.info(f"🤖 Agent使用OpenAI兼容模型: {model}")
+        return create_chat_openai(
+            model=model,
+            api_key=os.getenv("OPENAI_API_KEY"),
+            base_url=os.getenv("OPENAI_BASE_URL"),
+            streaming=True,
+            top_p=0.7,
+        )
 
     def _create_prompt(self, custom_system_prompt: str | None = None) -> ChatPromptTemplate:
         """内部方法：创建提示词模板"""
@@ -265,7 +200,9 @@ async def get_agent_response(
         }):
             if "output" in chunk:
                 full_response.append(chunk["output"])
-            elif "intermediate_steps" in chunk:
+            # 真实 AgentExecutor 的末帧同时携带 output 与 intermediate_steps，
+            # 因此不能用 elif，否则步骤永远不会被收集。
+            if "intermediate_steps" in chunk:
                 for action, observation in chunk["intermediate_steps"]:
                     # 记录日志
                     logger.info(f"\n\n🧠 [Agent 思考] {action.log}")
@@ -358,7 +295,9 @@ async def get_agent_stream_response(
             }):
                 if "output" in chunk:
                     full_response.append(chunk["output"])
-                elif "intermediate_steps" in chunk:
+                # 与 get_agent_response 同理：末帧同时含 output 与 intermediate_steps，
+                # 用 if 而非 elif，保证流式场景下工具调用日志也能输出。
+                if "intermediate_steps" in chunk:
                     for action, observation in chunk["intermediate_steps"]:
                         logger.info(f"\n\n🧠 [Agent 思考] {action.log}")
                         logger.info(f"🛠️ [调用工具] {action.tool}")

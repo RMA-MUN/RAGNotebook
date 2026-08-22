@@ -44,6 +44,20 @@ async def create_template(
     return success_response(message="模板创建成功", data=template)
 
 
+@note_template_router.put("/reorder")
+async def reorder_templates(
+    payload: NoteTemplateReorder,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """重新排序模板。"""
+    svc = get_note_template_service()
+    ok = await svc.reorder_templates(db, user_id, payload)
+    if not ok:
+        return success_response(message="排序失败，模板ID不匹配")
+    return success_response(message="排序成功")
+
+
 @note_template_router.put("/{template_id}")
 async def update_template(
     template_id: str,
@@ -73,17 +87,3 @@ async def delete_template(
     if not deleted:
         return success_response(message="模板不存在或为内置模板")
     return success_response(message="模板删除成功")
-
-
-@note_template_router.put("/reorder")
-async def reorder_templates(
-    payload: NoteTemplateReorder,
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
-    """重新排序模板。"""
-    svc = get_note_template_service()
-    ok = await svc.reorder_templates(db, user_id, payload)
-    if not ok:
-        return success_response(message="排序失败，模板ID不匹配")
-    return success_response(message="排序成功")

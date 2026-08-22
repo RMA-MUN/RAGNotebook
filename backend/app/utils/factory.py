@@ -2,10 +2,8 @@ import os
 from abc import ABC, abstractmethod
 
 from dotenv import load_dotenv
-from langchain_community.chat_models.tongyi import ChatTongyi
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
-from langchain_ollama import ChatOllama, OllamaEmbeddings
 
 from app.core.logger_handler import logger
 
@@ -13,48 +11,66 @@ from app.core.logger_handler import logger
 load_dotenv()
 
 
-class DashScopeEmbeddingsWrapper(Embeddings):
-    """阿里云DashScope嵌入模型封装"""
+def create_chat_openai(model: str, api_key: str | None, base_url: str | None,
+                       streaming: bool = True, top_p: float = 0.7) -> BaseChatModel:
+    from langchain_openai import ChatOpenAI
+    return ChatOpenAI(
+        model=model,
+        api_key=api_key,
+        base_url=base_url,
+        streaming=streaming,
+        top_p=top_p,
+    )
 
-    def __init__(self, model_name: str = "qwen3-embedding", api_key: str = None):
-        try:
-            import dashscope
-            self.dashscope = dashscope
-            self.dashscope.api_key = api_key or os.getenv("ALIYUN_ACCESS_KEY_SECRET")
-            self.model_name = model_name
-        except ImportError:
-            raise ImportError("需要安装 dashscope 库: pip install dashscope")
 
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        """批量嵌入文档 — 按 batch_size 分组合并 API 调用"""
-        if not texts:
-            return []
-        batch_size = 10
-        results = []
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
-            resp = self.dashscope.TextEmbedding.call(
-                model=self.model_name,
-                input=batch if len(batch) > 1 else batch[0],
-            )
-            if resp.status_code == 200:
-                results.extend([emb['embedding'] for emb in resp.output['embeddings']])
-            else:
-                logger.error(f"阿里云嵌入调用失败: {resp.message}")
-                raise RuntimeError(f"嵌入调用失败: {resp.message}")
-        return results
+def _resolve_openai_config(
+    model_env: str,
+    base_url_env: str = "OPENAI_BASE_URL",
+    api_key_env: str = "OPENAI_API_KEY",
+    fallback_to_openai: bool = True,
+    default_model: str | None = None,
+) -> dict:
+    """解析某个能力的 (model, api_key, base_url)，全部走 OpenAI 兼容协议。
 
-    def embed_query(self, text: str) -> list[float]:
-        """嵌入单个查询"""
-        resp = self.dashscope.TextEmbedding.call(
-            model=self.model_name,
-            input=text
-        )
-        if resp.status_code == 200:
-            return resp.output['embeddings'][0]['embedding']
-        else:
-            logger.error(f"阿里云嵌入调用失败: {resp.message}")
-            return []
+    - 每个能力可独立配置自己的 base_url / api_key / model（支持跨平台混搭，
+      如 对话=DeepSeek、视觉=百炼、嵌入=Ollama/OpenRouter）。
+    - 回落是「原子」的：仅当该能力的 base_url 与 api_key **两者都未设置**时，
+      才整体回落 OPENAI_BASE_URL / OPENAI_API_KEY——绝不把不同平台的 url 与 key 混搭，
+      避免部分配置时静默使用错误供应商的凭据。
+    - model 取能力专属变量（如 VISION_MODEL_NAME），为空时用 default_model。
+    - 返回 {"model": str, "api_key": str | None, "base_url": str | None}
+
+    内部通用实现——各能力请通过 resolve_chat_config() / resolve_vision_config() /
+    resolve_embed_config() 调用，保证每个能力只读自己那组环境变量。
+    """
+    base_url = os.getenv(base_url_env)
+    api_key = os.getenv(api_key_env)
+    if fallback_to_openai and not base_url and not api_key:
+        base_url = os.getenv("OPENAI_BASE_URL")
+        api_key = os.getenv("OPENAI_API_KEY")
+    model = os.getenv(model_env) or default_model
+    return {"model": model, "api_key": api_key, "base_url": base_url}
+
+
+def resolve_chat_config() -> dict:
+    """对话模型的配置（只读 OPENAI_BASE_URL / OPENAI_API_KEY / OPENAI_MODEL_NAME）"""
+    return _resolve_openai_config("OPENAI_MODEL_NAME", default_model="gpt-4o-mini")
+
+
+def resolve_vision_config() -> dict:
+    """视觉模型的配置（读 VISION_*；仅当 url 与 key 都为空时整体回落 OPENAI_*）"""
+    return _resolve_openai_config(
+        "VISION_MODEL_NAME", "VISION_BASE_URL", "VISION_API_KEY",
+        fallback_to_openai=True, default_model="qwen-vl-max",
+    )
+
+
+def resolve_embed_config() -> dict:
+    """嵌入模型的配置（读 EMBED_*；仅当 url 与 key 都为空时整体回落 OPENAI_*）"""
+    return _resolve_openai_config(
+        "EMBED_MODEL_NAME", "EMBED_BASE_URL", "EMBED_API_KEY",
+        fallback_to_openai=True, default_model="text-embedding-v3",
+    )
 
 
 class BaseModelFactory(ABC):
@@ -67,125 +83,65 @@ class BaseModelFactory(ABC):
 
 
 class ChatModelFactory(BaseModelFactory):
-    """聊天模型工厂 - 支持阿里云百炼和Ollama"""
+    """聊天模型工厂 - 统一 OpenAI 兼容协议"""
 
     def generator(self) -> Embeddings | BaseChatModel | None:
-        """根据LLM_TYPE生成对应的聊天模型"""
-        llm_type = os.getenv("LLM_TYPE", "ALIYUN").upper()
-
-        if llm_type == "OLLAMA":
-            model_name = os.getenv("OLLAMA_MODEL_NAME", os.getenv("OLLAMA_CHAT_MODEL_NAME", "qwen3:7b"))
-            base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-
-            logger.info(f"📦 ChatModel 使用Ollama模型: {model_name}, 地址: {base_url}")
-
-            return ChatOllama(
-                model=model_name,
-                base_url=base_url,
-                streaming=True,
-                top_p=0.7,
-            )
-
-        elif llm_type == "ALIYUN":
-            model_name = os.getenv("ALIYUN_MODEL_NAME", os.getenv("CHAT_MODEL_NAME", "qwen3-max"))
-            api_key = os.getenv("ALIYUN_ACCESS_KEY_SECRET")
-            base_url = os.getenv("ALIYUN_BASE_URL")
-
-            logger.info(f"📦 ChatModel 使用阿里云百炼模型: {model_name}")
-
-            return ChatTongyi(
-                model=model_name,
-                api_key=api_key,
-                base_url=base_url,
-                streaming=True,
-                top_p=0.7,
-            )
-
-        else:
-            raise ValueError(f"不支持的LLM_TYPE: {llm_type}，可选值: ALIYUN, OLLAMA")
+        """根据 OPENAI_* 环境变量生成聊天模型（统一 OpenAI 兼容协议）"""
+        cfg = resolve_chat_config()
+        logger.info(f"📦 ChatModel 使用OpenAI兼容模型: {cfg['model']}")
+        return create_chat_openai(
+            model=cfg["model"], api_key=cfg["api_key"], base_url=cfg["base_url"],
+            streaming=True, top_p=0.7,
+        )
 
 
 class EmbedModelFactory(BaseModelFactory):
-    """嵌入模型工厂 - 支持Ollama和阿里云百炼"""
+    """嵌入模型工厂 - 统一 OpenAI 兼容 /v1/embeddings"""
     def generator(self) -> Embeddings | BaseChatModel | None:
-        """根据EMBED_MODEL_TYPE生成对应的嵌入模型"""
-        embed_type = os.getenv("EMBED_MODEL_TYPE", "OLLAMA").upper()
-
-        if embed_type == "OLLAMA":
-            model_name = os.getenv("TEXT_EMBEDDING_MODEL_NAME", "qwen3-embedding:0.6b")
-            base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-
-            logger.info(f"📦 EmbedModel 使用Ollama嵌入模型: {model_name}, 地址: {base_url}")
-
-            return OllamaEmbeddings(
-                model=model_name,
-                base_url=base_url
+        """根据 EMBED_* 环境变量生成嵌入模型（统一 OpenAI 兼容 /v1/embeddings）"""
+        from langchain_openai import OpenAIEmbeddings
+        cfg = resolve_embed_config()
+        if not (cfg["base_url"] and cfg["api_key"]):
+            raise ValueError(
+                "嵌入模型配置不完整：请同时提供 EMBED_BASE_URL 与 EMBED_API_KEY；"
+                "或二者都留空以整体回落 OPENAI_BASE_URL/OPENAI_API_KEY。"
+                "避免跨供应商混用凭据（如只配了 EMBED_BASE_URL 却用对话的 OPENAI_API_KEY）。"
             )
-
-        elif embed_type == "ALIYUN":
-            model_name = os.getenv("ALIYUN_EMBED_MODEL_NAME", "qwen3-embedding")
-            api_key = os.getenv("ALIYUN_ACCESS_KEY_SECRET")
-
-            logger.info(f"📦 EmbedModel 使用阿里云嵌入模型: {model_name}")
-
-            return DashScopeEmbeddingsWrapper(
-                model_name=model_name,
-                api_key=api_key
-            )
-
-        else:
-            raise ValueError(f"不支持的EMBED_MODEL_TYPE: {embed_type}，可选值: OLLAMA, ALIYUN")
+        logger.info(f"📦 EmbedModel 使用OpenAI兼容嵌入模型: {cfg['model']}")
+        return OpenAIEmbeddings(
+            model=cfg["model"], api_key=cfg["api_key"], base_url=cfg["base_url"],
+            check_embedding_ctx_length=False,  # 发送原始字符串数组；token 数组输入部分供应商（如 DashScope 兼容模式）不支持
+            chunk_size=10,                     # DashScope text-embedding-v3/v4 单次请求最多 10 条文本
+        )
 
 
 class VisionModelFactory(BaseModelFactory):
-    """
-    视觉模型工厂 - 支持阿里云百炼和Ollama多模态模型。
-    用于 PDF 多模态加载场景：将 PDF 页面渲染为图片，然后调用视觉模型进行图片理解，
-    提取纯文本提取难以获取的图表、表格、流程图等视觉信息。
+    """视觉模型工厂 - 可选模块，统一 OpenAI 兼容协议。
 
-    之所以单独为一个视觉模型工厂而不是复用 ChatModelFactory，是因为：
-    1. ChatModel 使用 streaming=True（流式输出），而视觉模型只能用 streaming=False
-       （图片理解不适合流式）
-    2. 视觉模型可能有独立的模型配置（如 VISION_OLLAMA_MODEL_NAME 区分于 OLLAMA_MODEL_NAME）
-    3. 部分用户可能希望视觉模型使用更大的参数量或专门的多模态模型（如 qwen-vl 系列）
+    VISION_ENABLED 三态：
+    - 未设置（None）: 默认启用 OpenAI 兼容（VISION_* 空则回落 OPENAI_*）
+    - "false"       : 彻底关闭，返回 None（PDF 走纯文本，无需任何视觉配置）
+    - "true"        : 强制启用；缺少 VISION_BASE_URL/VISION_API_KEY 且无 OPENAI_* 回落时
+                      告警并返回 None（fail-soft 降级）
     """
 
     def generator(self) -> BaseChatModel | None:
-        """根据VISION_MODEL_TYPE生成对应的视觉模型"""
-        # 未设置 VISION_MODEL_TYPE 时，默认跟随 LLM_TYPE（保持向后兼容）
-        vision_type = os.getenv("VISION_MODEL_TYPE", "").upper() or os.getenv("LLM_TYPE", "ALIYUN").upper()
+        vision_enabled = os.getenv("VISION_ENABLED")
 
-        if vision_type == "OLLAMA":
-            model_name = os.getenv("VISION_OLLAMA_MODEL_NAME") or os.getenv("OLLAMA_MODEL_NAME") or "qwen-vl:7b"
-            base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        if vision_enabled is not None and vision_enabled.lower() == "false":
+            logger.info("🎨 视觉模型未启用（VISION_ENABLED=false），PDF 走纯文本")
+            return None
 
-            logger.info(f"🎨 VisionModel 使用Ollama多模态模型: {model_name}, 地址: {base_url}")
-
-            return ChatOllama(
-                model=model_name,
-                base_url=base_url,
-                # 视觉模型禁用 streaming，因为图片理解需要在完整的上下文上做推理
-                streaming=False,
-                top_p=0.7,
-            )
-
-        elif vision_type == "ALIYUN":
-            model_name = os.getenv("VISION_CHAT_MODEL_NAME") or os.getenv("CHAT_MODEL_NAME") or "qwen3-max"
-            api_key = os.getenv("ALIYUN_ACCESS_KEY_SECRET")
-            base_url = os.getenv("ALIYUN_BASE_URL")
-
-            logger.info(f"🎨 VisionModel 使用阿里云百炼多模态模型: {model_name}")
-
-            return ChatTongyi(
-                model=model_name,
-                api_key=api_key,
-                base_url=base_url,
-                streaming=False,
-                top_p=0.7,
-            )
-
-        else:
-            raise ValueError(f"不支持的VISION_MODEL_TYPE: {vision_type}，可选值: ALIYUN, OLLAMA")
+        # VISION_ENABLED=true 或未设置：统一 OpenAI 兼容（VISION_* 全空时原子回落 OPENAI_*）
+        cfg = resolve_vision_config()
+        if not (cfg["base_url"] and cfg["api_key"]):
+            logger.warning("🎨 视觉配置不完整（缺少 VISION_BASE_URL/VISION_API_KEY 且无完整 OPENAI_* 回落），视觉已关闭（降级纯文本）")
+            return None
+        logger.info(f"🎨 VisionModel 使用OpenAI兼容多模态模型: {cfg['model']}")
+        return create_chat_openai(
+            model=cfg["model"], api_key=cfg["api_key"], base_url=cfg["base_url"],
+            streaming=False, top_p=0.7,
+        )
 
 
 class RerankerModelFactory(BaseModelFactory):

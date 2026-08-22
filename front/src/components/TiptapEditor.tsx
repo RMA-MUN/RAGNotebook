@@ -377,17 +377,36 @@ const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value,
       const start = Math.max(0, from - 200)
       const context = editor.state.doc.textBetween(start, from)
       const posAtRequest = from
+      const docBefore = editor.state.doc.textBetween(0, from)
       try {
         const result = await autocompleteRef.current!(context)
-        if (result) {
-          ghostTextRef.current = result
-          ghostFromRef.current = posAtRequest
-          updateGhostPosition()
-        }
+        if (!result) return
+        // 等待期间用户可能继续输入：只要锚点前的内容没变（只追加了文字），
+        // 补全仍是有效续写 → 锚定到当前光标显示；否则丢弃，避免与正文重叠
+        const curFrom = editor.state.selection.from
+        if (curFrom < posAtRequest) return
+        if (editor.state.doc.textBetween(0, posAtRequest) !== docBefore) return
+        ghostTextRef.current = result
+        ghostFromRef.current = curFrom
+        updateGhostPosition()
       } catch { /* ignore */ }
     }, 3000)
     return () => { clearTimeout(timer) }
   }, [value, editor, updateGhostPosition])
+
+  // 光标离开锚点后幽灵文本不再指向当前位置 → 立即清除
+  useEffect(() => {
+    if (!editor) return
+    const handler = () => {
+      if (!ghostTextRef.current) return
+      if (editor.state.selection.from !== ghostFromRef.current) {
+        ghostTextRef.current = null
+        setGhost(null)
+      }
+    }
+    editor.on('selectionUpdate', handler)
+    return () => { editor.off('selectionUpdate', handler) }
+  }, [editor])
 
   // Window scroll / resize → re-position ghost
   useEffect(() => {
@@ -539,11 +558,8 @@ const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value,
               top: ghost.top,
               pointerEvents: 'none',
               whiteSpace: 'pre',
-              fontFamily: 'inherit',
-              fontSize: 'inherit',
-              lineHeight: 'inherit',
             }}
-            className="text-[var(--color-text)] select-none"
+            className="ghost-completion text-[var(--color-text)] select-none"
           >
             <span style={{ opacity: 0.3 }}>{ghost.text}</span>
             <span className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
