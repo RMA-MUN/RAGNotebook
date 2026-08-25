@@ -301,13 +301,17 @@ async def test_get_agent_stream_response_with_rag_context(monkeypatch, patched_d
     fake = RecordingExecutor(outputs=["基于资料的回答"])
     monkeypatch.setattr(agent_module.agent_factory, "create_agent_executor", lambda **kw: fake)
 
-    frames = await _collect_stream("问题", session_id="s1", user_id="u1", rag_context="RAG参考资料内容")
+    rag_context = "[来源：知识库《Local》]\n本地资料\n\n[来源：外部搜索《Web》]\n外部资料"
+    frames = await _collect_stream("问题", session_id="s1", user_id="u1", rag_context=rag_context)
     events = _parse_frames(frames)
     assert events[-1]["type"] == "done"
 
     system_prompt = fake.inputs[0]["system_prompt"]
-    assert "RAG参考资料内容" in system_prompt
+    assert rag_context in system_prompt
     assert "参考资料" in system_prompt
+    assert "区分本地证据" in system_prompt
+    assert "外部搜索证据" in system_prompt
+    assert "证据不足" in system_prompt
 
 
 # ---------------------------------------------------------------------------

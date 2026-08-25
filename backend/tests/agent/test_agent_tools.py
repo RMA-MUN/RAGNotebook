@@ -11,6 +11,7 @@ import re
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
 import pytest_asyncio
 from langchain_core.documents import Document
 from sqlalchemy import select
@@ -45,16 +46,16 @@ USER_ID = "u1"
 # ---------------------------------------------------------------------------
 # 本地 fixtures
 # ---------------------------------------------------------------------------
-@pytest_asyncio.fixture
-async def user_ctx():
+@pytest.fixture
+def user_ctx():
     """设置当前用户为 USER_ID，测试结束后复位 ContextVar。"""
     token = current_user_id_var.set(USER_ID)
     yield USER_ID
     current_user_id_var.reset(token)
 
 
-@pytest_asyncio.fixture
-async def no_user_ctx():
+@pytest.fixture
+def no_user_ctx():
     """显式清空用户上下文（覆盖其他测试可能残留的值）。"""
     token = current_user_id_var.set(None)
     yield
