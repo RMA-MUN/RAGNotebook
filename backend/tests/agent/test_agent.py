@@ -73,6 +73,15 @@ class StepsOnlyExecutor:
             yield chunk
 
 
+class EventStreamingExecutor:
+    def __init__(self, events):
+        self.events = events
+
+    async def astream_events(self, inputs, version="v2"):
+        for event in self.events:
+            yield event
+
+
 async def _collect_stream(*args, **kwargs):
     """直接消费异步生成器，绕开 HTTP。"""
     return [frame async for frame in get_agent_stream_response(*args, **kwargs)]
@@ -220,10 +229,10 @@ async def test_get_agent_stream_response_full_flow(monkeypatch, patched_db, fres
     # 2) 无 error 帧
     assert all(e["type"] != "error" for e in events)
 
-    # 3) response 分片拼接 == 完整回答（chunk_size=15）
+    # 3) response 内容由 executor 的真实流事件原样转发
     assert "".join(e["content"] for e in events if e["type"] == "response" and e["content"]) == response_text
     assert [e["content"] for e in events if e["type"] == "response" and e["content"]] == [
-        "0123456789ABCDE", "FGHIJKLMNOPQRST", "UVWXYZ",
+        response_text,
     ]
 
     # 4) 结束帧：done + session_id
@@ -239,6 +248,93 @@ async def test_get_agent_stream_response_full_flow(monkeypatch, patched_db, fres
         )).scalars().all()
     assert [m.role for m in msgs] == ["user", "assistant"]
     assert [m.content for m in msgs] == ["你好", response_text]
+
+
+async def test_get_agent_stream_response_emits_intermediate_steps(
+    monkeypatch, patched_db, fresh_session_manager
+):
+    action = AgentAction(
+        tool="search_notes_tool",
+        tool_input={"query": "测试"},
+        log="先搜索相关笔记",
+    )
+    fake = RecordingExecutor(
+        outputs=["找到结果"],
+        extra_chunks=[{"intermediate_steps": [(action, "搜索结果")]}],
+    )
+    monkeypatch.setattr(agent_module.agent_factory, "create_agent_executor", lambda **kw: fake)
+
+    frames = await _collect_stream("帮我找笔记", session_id="s1", user_id="u1")
+    events = _parse_frames(frames)
+
+    thinking = [event for event in events if event["type"] == "thinking"]
+    assert thinking == [
+        {
+            "type": "thinking",
+            "stage": "agent_tool",
+            "content": "先搜索相关笔记",
+            "details": {
+                "tool": "search_notes_tool",
+                "tool_input": {"query": "测试"},
+                "tool_output": "搜索结果",
+            },
+        }
+    ]
+
+
+async def test_get_agent_stream_response_forwards_model_tokens_immediately(
+    monkeypatch, patched_db, fresh_session_manager
+):
+    fake = EventStreamingExecutor([
+        {"event": "on_chat_model_stream", "data": {"chunk": {"content": "第"}}},
+        {"event": "on_chat_model_stream", "data": {"chunk": {"content": "一"}}},
+    ])
+    monkeypatch.setattr(agent_module.agent_factory, "create_agent_executor", lambda **kw: fake)
+
+    frames = await _collect_stream("你好", session_id="s1", user_id="u1")
+    events = _parse_frames(frames)
+    response_events = [
+        event for event in events if event["type"] == "response" and event["content"]
+    ]
+
+    assert [event["content"] for event in response_events] == ["第", "一"]
+
+
+async def test_get_agent_stream_response_emits_tool_start_and_end_events(
+    monkeypatch, patched_db, fresh_session_manager
+):
+    fake = EventStreamingExecutor([
+        {
+            "event": "on_tool_start",
+            "name": "search_notes_tool",
+            "data": {"input": {"query": "测试"}},
+        },
+        {
+            "event": "on_tool_end",
+            "name": "search_notes_tool",
+            "data": {"output": "真实搜索结果"},
+        },
+    ])
+    monkeypatch.setattr(agent_module.agent_factory, "create_agent_executor", lambda **kw: fake)
+
+    frames = await _collect_stream("帮我找笔记", session_id="s1", user_id="u1")
+    events = _parse_frames(frames)
+    thinking = [event for event in events if event["type"] == "thinking"]
+
+    assert thinking == [
+        {
+            "type": "thinking",
+            "stage": "tool_start",
+            "content": "正在调用 search_notes_tool",
+            "details": {"tool": "search_notes_tool", "tool_input": {"query": "测试"}},
+        },
+        {
+            "type": "thinking",
+            "stage": "tool_end",
+            "content": "search_notes_tool 执行完成",
+            "details": {"tool": "search_notes_tool", "tool_output": "真实搜索结果"},
+        },
+    ]
 
 
 async def test_get_agent_stream_response_agent_error(monkeypatch, patched_db, fresh_session_manager):

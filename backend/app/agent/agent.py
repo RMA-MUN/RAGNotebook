@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import os
 from collections.abc import AsyncGenerator
@@ -14,6 +15,7 @@ from app.agent.agent_tools import (
     get_related_notes_tool,
     get_today_reviews_tool,
     get_user_info_tools,
+    get_thinking_callback_from_context,
     mark_reviewed_tool,
     search_notes_tool,
     set_current_user_id,
@@ -294,21 +296,88 @@ async def get_agent_stream_response(
 
             full_response = []
 
-            async for chunk in agent_executor.astream({
+            async def emit_thinking(stage: str, content: str, details: dict):
+                callback = get_thinking_callback_from_context()
+                if callback is None:
+                    return
+                result = callback({
+                    "type": "thinking",
+                    "stage": stage,
+                    "content": content,
+                    "details": details,
+                })
+                if inspect.isawaitable(result):
+                    await result
+
+            async def emit_response(content: str):
+                if not content:
+                    return
+                full_response.append(content)
+                await thinking_queue.put({
+                    "type": "response",
+                    "content": content,
+                })
+
+            inputs = {
                 "input": query,
                 "chat_history": chat_history,
-                "system_prompt": system_prompt
-            }):
-                if "output" in chunk:
-                    full_response.append(chunk["output"])
-                # 与 get_agent_response 同理：末帧同时含 output 与 intermediate_steps，
-                # 用 if 而非 elif，保证流式场景下工具调用日志也能输出。
-                if "intermediate_steps" in chunk:
-                    for action, observation in chunk["intermediate_steps"]:
-                        logger.info(f"\n\n🧠 [Agent 思考] {action.log}")
-                        logger.info(f"🛠️ [调用工具] {action.tool}")
-                        logger.info(f"📥 [工具输入] {action.tool_input}")
-                        logger.info(f"📤 [工具结果] {observation}\n")
+                "system_prompt": system_prompt,
+            }
+
+            if hasattr(agent_executor, "astream_events"):
+                async for event in agent_executor.astream_events(inputs, version="v2"):
+                    event_type = event.get("event")
+                    event_data = event.get("data") or {}
+
+                    if event_type == "on_chat_model_stream":
+                        chunk = event_data.get("chunk")
+                        content = getattr(chunk, "content", None)
+                        if content is None and isinstance(chunk, dict):
+                            content = chunk.get("content")
+                        if isinstance(content, str):
+                            await emit_response(content)
+                        elif isinstance(content, list):
+                            text = "".join(
+                                item.get("text", "")
+                                for item in content
+                                if isinstance(item, dict)
+                            )
+                            await emit_response(text)
+                    elif event_type == "on_tool_start":
+                        tool = event.get("name", "unknown_tool")
+                        tool_input = event_data.get("input")
+                        await emit_thinking(
+                            "tool_start",
+                            f"正在调用 {tool}",
+                            {"tool": tool, "tool_input": tool_input},
+                        )
+                    elif event_type == "on_tool_end":
+                        tool = event.get("name", "unknown_tool")
+                        tool_output = event_data.get("output")
+                        await emit_thinking(
+                            "tool_end",
+                            f"{tool} 执行完成",
+                            {"tool": tool, "tool_output": tool_output},
+                        )
+            else:
+                async for chunk in agent_executor.astream(inputs):
+                    if "output" in chunk:
+                        await emit_response(chunk["output"])
+                    if "intermediate_steps" in chunk:
+                        for action, observation in chunk["intermediate_steps"]:
+                            logger.info(f"\n\n🧠 [Agent 思考] {action.log}")
+                            logger.info(f"🛠️ [调用工具] {action.tool}")
+                            logger.info(f"📥 [工具输入] {action.tool_input}")
+                            logger.info(f"📤 [工具结果] {observation}\n")
+                            await emit_thinking(
+                                "agent_tool",
+                                action.log,
+                                {
+                                    "tool": action.tool,
+                                    "tool_input": action.tool_input,
+                                    "tool_output": observation,
+                                },
+                            )
 
             agent_result_holder["response"] = "".join(full_response) if full_response else "抱歉，我无法理解您的请求。"
         except Exception as e:
@@ -360,13 +429,6 @@ async def get_agent_stream_response(
         # 添加到会话历史
         await sm.session_manager.add_message(session_id, user_id, query, response)
         logger.info("【Agent流式响应】添加到会话历史成功")
-
-        # 发送回答内容（按chunk发送，减少SSE事件数）
-        chunk_size = 15
-        for i in range(0, len(response), chunk_size):
-            chunk = response[i:i + chunk_size]
-            yield f"data: {json.dumps({'type': 'response', 'content': chunk}, ensure_ascii=False)}\n\n"
-            await asyncio.sleep(0.03)
 
         # 发送结束标记
         yield f"data: {json.dumps({'type': 'done', 'session_id': session_id}, ensure_ascii=False)}\n\n"
