@@ -103,11 +103,15 @@ class AgenticRagPlanner:
                 response = await self.chat_model.ainvoke(prompt)
                 content = getattr(response, "content", response)
                 if isinstance(content, str):
-                    return RetrievalPlan.model_validate(_extract_json_object(content))
+                    plan = RetrievalPlan.model_validate(_extract_json_object(content))
+                    plan.metadata = {"source": "llm"}
+                    return plan
             except Exception:
                 pass
 
-        return self._fallback_plan(query)
+        plan = self._fallback_plan(query)
+        plan.metadata = {"source": "fallback"}
+        return plan
 
     def _fallback_plan(self, query: str) -> RetrievalPlan:
         if _is_casual_greeting(query):

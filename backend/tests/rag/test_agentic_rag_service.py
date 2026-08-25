@@ -181,3 +181,10 @@ async def test_run_emits_thinking_events_for_orchestration_stages():
     ]
     assert all(event["type"] == "thinking" for event in events)
     assert all("content" in event and "details" in event for event in events)
+    plan_event = next(event for event in events if event["stage"] == "agentic_plan")
+    assert plan_event["details"]["query"] == "agentic rag latest"
+    assert plan_event["details"]["steps"][0]["query"] == "agentic rag"
+    retrieval_event = next(event for event in events if event["stage"] == "local_retrieval")
+    assert retrieval_event["details"]["results"][0]["preview"] == "Local fact"
+    web_event = next(event for event in events if event["stage"] == "web_search")
+    assert web_event["details"]["results"][0]["preview"] == "Web fact"

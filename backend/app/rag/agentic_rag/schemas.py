@@ -33,6 +33,7 @@ class RetrievalPlan(BaseModel):
     steps: list[RetrievalStep]
     allow_web_fallback: bool = False
     reason: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AnswerabilityResult(BaseModel):

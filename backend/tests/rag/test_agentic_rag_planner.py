@@ -37,6 +37,7 @@ async def test_planner_uses_valid_llm_json_response():
     assert plan.steps[0].top_k == 3
     assert plan.allow_web_fallback is False
     assert plan.reason == "search private notes"
+    assert plan.metadata["source"] == "llm"
 
 
 async def test_planner_extracts_json_from_markdown_fence():
@@ -78,6 +79,7 @@ async def test_planner_falls_back_to_hybrid_search_with_freshness_web_flag_on_mo
     assert plan.steps[0].query == query
     assert plan.steps[0].top_k == 5
     assert plan.allow_web_fallback is True
+    assert plan.metadata["source"] == "fallback"
 
 
 async def test_planner_falls_back_to_hybrid_search_without_web_for_non_fresh_query():

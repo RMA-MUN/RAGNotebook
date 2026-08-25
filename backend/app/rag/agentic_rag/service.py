@@ -38,6 +38,9 @@ class AgenticRagService:
             "agentic_plan",
             "Planned retrieval strategy.",
             {
+                "query": query,
+                "source": plan.metadata.get("source", "unknown"),
+                "steps": [step.model_dump() for step in plan.steps],
                 "need_retrieval": plan.need_retrieval,
                 "allow_web_fallback": plan.allow_web_fallback,
                 "step_count": len(plan.steps),
@@ -53,7 +56,11 @@ class AgenticRagService:
             thinking_callback,
             "local_retrieval",
             "Retrieved local evidence.",
-            {"evidence_count": len(local_evidences)},
+            {
+                "queries": [step.model_dump() for step in plan.steps],
+                "evidence_count": len(local_evidences),
+                "results": [self._evidence_preview(evidence) for evidence in local_evidences],
+            },
         )
 
         answerability = self.evaluator.evaluate(query, local_evidences)
@@ -119,7 +126,11 @@ class AgenticRagService:
             thinking_callback,
             "web_search",
             "Searched web fallback evidence.",
-            {"queries": queries, "evidence_count": len(web_evidences)},
+            {
+                "queries": queries,
+                "evidence_count": len(web_evidences),
+                "results": [self._evidence_preview(evidence) for evidence in web_evidences],
+            },
         )
         return web_evidences
 
@@ -137,3 +148,14 @@ class AgenticRagService:
         result = thinking_callback(event)
         if inspect.isawaitable(result):
             await result
+
+    @staticmethod
+    def _evidence_preview(evidence: Evidence) -> dict[str, Any]:
+        return {
+            "id": evidence.id,
+            "source": evidence.source,
+            "title": evidence.title,
+            "score": evidence.score,
+            "url": evidence.url,
+            "preview": evidence.content[:500],
+        }
