@@ -16,6 +16,12 @@ interface Message {
   steps?: string[]
 }
 
+interface ThinkingStep {
+  stage: string
+  content: string
+  details?: Record<string, unknown>
+}
+
 const quickQuestions = [
   '帮我解释一下量子计算',
   '写一首关于春天的诗',
@@ -31,7 +37,7 @@ export default function AIChat() {
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
   const [currentThinking, setCurrentThinking] = useState('')
-  const [currentSteps, setCurrentSteps] = useState<string[]>([])
+  const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([])
   const [showThinking, setShowThinking] = useState(true)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -95,26 +101,23 @@ export default function AIChat() {
     setMessages((prev) => [...prev, userMsg])
     setInput('')
     setCurrentThinking('')
-    setCurrentSteps([])
+    setThinkingSteps([])
     setShowThinking(true)
 
     contentRef.current = ''
-    const steps: string[] = []
     let hasResponseStarted = false
 
     await start(
       '/chat/agent/query/stream',
       { query, session_id: sessionId },
       {
-        onThinking: (stage, content) => {
-          if (!steps.includes(stage)) steps.push(stage)
-          setCurrentSteps([...steps])
+        onThinking: (stage, content, details) => {
+          setThinkingSteps((prev) => [...prev, { stage, content: content || '', details }])
           setCurrentThinking(prev => prev ? `${prev}\n${content}` : (content || ''))
         },
         onResponse: (content, sessionId) => {
           if (!hasResponseStarted) {
             hasResponseStarted = true
-            setShowThinking(false)
           }
           if (sessionId) {
             sessionStorage.setItem('lastSessionId', sessionId)
@@ -156,6 +159,41 @@ export default function AIChat() {
 
   const isLoading = loadingHistory || loading
   const hasStreamingAssistant = loading && messages.length > 0 && messages[messages.length - 1].role === 'assistant'
+
+  const thinkingPanel = thinkingSteps.length > 0 ? (
+    <div className="bg-[var(--color-card)] rounded-lg border border-[var(--color-border)] overflow-hidden">
+      <button
+        onClick={() => setShowThinking(!showThinking)}
+        className="flex items-center justify-between gap-2 px-4 py-2.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] w-full text-left"
+      >
+        <span className="flex items-center gap-2">
+          {showThinking ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          {t('chat.thinkingSteps')} ({thinkingSteps.length})
+        </span>
+        {loading && <Loader2 size={13} className="animate-spin" />}
+      </button>
+      {showThinking && (
+        <div className="px-4 pb-3 space-y-2">
+          {thinkingSteps.map((step, index) => (
+            <details key={`${step.stage}-${index}`} open={index === thinkingSteps.length - 1} className="rounded-md bg-[var(--color-bg-secondary)] border border-[var(--color-border)]">
+              <summary className="cursor-pointer list-none px-3 py-2 text-xs text-[var(--color-text)] flex items-center justify-between gap-3">
+                <span className="font-medium">{index + 1}. {step.stage}</span>
+                <span className="text-[var(--color-text-tertiary)]">{step.details?.source ? String(step.details.source) : ''}</span>
+              </summary>
+              <div className="px-3 pb-3 space-y-2 text-xs text-[var(--color-text-secondary)]">
+                <p className="leading-relaxed whitespace-pre-wrap">{step.content}</p>
+                {step.details && Object.keys(step.details).length > 0 && (
+                  <pre className="overflow-x-auto rounded bg-[var(--color-bg)] p-2 leading-relaxed whitespace-pre-wrap break-words">
+                    {JSON.stringify(step.details, null, 2)}
+                  </pre>
+                )}
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : null
 
   return (
     <div className="h-full flex flex-col">
@@ -219,22 +257,9 @@ export default function AIChat() {
                   </div>
                 ) : (
                   <>
-                    {i === messages.length - 1 && currentSteps.length > 0 && (
+                    {i === messages.length - 1 && thinkingPanel && (
                       <div className="mb-3">
-                        <div className="bg-[var(--color-card)] rounded-lg border border-[var(--color-border)] overflow-hidden">
-                          <button
-                            onClick={() => setShowThinking(!showThinking)}
-                            className="flex items-center gap-2 px-4 py-2.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] w-full text-left"
-                          >
-                            {showThinking ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                            {t('chat.thinkingSteps')}
-                          </button>
-                          {showThinking && currentThinking && (
-                            <div className="px-4 pb-3">
-                              <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-line">{currentThinking}</p>
-                            </div>
-                          )}
-                        </div>
+                        {thinkingPanel}
                       </div>
                     )}
                     <div className={`prose prose-sm max-w-none markdown-body${theme === 'dark' ? ' prose-invert' : ''}`}>
@@ -266,22 +291,7 @@ export default function AIChat() {
                 <Bot size={16} className="text-[var(--color-accent)]" />
               </div>
               <div className="space-y-2 flex-1">
-                {currentSteps.length > 0 && (
-                  <div className="bg-[var(--color-card)] rounded-lg border border-[var(--color-border)] overflow-hidden">
-                    <button
-                      onClick={() => setShowThinking(!showThinking)}
-                      className="flex items-center gap-2 px-4 py-2.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] w-full text-left"
-                    >
-                      {showThinking ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      {t('chat.thinkingSteps')}
-                    </button>
-                    {showThinking && currentThinking && (
-                      <div className="px-4 pb-3">
-                        <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-line">{currentThinking}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
+                {thinkingPanel}
                 <div className="flex gap-1">
                   <span className="w-2 h-2 rounded-full bg-[var(--color-accent)] animate-bounce" style={{ animationDelay: '0ms' }} />
                   <span className="w-2 h-2 rounded-full bg-[var(--color-accent)] animate-bounce" style={{ animationDelay: '150ms' }} />
