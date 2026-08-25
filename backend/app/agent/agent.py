@@ -8,7 +8,6 @@ from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import BaseTool
 
-from app.agent.agent_middleware import get_middleware
 from app.agent.agent_tools import (
     create_note_tool,
     get_note_stats_tool,
@@ -72,7 +71,13 @@ class AgentFactory:
 
     def _get_default_middleware(self) -> list:
         """获取默认中间件列表"""
-        return get_middleware()
+        try:
+            from app.agent.agent_middleware import get_middleware
+
+            return get_middleware()
+        except ImportError:
+            logger.warning("Agent middleware unavailable; continuing without middleware.", exc_info=True)
+            return []
 
     @staticmethod
     def _get_default_system_prompt() -> str:
@@ -282,7 +287,8 @@ async def get_agent_stream_response(
 以下是与用户问题相关的参考资料：
 {rag_context}
 
-请基于以上资料回答用户的问题。如果资料中没有相关信息，请如实告知。"""
+请基于以上资料回答用户的问题。回答时必须区分本地证据（笔记、知识库）与外部搜索证据，避免把外部搜索内容说成用户本地资料。
+如果资料中没有足够信息支撑结论，必须明确说明证据不足，并说明还缺少哪些信息。"""
             else:
                 system_prompt = agent_factory.default_system_prompt
 
