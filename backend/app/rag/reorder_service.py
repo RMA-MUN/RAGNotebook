@@ -1,4 +1,7 @@
 import os
+import sys
+import types
+from contextlib import nullcontext
 from typing import Any
 
 from dotenv import load_dotenv
@@ -7,6 +10,17 @@ from app.core.logger_handler import logger
 
 # 加载环境变量
 load_dotenv()
+
+try:
+    import modelscope  # noqa: F401
+except (ImportError, ModuleNotFoundError):
+    modelscope = types.ModuleType("modelscope")
+
+    def _missing_snapshot_download(**kwargs):
+        raise RuntimeError("modelscope.snapshot_download is unavailable")
+
+    modelscope.snapshot_download = _missing_snapshot_download
+    sys.modules.setdefault("modelscope", modelscope)
 
 
 def find_model_path(base_path: str) -> str:
@@ -63,14 +77,15 @@ class ReorderService:
 
         self.LOCAL_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH", r"D:\Hugging_Face\models\bge-reranker-v2-m3")
         self.MODELSCOPE_MODEL_NAME = "BAAI/bge-reranker-v2-m3"
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        cuda = getattr(torch, "cuda", None)
+        self.device = "cuda" if cuda is not None and cuda.is_available() else "cpu"
         self._model = None
 
     async def _get_model(self):
         """懒加载模型实例"""
-        from sentence_transformers import CrossEncoder
-
         if self._model is None:
+            from sentence_transformers import CrossEncoder
+
             actual_model_path = find_model_path(self.LOCAL_MODEL_PATH)
             logger.info(f"✅ 加载重排序模型：{actual_model_path}")
             self._model = CrossEncoder(
@@ -119,7 +134,8 @@ class ReorderService:
             model = await self.model
             # 禁用梯度计算，提高推理性能
             import torch
-            with torch.no_grad():
+            no_grad = getattr(torch, "no_grad", nullcontext)
+            with no_grad():
                 scores = model.predict(pairs, batch_size=1)
 
             # 构建结果列表
