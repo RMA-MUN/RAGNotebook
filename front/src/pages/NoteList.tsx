@@ -52,7 +52,6 @@ function buildCategoryList(customCategories: string[]) {
   if (order.length === 0) return list
 
   const orderIndex = new Map(order.map((v, i) => [v, i]))
-  const allValues = new Set(list.map((c) => c.value))
 
   return list.sort((a, b) => {
     if (a.value === '') return -1
@@ -79,7 +78,7 @@ export default function NoteList() {
 
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const longPressTimer = useRef<ReturnType<typeof setTimeout>>()
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const pressStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const enteredViaLongPress = useRef(false)
   const pointerMoved = useRef(false)
