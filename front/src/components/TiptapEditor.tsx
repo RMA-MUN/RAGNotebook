@@ -14,17 +14,28 @@ import Underline from '@tiptap/extension-underline'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import { common, createLowlight } from 'lowlight'
 import rehypeHighlight from 'rehype-highlight'
-import { marked } from 'marked'
+import { marked, type Token } from 'marked'
 import TurndownService from 'turndown'
 import ReactMarkdown from 'react-markdown'
-import { WikiLink, renderWikiLinkText } from './WikiLink'
+import { WikiLink } from './WikiLink'
 
-// marked: render [[...]] as clickable wiki links (kept verbatim in markdown round-trips)
+// marked: render [[...]] as clickable wiki links. Mirror the default text
+// renderer (HTML-escape first, marked's NoEncode rules) so `<`, `&`, `"` etc.
+// never reach the browser as raw markup, then apply the wiki regex. The
+// outermost [[...]] group wins, so nested brackets in the target stay intact.
+const WIKI_LINK_RE = /\[\[((?:[^[\]]|\[[^[\]]*\])*)\]\]/g
+const WIKI_ESCAPE_RE = /[<>"']|&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/g
+const WIKI_ESCAPE_MAP: Record<string, string> = {
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+}
+
 marked.use({
   renderer: {
-    text: (token: { text: string }) =>
-      token.text.replace(/\[\[([^[\]]+)\]\]/g,
-        (_m, t) => `<a data-wiki="true" href="#wiki:${t}">[[${t}]]</a>`),
+    text: function (token: { text: string; escaped?: boolean; tokens?: unknown[] }) {
+      if (token.tokens) return this.parser.parseInline(token.tokens as Token[])
+      const text = token.escaped ? token.text : token.text.replace(WIKI_ESCAPE_RE, (ch) => WIKI_ESCAPE_MAP[ch])
+      return text.replace(WIKI_LINK_RE, (_m, t) => `<a data-wiki="true" href="#wiki:${t}">[[${t}]]</a>`)
+    },
   },
 })
 
@@ -51,27 +62,13 @@ turndown.addRule('taskListItem', {
   },
 })
 
-// turndown escapes every `[`/`]` by default → would mangle `[[...]]` wiki links
-// typed as plain text; un-escape only well-formed `[[...]]` groups
-const turndownEscape = turndown.escape.bind(turndown)
-turndown.escape = (string: string) =>
-  turndownEscape(string).replace(/\\\[\\\[[\s\S]*?\\\]\\\]/g, (m) => m.replace(/\\(.)/g, '$1'))
-
-// Custom rule: wiki links stay `[[target]]` — never fall back to [target](href)
-const decodeWikiTarget = (href: string) => {
-  const raw = href.replace(/^#wiki:/, '')
-  try {
-    return decodeURIComponent(raw)
-  } catch {
-    return raw
-  }
-}
+// Custom rule: wiki links stay as their `[[target]]` text — never fall back to
+// [target](href). The anchor's textContent is already-unescaped DOM text, so
+// the round trip is byte-exact and deliberately-escaped brackets elsewhere
+// are left to turndown's default escaping.
 turndown.addRule('wikiLink', {
   filter: (node) => node.nodeName === 'A' && node.getAttribute('data-wiki') === 'true',
-  replacement: (_content, node) => {
-    const href = (node as HTMLAnchorElement).getAttribute('href') || ''
-    return `[[${decodeWikiTarget(href)}]]`
-  },
+  replacement: (_content, node) => (node as HTMLElement).textContent || '',
 })
 
 const lowlight = createLowlight(common)
@@ -428,14 +425,18 @@ const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value,
   }, [])
 
   // Accept a candidate: replace the `[[` … cursor range (incl. partially typed
-  // keyword) with `[[target]]` and keep the cursor right after it
+  // keyword) with a wikiLink node, so it renders highlighted immediately and
+  // round-trips to `[[target]]` via the turndown rule (never `\[\[...\]\]`)
   const insertWikiLink = useCallback((target: string) => {
     if (!editor) return
     const { from } = editor.state.selection
     const before = editor.state.doc.textBetween(Math.max(0, from - 64), from)
     const match = before.match(/\[\[[^[\]\n]*$/)
     const start = match ? from - match[0].length : Math.max(0, from - 2)
-    editor.chain().focus().insertContentAt({ from: start, to: from }, renderWikiLinkText(target)).run()
+    editor.chain().focus().insertContentAt({ from: start, to: from }, {
+      type: 'wikiLink',
+      attrs: { target },
+    }).run()
     closeWikiSuggest()
   }, [editor, closeWikiSuggest])
 
