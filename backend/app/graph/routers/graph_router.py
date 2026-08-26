@@ -136,6 +136,10 @@ async def delete_entity(entity_id: str, user_id: str = Depends(get_current_user_
 @graph_router.post("/entities/merge")
 async def merge_entities(payload: MergeRequest, user_id: str = Depends(get_current_user_id),
                          db: AsyncSession = Depends(get_db)):
+    # 自合并守卫：target_id == source_id 时直接返回，避免 merge_entities 删行后误删实体
+    if payload.target_id == payload.source_id:
+        e = await get_graph_store(db).get_entity(user_id, payload.target_id)
+        return success_response(data=e.model_dump() if e else None, message="合并目标与源相同")
     e = await get_graph_store(db).merge_entities(user_id, payload.target_id, payload.source_id)
     await db.commit()
     return success_response(data=e.model_dump())

@@ -37,6 +37,19 @@ async def test_merge_entities(client):
 
 
 @pytest.mark.asyncio
+async def test_merge_self_returns_entity_without_deleting(client):
+    # 自合并守卫：target_id == source_id 不删行，实体保留
+    e = (await client.post("/api/graph/entities", json={"name": "Solo"})).json()["data"]
+    r = await client.post("/api/graph/entities/merge", json={
+        "target_id": e["id"], "source_id": e["id"]})
+    assert r.status_code == 200
+    assert r.json()["data"]["id"] == e["id"]
+    r = await client.get("/api/graph/entity/" + e["id"])
+    assert r.status_code == 200
+    assert r.json()["data"]["name"] == "Solo"
+
+
+@pytest.mark.asyncio
 async def test_search_returns_entity_and_note_groups(client):
     await client.post("/api/graph/entities", json={"name": "FastAPI", "aliases": ["fastapi"]})
     r = await client.get("/api/graph/search", params={"q": "fastapi"})
