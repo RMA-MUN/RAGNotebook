@@ -8,3 +8,4 @@ autocomplete_prompt: app/prompt/autocomplete_prompt.txt
 write_assistant_prompt: app/prompt/write_assistant_prompt.txt
 agentic_rag_planner_prompt: app/prompt/agentic_rag_planner.txt
 agentic_rag_answerability_prompt: app/prompt/agentic_rag_answerability.txt
+entity_extraction_prompt: app/prompt/entity_extraction_prompt.txt
