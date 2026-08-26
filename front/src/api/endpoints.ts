@@ -74,6 +74,7 @@ export const endpoints = {
   graphOverview: '/api/graph/overview',
   graphEvents: '/api/graph/events',
   graphEntity: (id: string) => `/api/graph/entity/${id}`,
+  graphEntityUpdate: (id: string) => `/api/graph/entities/${id}`,
   graphEntityNeighbors: (id: string) => `/api/graph/entity/${id}/neighbors`,
   graphEntityNotes: (id: string) => `/api/graph/entity/${id}/notes`,
   graphNoteRelated: (id: string) => `/api/graph/notes/${id}/related`,

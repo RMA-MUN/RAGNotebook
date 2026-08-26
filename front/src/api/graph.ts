@@ -39,11 +39,11 @@ export const graphApi = {
     return res.data.data
   },
   updateEntity: async (id: string, data: Partial<GraphEntity>) => {
-    const res = await client.put<ApiResponse<GraphEntity>>(endpoints.graphEntity(id), data)
+    const res = await client.put<ApiResponse<GraphEntity>>(endpoints.graphEntityUpdate(id), data)
     return res.data.data
   },
   deleteEntity: async (id: string) => {
-    await client.delete(endpoints.graphEntity(id))
+    await client.delete(endpoints.graphEntityUpdate(id))
   },
   mergeEntities: async (targetId: string, sourceId: string) => {
     const res = await client.post<ApiResponse<GraphEntity>>(endpoints.graphEntityMerge, { target_id: targetId, source_id: sourceId })
