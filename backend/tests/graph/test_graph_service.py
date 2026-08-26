@@ -79,6 +79,55 @@ async def test_run_extraction_writes_entities_relations_and_edges(db_session, se
 
 
 @pytest.mark.asyncio
+async def test_duplicate_title_notes_uses_first_match(db_session, session_factory, monkeypatch):
+    from app.core.background_init import init_manager
+    monkeypatch.setattr(init_manager, "chat_model",
+                        make_fake_chat_model(['{"entities": [], "relations": []}']))
+    monkeypatch.setattr("app.graph.services.graph_service.AsyncSessionLocal", session_factory)
+    db_session.add(GraphExtractLog(id="log3", user_id="u1", note_id="n1", content_hash="h",
+                                   status="pending"))
+    # 重名笔记：Note.title 无唯一约束，首条匹配生效，不得 MultipleResultsFound
+    db_session.add(Note(id="n2", user_id="u1", title="FastAPI", content="a"))
+    db_session.add(Note(id="n3", user_id="u1", title="FastAPI", content="b"))
+    await db_session.commit()
+
+    await _run_extraction("n1", "u1", "我的笔记", content_hash("body"), body="[[FastAPI]]")
+
+    edges = (await db_session.execute(select(GraphNoteEdge).where(
+        GraphNoteEdge.user_id == "u1", GraphNoteEdge.source_note_id == "n1"))).scalars().all()
+    assert len(edges) == 1
+    assert edges[0].target_note_id == "n2"
+    log = (await db_session.execute(select(GraphExtractLog).where(
+        GraphExtractLog.note_id == "n1"))).scalar_one()
+    assert log.status == "success"
+
+
+@pytest.mark.asyncio
+async def test_re_extract_removes_stale_reverse_edges(db_session, session_factory, monkeypatch):
+    from app.core.background_init import init_manager
+    monkeypatch.setattr(init_manager, "chat_model",
+                        make_fake_chat_model(['{"entities": [], "relations": []}']))
+    monkeypatch.setattr("app.graph.services.graph_service.AsyncSessionLocal", session_factory)
+    db_session.add(GraphExtractLog(id="log4", user_id="u1", note_id="n1", content_hash="h",
+                                   status="pending"))
+    db_session.add(Note(id="n2", user_id="u1", title="FastAPI", content="FastAPI 文档"))
+    await db_session.commit()
+
+    # 首抽：[[FastAPI]] → n1→n2 出边 + n2→n1 反向边
+    await _run_extraction("n1", "u1", "我的笔记", content_hash("v1"), body="[[FastAPI]]")
+    reverse = (await db_session.execute(select(GraphNoteEdge).where(
+        GraphNoteEdge.user_id == "u1", GraphNoteEdge.source_note_id == "n2",
+        GraphNoteEdge.target_note_id == "n1"))).scalar_one_or_none()
+    assert reverse is not None
+
+    # 重抽：内容不再含 [[FastAPI]] → 出边与过期反向边都应被清理
+    await _run_extraction("n1", "u1", "我的笔记", content_hash("v2"), body="没有链接了")
+    edges = (await db_session.execute(select(GraphNoteEdge).where(
+        GraphNoteEdge.user_id == "u1"))).scalars().all()
+    assert edges == []
+
+
+@pytest.mark.asyncio
 async def test_cleanup_note_graph_removes_all_relations(db_session):
     from sqlalchemy import insert
     await db_session.execute(insert(GraphNoteEdge).values(id="w1", user_id="u1",

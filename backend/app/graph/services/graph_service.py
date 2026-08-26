@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logger_handler import logger
@@ -47,7 +48,19 @@ async def _ensure_extract_log(db: AsyncSession, user_id: str, note_id: str, cont
         row.content_hash = content_hash_value
         row.status = "pending"
         row.error_message = None
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # 并发竞态：两个 maybe_schedule_extraction 同时插入同一 (user_id, note_id)，
+        # 唯一约束冲突 → 回滚重查复用（按新行语义继续抽取）。
+        await db.rollback()
+        row = (await db.execute(
+            select(GraphExtractLog).where(GraphExtractLog.user_id == user_id,
+                                          GraphExtractLog.note_id == note_id))).scalar_one()
+        row.content_hash = content_hash_value
+        row.status = "pending"
+        row.error_message = None
+        await db.commit()
     return True
 
 
@@ -104,13 +117,15 @@ async def _run_extraction(note_id: str, user_id: str, title: str, body_hash: str
                                            note_id=note_id, mention_count=len(ent.mentions),
                                            context=[{"snippet": m} for m in ent.mentions]))
 
-            # 6. 双链边：先清后插（仅出边，目标笔记需存在）
+            # 6. 双链边：先清后插（仅出边，目标笔记需存在），并清理过期反向边
+            target_ids: set[str] = set()
             await db.execute(delete(GraphNoteEdge).where(
                 GraphNoteEdge.user_id == user_id, GraphNoteEdge.source_note_id == note_id))
             for link in links:
                 target = (await db.execute(
-                    select(Note).where(Note.user_id == user_id, Note.title == link))).scalar_one_or_none()
+                    select(Note).where(Note.user_id == user_id, Note.title == link))).scalars().first()
                 if target:
+                    target_ids.add(target.id)
                     db.add(GraphNoteEdge(id=str(uuid.uuid4()), user_id=user_id,
                                          source_note_id=note_id, target_note_id=target.id, kind="wiki"))
                     # 双向连通：被引用侧挂"被引用"边
@@ -120,6 +135,10 @@ async def _run_extraction(note_id: str, user_id: str, title: str, body_hash: str
                     if not exists:
                         db.add(GraphNoteEdge(id=str(uuid.uuid4()), user_id=user_id,
                                              source_note_id=target.id, target_note_id=note_id, kind="wiki"))
+            # 清理过期反向边：本笔记曾引用、现已移除链接的目标侧残留的"被引用"边
+            await db.execute(delete(GraphNoteEdge).where(
+                GraphNoteEdge.user_id == user_id, GraphNoteEdge.target_note_id == note_id,
+                GraphNoteEdge.source_note_id.notin_(target_ids)))
 
             # 7. 落日志
             log = (await db.execute(select(GraphExtractLog).where(
