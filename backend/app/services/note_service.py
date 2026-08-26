@@ -621,6 +621,11 @@ class NoteService:
             return 0
 
         await db.execute(delete(Note).where(Note.id.in_(existing_ids), Note.user_id == user_id))
+
+        # 图谱联动清理：与批量删除同事务（任一清理失败则整体回滚，不留孤儿数据）
+        from app.graph.services.graph_service import cleanup_note_graph
+        for nid in existing_ids:
+            await cleanup_note_graph(db, user_id, nid)
         await db.commit()
 
         for nid in existing_ids:
@@ -630,10 +635,6 @@ class NoteService:
                 )
             except Exception as e:
                 logger.error(f"批量删除向量失败 note_id={nid}: {e}")
-            # 图谱联动清理：双链边、实体关联、抽取日志
-            from app.graph.services.graph_service import cleanup_note_graph
-            await cleanup_note_graph(db, user_id, nid)
-        await db.commit()
 
         return len(existing_ids)
 
