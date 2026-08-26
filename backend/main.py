@@ -18,6 +18,7 @@ from app.router.note_router import note_router
 from app.router.note_template_router import note_template_router
 from app.router.review_router import review_router
 from app.router.user import file_router, user_router
+from app.graph.routers.graph_router import graph_router
 from app.services.database_session_manager import init_database_session_manager
 
 # 加载环境变量
@@ -48,6 +49,7 @@ app.include_router(file_router)
 app.include_router(note_router)
 app.include_router(note_template_router)
 app.include_router(review_router)
+app.include_router(graph_router)
 
 
 
