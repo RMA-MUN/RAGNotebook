@@ -198,9 +198,8 @@ class NoteService:
             return False
 
         await db.execute(delete(Note).where(Note.id == note_id, Note.user_id == user_id))
-        await db.commit()
 
-        # 图谱联动清理：双链边、实体关联、抽取日志
+        # 图谱联动清理：双链边、实体关联、抽取日志（与删除同事务，异常则一并回滚）
         from app.graph.services.graph_service import cleanup_note_graph
         await cleanup_note_graph(db, user_id, note_id)
         await db.commit()
