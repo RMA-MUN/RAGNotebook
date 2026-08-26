@@ -116,10 +116,16 @@ async def update_entity(entity_id: str, payload: EntityIn,
     e = await store.get_entity(user_id, entity_id)
     if not e:
         return success_response(data=None, message="实体不存在")
-    # 简单合并字段后 upsert
-    merged = EntityIn(name=payload.name or e.name, display_name=payload.display_name or e.display_name,
-                      type_id=payload.type_id, description=payload.description,
-                      aliases=payload.aliases, confidence=payload.confidence)
+    updates = payload.model_dump(exclude_unset=True)
+    merged = EntityIn(
+        name=updates.get("name", e.name),
+        display_name=updates.get("display_name", e.display_name),
+        type_id=updates.get("type_id", e.type_id),
+        description=updates.get("description", e.description),
+        aliases=updates.get("aliases", e.aliases),
+        confidence=updates.get("confidence", e.confidence),
+        source_note_ids=e.source_note_ids,
+    )
     updated = await store.upsert_entity(user_id, merged)
     await db.commit()
     return success_response(data=updated.model_dump())

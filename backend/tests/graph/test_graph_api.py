@@ -68,6 +68,23 @@ async def test_types_crud_api(client):
 
 
 @pytest.mark.asyncio
+async def test_put_entity_preserves_unset_fields(client):
+    # 建类型 + 带 type_id/aliases/confidence 的实体
+    tid = (await client.post("/api/graph/types", json={
+        "name": "lang", "display_name": "语言", "color": "#FF0000"})).json()["data"]["id"]
+    e = (await client.post("/api/graph/entities", json={
+        "name": "Python", "type_id": tid, "aliases": ["py", "CPython"], "confidence": 0.9})).json()["data"]
+    # 局部 PUT 只改 name，未传字段必须保留
+    r = await client.put("/api/graph/entities/" + e["id"], json={"name": "Renamed"})
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["name"] == "Renamed"
+    assert data["type_id"] == tid
+    assert data["aliases"] == ["py", "CPython"]
+    assert data["confidence"] == 0.9
+
+
+@pytest.mark.asyncio
 async def test_extract_logs_endpoint(client):
     r = await client.get("/api/graph/extract-logs")
     assert r.status_code == 200
