@@ -13,6 +13,7 @@
 """
 import os
 import sys
+import types
 from pathlib import Path
 
 # ---- 环境变量：必须在任何 app.* import 之前设置 ----
@@ -21,6 +22,19 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ["RATE_LIMIT_ENABLED"] = "false"
 # 避免测试触发真实视觉模型/重排序模型的初始化
 os.environ.setdefault("VISION_ENABLED", "false")
+
+# python-magic 的 loader 在 win32 上只从 CWD/PATH 查找 libmagic.dll，
+# 而 DLL 实际位于 site-packages/magic/libmagic/，导致 import magic 直接失败。
+# 统一注册 MIME 嗅探替身，保证依赖它的测试模块可单独收集（原 hack 在 test_chat_api 内，顺序敏感）。
+if "magic" not in sys.modules:
+    class _FakeMagic:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def from_buffer(self, content):
+            return "text/plain"
+
+    sys.modules["magic"] = types.SimpleNamespace(Magic=_FakeMagic)
 
 import pytest
 import pytest_asyncio
@@ -238,7 +252,7 @@ def auth_headers():
 async def raw_client(session_factory, monkeypatch):
     """不带认证 overrides 的客户端：用来验证真实 security / get_current_user_id 行为。
 
-    - 无 Authorization 头 → HTTPBearer 403
+    - 无 Authorization 头 → HTTPBearer 401（FastAPI 0.123+ 无凭据即 401）
     - 非法 Token → 401（get_current_user_id 内部逻辑）
     - 黑名单 Token → 401
     """

@@ -1,8 +1,6 @@
 """聊天 / Agent / RAG / 会话 API 集成测试。"""
 import asyncio
 import json
-import sys
-import types
 from dataclasses import dataclass
 
 from fastapi import HTTPException
@@ -18,18 +16,6 @@ async def _next_stream_chunk(response):
 @dataclass
 class FakeAgenticRagResult:
     context: str
-
-
-class _FakeMagic:
-    def __init__(self, *args, **kwargs):
-        pass
-
-    def from_buffer(self, content):
-        return "text/plain"
-
-
-fake_magic_module = types.SimpleNamespace(Magic=_FakeMagic)
-sys.modules.setdefault("magic", fake_magic_module)
 
 
 class FakeChatService:
@@ -128,10 +114,19 @@ async def test_reorder_documents(client, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Agent 流式（skip RAG 路径）
+# Agent 流式（真实 Agentic RAG 管线 + 全部 mock 组件）
 # ---------------------------------------------------------------------------
-async def test_agent_query_stream_skip_rag(client, real_note_service, monkeypatch):
+async def test_agent_query_stream_real_agentic_rag_pipeline(client, real_note_service, monkeypatch):
     install_fake_vector_store(monkeypatch, route_score=0.0)
+
+    # LocalRetriever 在模块加载时绑定了真实 VectorStoreService，
+    # 必须同时替换其模块内引用，避免测试触碰真实 ChromaDB 数据目录。
+    import app.rag.agentic_rag.local_retriever as local_retriever_module
+    from tests.conftest import FakeVectorStoreService
+
+    monkeypatch.setattr(
+        local_retriever_module, "VectorStoreService", lambda *args, **kwargs: FakeVectorStoreService()
+    )
 
     import app.router.chat as chat_module
 
@@ -155,6 +150,37 @@ async def test_agent_query_stream_skip_rag(client, real_note_service, monkeypatc
     assert frames[-1]["type"] == "done"
     response_frame = next(frame for frame in frames if frame["type"] == "response")
     assert response_frame["session_id"] == "sess-1"
+
+
+async def test_agent_query_stream_rag_error_continues_with_empty_context(client, monkeypatch):
+    """Agentic RAG 管线抛异常时，路由降级：不注入上下文、继续转发 Agent 流式响应。"""
+    import app.router.chat as chat_module
+
+    seen = {}
+
+    class BrokenAgenticRagService:
+        async def run(self, query, user_id, thinking_callback=None):
+            raise RuntimeError("管线内部故障")
+
+    async def fake_agent_stream(query, session_id, user_id, custom_tools=None, rag_context="", **kwargs):
+        seen["rag_context"] = rag_context
+        yield f'data: {json.dumps({"type": "response", "content": "降级回答", "session_id": session_id}, ensure_ascii=False)}\n\n'
+        yield f'data: {json.dumps({"type": "done", "session_id": session_id}, ensure_ascii=False)}\n\n'
+
+    monkeypatch.setattr(chat_module, "AgenticRagService", BrokenAgenticRagService)
+    monkeypatch.setattr(chat_module, "get_agent_stream_response", fake_agent_stream)
+
+    async with client.stream(
+        "POST", "/chat/agent/query/stream",
+        json={"query": "讲讲RAG", "session_id": "sess-err"},
+        headers={"Authorization": "Bearer x"},
+    ) as resp:
+        assert resp.status_code == 200
+        lines = [l async for l in resp.aiter_lines()]
+
+    frames = [json.loads(l[6:]) for l in lines if l.startswith("data: ")]
+    assert seen["rag_context"] == ""
+    assert frames[-1]["type"] == "done"
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +253,7 @@ async def test_agent_query_stream_requires_auth(raw_client):
     async with raw_client.stream(
         "POST", "/chat/agent/query/stream", json={"query": "hi"},
     ) as resp:
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
 
 async def test_agent_query_stream_emits_thinking_before_rag_finishes(monkeypatch):

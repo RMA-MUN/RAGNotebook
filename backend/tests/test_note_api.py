@@ -3,6 +3,7 @@ import asyncio
 import json
 import zipfile
 
+from tests.conftest import install_fake_vector_store
 from tests.fakes import TEST_USER_ID
 
 
@@ -266,9 +267,13 @@ async def test_auto_tag_endpoint(client, real_note_service):
     assert resp.json()["message"] == "标签生成任务已提交"
 
 
-async def test_related_notes(client, real_note_service, session_factory):
+async def test_related_notes(client, real_note_service, session_factory, monkeypatch):
     from langchain_core.documents import Document
     from app.core.background_init import init_manager
+
+    # get_related_notes 在函数内局部 import VectorStoreService，
+    # 必须替换模块属性，否则会构造真实单例并创建 ChromaDB 数据目录。
+    install_fake_vector_store(monkeypatch)
 
     create_resp = await client.post("/note/create", json=_note_payload(), headers={"Authorization": "Bearer x"})
     note_id = create_resp.json()["data"]["id"]
