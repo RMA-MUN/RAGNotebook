@@ -69,4 +69,19 @@ export const endpoints = {
   noteTemplateUpdate: (id: string) => `/note-template/${id}`,
   noteTemplateDelete: (id: string) => `/note-template/${id}`,
   noteTemplateReorder: '/note-template/reorder',
+
+  // Knowledge Graph
+  graphOverview: '/api/graph/overview',
+  graphEvents: '/api/graph/events',
+  graphEntity: (id: string) => `/api/graph/entity/${id}`,
+  graphEntityNeighbors: (id: string) => `/api/graph/entity/${id}/neighbors`,
+  graphEntityNotes: (id: string) => `/api/graph/entity/${id}/notes`,
+  graphNoteRelated: (id: string) => `/api/graph/notes/${id}/related`,
+  graphSearch: '/api/graph/search',
+  graphExtractLogs: '/api/graph/extract-logs',
+  graphEntities: '/api/graph/entities',
+  graphEntityMerge: '/api/graph/entities/merge',
+  graphTypes: '/api/graph/types',
+  graphRelations: '/api/graph/relations',
+  graphReExtract: (id: string) => `/api/graph/notes/${id}/re-extract`,
 } as const
