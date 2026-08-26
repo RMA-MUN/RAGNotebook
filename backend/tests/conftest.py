@@ -82,7 +82,7 @@ async def db_engine(tmp_path):
     改用文件库 + 默认连接池后，每个 session 有独立连接，写操作可被其他连接看到（与生产一致）。
     """
     # 确保所有 Model 在 create_all 之前已注册到 Base.metadata
-    from app.models import chat_history, note, note_template, review_record, user_model  # noqa: F401
+    from app.models import chat_history, graph, note, note_template, review_record, user_model  # noqa: F401
 
     db_file = tmp_path / "test.db"
     engine = create_async_engine(
