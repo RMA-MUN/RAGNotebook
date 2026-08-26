@@ -21,6 +21,7 @@ export function GraphCanvas({ view, typeColors, onSelectNode }: Props) {
       data: {
         nodes: view.nodes.map((n) => ({
           id: n.id,
+          type: n.node_type === 'note' ? 'rect' : 'circle',
           data: { label: n.label, node_type: n.node_type, entity_type_id: n.entity_type_id },
           style: {
             size: n.node_type === 'note' ? 16 : 24,

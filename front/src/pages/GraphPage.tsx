@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { graphApi } from '../api/graph'
 import { GraphCanvas } from '../components/graph/GraphCanvas'
 import { EntityDetailPanel } from '../components/graph/EntityDetailPanel'
 import { useGraphEvents } from '../hooks/useGraphEvents'
-import type { EntityType, GraphView } from '../types/graph'
+import type { EntityType, GraphSSEEvent, GraphView } from '../types/graph'
 
 export default function GraphPage() {
   const { t } = useTranslation()
@@ -27,11 +27,13 @@ export default function GraphPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- 页面挂载时拉取一次图谱数据
   useEffect(() => { void reload() }, [reload, layout])
 
-  const { subscribe } = useGraphEvents((ev) => {
+  const onEvent = useCallback((ev: GraphSSEEvent) => {
     if (ev.type === 'extract_done' || ev.type === 'extract_failed') {
       void reload() // 增量刷新（整拉简化，避免过期视图）
     }
-  })
+  }, [reload])
+
+  const { subscribe } = useGraphEvents(onEvent)
   useEffect(() => { subscribe() }, [subscribe])
 
   const onSearch = useCallback(async () => {
@@ -41,7 +43,17 @@ export default function GraphPage() {
     void reload()
   }, [q, reload])
 
-  const typeColors = Object.fromEntries(types.map((ty) => [ty.id, ty.color]))
+  const typeColors = useMemo(
+    () => Object.fromEntries(types.map((ty) => [ty.id, ty.color])),
+    [types],
+  )
+
+  const onSelectNode = useCallback((id: string) => {
+    setSelected((prev) => {
+      const n = view.nodes.find((x) => x.id === id)
+      return n ? { id: n.id, nodeType: n.node_type } : prev
+    })
+  }, [view])
 
   return (
     <div className="relative h-full w-full">
@@ -60,11 +72,7 @@ export default function GraphPage() {
         </select>
         <button onClick={() => void reload()} className="rounded bg-[var(--color-accent)] px-2 py-1 text-sm text-white">{t('graph.refresh')}</button>
       </div>
-      <GraphCanvas view={view} typeColors={typeColors}
-        onSelectNode={(id) => {
-          const n = view.nodes.find((x) => x.id === id)
-          setSelected(n ? { id: n.id, nodeType: n.node_type } : null)
-        }} />
+      <GraphCanvas view={view} typeColors={typeColors} onSelectNode={onSelectNode} />
       {selected && (
         <EntityDetailPanel nodeId={selected.id} nodeType={selected.nodeType}
           onClose={() => setSelected(null)} onChanged={() => void reload()} />
