@@ -123,6 +123,11 @@ class NoteService:
         if not user_provided_meta:
             asyncio.create_task(self._auto_tag_and_review(note_id, user_id, payload.content))
 
+        # 图谱抽取：内容哈希增量触发（异步，不阻塞保存）
+        from app.graph.services.graph_service import maybe_schedule_extraction
+        asyncio.create_task(
+            maybe_schedule_extraction(note_id, user_id, payload.title, payload.content))
+
         return self._doc_to_response(note)
 
     async def update_note(self, db: AsyncSession, note_id: str, user_id: str, payload: NoteUpdate) -> NoteResponse | None:
@@ -173,6 +178,11 @@ class NoteService:
             except Exception as e:
                 logger.error(f"更新笔记向量失败 note_id={note_id}: {e}")
 
+            # 图谱重抽：内容变更才触发
+            from app.graph.services.graph_service import maybe_schedule_extraction
+            asyncio.create_task(
+                maybe_schedule_extraction(note_id, user_id, note.title, note.content))
+
         return self._doc_to_response(note)
 
     async def delete_note(self, db: AsyncSession, note_id: str, user_id: str) -> bool:
@@ -188,6 +198,11 @@ class NoteService:
             return False
 
         await db.execute(delete(Note).where(Note.id == note_id, Note.user_id == user_id))
+        await db.commit()
+
+        # 图谱联动清理：双链边、实体关联、抽取日志
+        from app.graph.services.graph_service import cleanup_note_graph
+        await cleanup_note_graph(db, user_id, note_id)
         await db.commit()
 
         # 清理向量
@@ -616,6 +631,10 @@ class NoteService:
                 )
             except Exception as e:
                 logger.error(f"批量删除向量失败 note_id={nid}: {e}")
+            # 图谱联动清理：双链边、实体关联、抽取日志
+            from app.graph.services.graph_service import cleanup_note_graph
+            await cleanup_note_graph(db, user_id, nid)
+        await db.commit()
 
         return len(existing_ids)
 
