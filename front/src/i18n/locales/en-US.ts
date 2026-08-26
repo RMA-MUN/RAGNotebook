@@ -151,6 +151,18 @@ const enUS = {
     noMore: 'No more',
     fillAllFields: 'Please fill in all fields',
   },
+  graph: {
+    searchPlaceholder: 'Search entities/notes',
+    allTypes: 'All types',
+    layoutForce: 'Force',
+    layoutRadial: 'Radial',
+    refresh: 'Refresh',
+    noteTitle: 'Note',
+    aliases: 'Aliases',
+    type: 'Type',
+    delete: 'Delete',
+    relatedNotes: 'Related notes',
+  },
 }
 
 export default enUS

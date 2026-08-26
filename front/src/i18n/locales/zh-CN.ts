@@ -151,6 +151,18 @@ const zhCN = {
     noMore: '没有更多了',
     fillAllFields: '请填写所有字段',
   },
+  graph: {
+    searchPlaceholder: '搜索实体/笔记',
+    allTypes: '全部类型',
+    layoutForce: '力导向',
+    layoutRadial: '径向',
+    refresh: '刷新',
+    noteTitle: '笔记',
+    aliases: '别名',
+    type: '类型',
+    delete: '删除',
+    relatedNotes: '关联笔记',
+  },
 }
 
 export default zhCN
