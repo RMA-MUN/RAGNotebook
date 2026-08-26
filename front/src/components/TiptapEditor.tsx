@@ -17,6 +17,16 @@ import rehypeHighlight from 'rehype-highlight'
 import { marked } from 'marked'
 import TurndownService from 'turndown'
 import ReactMarkdown from 'react-markdown'
+import { WikiLink, renderWikiLinkText } from './WikiLink'
+
+// marked: render [[...]] as clickable wiki links (kept verbatim in markdown round-trips)
+marked.use({
+  renderer: {
+    text: (token: { text: string }) =>
+      token.text.replace(/\[\[([^[\]]+)\]\]/g,
+        (_m, t) => `<a data-wiki="true" href="#wiki:${t}">[[${t}]]</a>`),
+  },
+})
 
 // ── Turndown: HTML → Markdown ──
 
@@ -41,6 +51,29 @@ turndown.addRule('taskListItem', {
   },
 })
 
+// turndown escapes every `[`/`]` by default → would mangle `[[...]]` wiki links
+// typed as plain text; un-escape only well-formed `[[...]]` groups
+const turndownEscape = turndown.escape.bind(turndown)
+turndown.escape = (string: string) =>
+  turndownEscape(string).replace(/\\\[\\\[[\s\S]*?\\\]\\\]/g, (m) => m.replace(/\\(.)/g, '$1'))
+
+// Custom rule: wiki links stay `[[target]]` — never fall back to [target](href)
+const decodeWikiTarget = (href: string) => {
+  const raw = href.replace(/^#wiki:/, '')
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+turndown.addRule('wikiLink', {
+  filter: (node) => node.nodeName === 'A' && node.getAttribute('data-wiki') === 'true',
+  replacement: (_content, node) => {
+    const href = (node as HTMLAnchorElement).getAttribute('href') || ''
+    return `[[${decodeWikiTarget(href)}]]`
+  },
+})
+
 const lowlight = createLowlight(common)
 
 // ── Types ──
@@ -49,11 +82,17 @@ export interface TiptapEditorHandle {
   scrollToHeading: (text: string, level: number) => void
 }
 
+export interface WikiSuggestResult {
+  entities: string[]
+  notes: string[]
+}
+
 interface TiptapEditorProps {
   value: string
   onChange: (value: string) => void
   placeholder?: string
   onAutocomplete?: (context: string) => Promise<string | null>
+  onWikiSuggest?: (keyword: string) => Promise<WikiSuggestResult | null>
 }
 
 // ── Toolbar sub-components ──
@@ -77,6 +116,8 @@ function ToolbarBtn({ onClick, active, label, title }: {
 }
 
 function EditorToolbar({ editor }: { editor: Editor | null }) {
+  const [showTableGrid, setShowTableGrid] = useState(false)
+  const [tableGridHover, setTableGridHover] = useState({ rows: 0, cols: 0 })
   if (!editor) return null
 
   const headingLevels = [1, 2, 3, 4, 5, 6] as const
@@ -84,8 +125,6 @@ function EditorToolbar({ editor }: { editor: Editor | null }) {
     editor.isActive('heading', { level: l })
   )
   const inTable = editor.isActive('table')
-  const [showTableGrid, setShowTableGrid] = useState(false)
-  const [tableGridHover, setTableGridHover] = useState({ rows: 0, cols: 0 })
 
   return (
     <div className="tiptap-toolbar">
@@ -299,7 +338,7 @@ function EditorToolbar({ editor }: { editor: Editor | null }) {
 
 // ── Main component ──
 
-const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value, onChange, placeholder, onAutocomplete }, ref) => {
+const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value, onChange, placeholder, onAutocomplete, onWikiSuggest }, ref) => {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const onChangeRef = useRef(onChange)
   const autocompleteRef = useRef(onAutocomplete)
@@ -308,8 +347,20 @@ const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value,
   const ghostFromRef = useRef(0)
   const [preview, setPreview] = useState(false)
   const [ghost, setGhost] = useState<{ text: string; left: number; top: number } | null>(null)
-  onChangeRef.current = onChange
-  autocompleteRef.current = onAutocomplete
+  const [wikiSuggest, setWikiSuggest] = useState<{ groups: { label: string; items: string[] }[]; left: number; top: number } | null>(null)
+  const [wikiSelected, setWikiSelected] = useState(0)
+  const wikiSuggestRef = useRef(onWikiSuggest)
+  const wikiPopupRef = useRef<{ groups: { label: string; items: string[] }[] } | null>(null)
+  const wikiKeywordRef = useRef('')
+  const wikiSelectedRef = useRef(0)
+
+  // Keep refs in sync with latest props/state (post-commit, for event handlers)
+  useEffect(() => {
+    onChangeRef.current = onChange
+    autocompleteRef.current = onAutocomplete
+    wikiSuggestRef.current = onWikiSuggest
+    wikiPopupRef.current = wikiSuggest
+  })
 
   const editor = useEditor({
     extensions: [
@@ -328,6 +379,7 @@ const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value,
       TaskList,
       TaskItem.configure({ nested: true }),
       Underline,
+      WikiLink,
     ],
     content: marked.parse(value || ''),
     onUpdate: ({ editor }) => {
@@ -366,6 +418,89 @@ const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value,
       })
     } catch { /* ignore */ }
   }, [editor])
+
+  // ── Wiki link `[[...]]` suggestion flow ──
+
+  const closeWikiSuggest = useCallback(() => {
+    wikiKeywordRef.current = ''
+    wikiSelectedRef.current = 0
+    setWikiSuggest(null)
+  }, [])
+
+  // Accept a candidate: replace the `[[` … cursor range (incl. partially typed
+  // keyword) with `[[target]]` and keep the cursor right after it
+  const insertWikiLink = useCallback((target: string) => {
+    if (!editor) return
+    const { from } = editor.state.selection
+    const before = editor.state.doc.textBetween(Math.max(0, from - 64), from)
+    const match = before.match(/\[\[[^[\]\n]*$/)
+    const start = match ? from - match[0].length : Math.max(0, from - 2)
+    editor.chain().focus().insertContentAt({ from: start, to: from }, renderWikiLinkText(target)).run()
+    closeWikiSuggest()
+  }, [editor, closeWikiSuggest])
+
+  // Detect a `[[` prefix as the user types → fetch two-group candidates (notes/entities)
+  useEffect(() => {
+    if (!editor) return
+    const handler = () => {
+      const { from } = editor.state.selection
+      const before = editor.state.doc.textBetween(Math.max(0, from - 64), from)
+      const match = before.match(/\[\[([^[\]\n]*)$/)
+      if (!match) {
+        closeWikiSuggest()
+        return
+      }
+      const keyword = match[1]
+      if (keyword === wikiKeywordRef.current) return
+      if (!wikiSuggestRef.current) { closeWikiSuggest(); return }
+      wikiKeywordRef.current = keyword
+      const posAtRequest = from
+      wikiSuggestRef.current(keyword).then((res) => {
+        if (!res || !editor) return
+        const curFrom = editor.state.selection.from
+        if (curFrom !== posAtRequest) return
+        const beforeNow = editor.state.doc.textBetween(Math.max(0, curFrom - 64), curFrom)
+        if (!/\[\[[^[\]\n]*$/.test(beforeNow)) return
+        const coords = editor.view.coordsAtPos(curFrom)
+        const wrapper = wrapperRef.current
+        if (!coords || !wrapper) return
+        const rect = wrapper.getBoundingClientRect()
+        const groups = [
+          ...(res.notes.length ? [{ label: '笔记', items: res.notes }] : []),
+          ...(res.entities.length ? [{ label: '实体', items: res.entities }] : []),
+        ]
+        if (!groups.length) { setWikiSuggest(null); return }
+        wikiSelectedRef.current = 0
+        setWikiSelected(0)
+        setWikiSuggest({ groups, left: coords.left - rect.left, top: coords.top - rect.top + 26 })
+      }).catch(() => {})
+    }
+    editor.on('update', handler)
+    return () => { editor.off('update', handler) }
+  }, [editor, closeWikiSuggest])
+
+  // Cursor moved while the popup is open → reposition or close
+  useEffect(() => {
+    if (!editor) return
+    const handler = () => {
+      const { from } = editor.state.selection
+      const before = editor.state.doc.textBetween(Math.max(0, from - 64), from)
+      if (!/\[\[[^[\]\n]*$/.test(before)) {
+        closeWikiSuggest()
+        return
+      }
+      try {
+        const wrapper = wrapperRef.current
+        if (!wrapper) return
+        const coords = editor.view.coordsAtPos(from)
+        if (!coords) return
+        const rect = wrapper.getBoundingClientRect()
+        setWikiSuggest((s) => s && { ...s, left: coords.left - rect.left, top: coords.top - rect.top + 26 })
+      } catch { /* ignore */ }
+    }
+    editor.on('selectionUpdate', handler)
+    return () => { editor.off('selectionUpdate', handler) }
+  }, [editor, closeWikiSuggest])
 
   // Autocomplete: 3 s after last keystroke
   useEffect(() => {
@@ -431,6 +566,29 @@ const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value,
     const view = editor.view
     const handler = (e: KeyboardEvent) => {
       const isCtrl = e.ctrlKey || e.metaKey
+
+      // Wiki suggestion popup: Tab/Enter adopt, ↑/↓ navigate, Esc dismiss
+      if (wikiPopupRef.current && (e.key === 'Tab' || e.key === 'Enter')) {
+        e.preventDefault()
+        const items = wikiPopupRef.current.groups.flatMap((g) => g.items)
+        const target = items[wikiSelectedRef.current]
+        if (target) insertWikiLink(target)
+        return
+      }
+      if (wikiPopupRef.current && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        e.preventDefault()
+        const items = wikiPopupRef.current.groups.flatMap((g) => g.items)
+        const dir = e.key === 'ArrowDown' ? 1 : -1
+        const next = (wikiSelectedRef.current + dir + items.length) % items.length
+        wikiSelectedRef.current = next
+        setWikiSelected(next)
+        return
+      }
+      if (wikiPopupRef.current && e.key === 'Escape') {
+        e.preventDefault()
+        closeWikiSuggest()
+        return
+      }
 
       // Tab → accept ghost completion
       if (e.key === 'Tab' && ghostTextRef.current) {
@@ -504,12 +662,12 @@ const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value,
 
     view.dom.addEventListener('keydown', handler)
     return () => view.dom.removeEventListener('keydown', handler)
-  }, [editor])
+  }, [editor, insertWikiLink, closeWikiSuggest])
 
   useImperativeHandle(ref, () => ({
     scrollToHeading: (text: string, level: number) => {
       if (!editor) return
-      const normalize = (s: string) => s.replace(/\\([.!\[\]()*_`~\-])/g, '$1')
+      const normalize = (s: string) => s.replace(/\\([.![\]()*_`~-])/g, '$1')
       const { doc } = editor.state
       const target = normalize(text.trim().toLowerCase())
       doc.descendants((node, pos) => {
@@ -531,6 +689,8 @@ const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value,
   }), [editor])
 
   if (!editor) return null
+
+  const wikiFlatItems = wikiSuggest ? wikiSuggest.groups.flatMap((g) => g.items) : []
 
   // ── Preview mode ──
   if (preview) {
@@ -565,6 +725,39 @@ const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value,
             <span className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
               Tab 补全
             </span>
+          </div>
+        )}
+        {wikiSuggest && (
+          <div
+            style={{ position: 'absolute', left: wikiSuggest.left, top: wikiSuggest.top, zIndex: 50, minWidth: 220, maxHeight: 260, overflow: 'auto' }}
+            className="wiki-suggest rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg"
+          >
+            {wikiSuggest.groups.map((group) => (
+              <div key={group.label}>
+                <div className="px-3 pt-2 pb-1 text-[11px] font-medium text-[var(--color-text-tertiary)]">
+                  {group.label}
+                </div>
+                {group.items.map((item) => {
+                  const flatIdx = wikiFlatItems.indexOf(item)
+                  const selected = flatIdx === wikiSelected
+                  return (
+                    <button
+                      key={`${group.label}:${item}`}
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); insertWikiLink(item) }}
+                      onMouseEnter={() => { wikiSelectedRef.current = flatIdx; setWikiSelected(flatIdx) }}
+                      className={`block w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                        selected
+                          ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent)]'
+                          : 'text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]'
+                      }`}
+                    >
+                      {item}
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
           </div>
         )}
       </div>
