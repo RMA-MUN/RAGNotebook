@@ -22,7 +22,7 @@ export default function GraphPage() {
   const [types, setTypes] = useState<EntityType[]>([])
   const [q, setQ] = useState('')
   const [activeType, setActiveType] = useState<string>('')
-  const [selected, setSelected] = useState<{ id: string; nodeType: 'entity' | 'note' } | null>(null)
+  const [selected, setSelected] = useState<{ id: string; nodeType: 'entity' | 'note' | 'doc' } | null>(null)
   const [fitSignal, setFitSignal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)

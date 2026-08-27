@@ -163,7 +163,7 @@ const enUS = {
     relatedNotes: 'Related notes',
     close: 'Close',
     loadFailed: 'Failed to load graph',
-    emptyMessage: 'No graph data yet. Entities and relations are extracted automatically after notes are saved.',
+    emptyMessage: 'No graph data yet. Entities and relations are extracted automatically after notes are saved or documents are uploaded.',
     retry: 'Retry',
     searchNoResult: 'No matching entities or notes',
     entitiesGroup: 'Entities',
@@ -176,8 +176,12 @@ const enUS = {
     deleteSuccess: 'Entity deleted',
     deleteFailed: 'Failed to delete. Please try again later.',
     loadEntityFailed: 'Failed to load entity details',
+    loadDocFailed: 'Failed to load document details',
     noRelatedNotes: 'No related notes',
     openNote: 'Open note',
+    openDoc: 'Open knowledge base',
+    relatedEntities: 'Related entities',
+    noRelatedEntities: 'No related entities',
   },
 }
 

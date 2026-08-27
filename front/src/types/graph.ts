@@ -1,7 +1,7 @@
 export interface GraphNode {
   id: string
   label: string
-  node_type: 'entity' | 'note'
+  node_type: 'entity' | 'note' | 'doc'
   entity_type_id?: string | null
 }
 
@@ -32,6 +32,8 @@ export interface GraphEntity {
 export interface EntityNoteLink {
   entity_id: string
   note_id: string
+  source_type: 'note' | 'doc'
+  source_name?: string | null
   mention_count: number
   context: { snippet: string }[]
 }
@@ -48,6 +50,7 @@ export interface EntityType {
 
 export interface ExtractLog {
   note_id: string
+  source_type?: 'note' | 'doc'
   content_hash: string
   status: 'pending' | 'success' | 'failed'
   new_count: number
@@ -63,6 +66,7 @@ export interface GraphSearchResult {
 export interface GraphSSEEvent {
   type: 'extract_done' | 'extract_failed' | 'ping'
   note_id?: string
+  source_type?: 'note' | 'doc'
   status?: string
   new_count?: number
   update_count?: number

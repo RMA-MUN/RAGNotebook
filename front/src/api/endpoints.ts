@@ -78,6 +78,7 @@ export const endpoints = {
   graphEntityNeighbors: (id: string) => `/api/graph/entity/${id}/neighbors`,
   graphEntityNotes: (id: string) => `/api/graph/entity/${id}/notes`,
   graphNoteRelated: (id: string) => `/api/graph/notes/${id}/related`,
+  graphDocRelated: (id: string) => `/api/graph/docs/${id}/related`,
   graphSearch: '/api/graph/search',
   graphExtractLogs: '/api/graph/extract-logs',
   graphEntities: '/api/graph/entities',

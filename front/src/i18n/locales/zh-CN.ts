@@ -163,7 +163,7 @@ const zhCN = {
     relatedNotes: '关联笔记',
     close: '关闭',
     loadFailed: '图谱加载失败',
-    emptyMessage: '暂无图谱数据：保存笔记后会自动抽取实体与关系',
+    emptyMessage: '暂无图谱数据：保存笔记或上传知识库文档后会自动抽取实体与关系',
     retry: '重试',
     searchNoResult: '未找到匹配的实体或笔记',
     entitiesGroup: '实体',
@@ -176,8 +176,12 @@ const zhCN = {
     deleteSuccess: '实体已删除',
     deleteFailed: '删除失败，请稍后重试',
     loadEntityFailed: '加载实体详情失败',
+    loadDocFailed: '加载文档详情失败',
     noRelatedNotes: '暂无关联笔记',
     openNote: '打开笔记',
+    openDoc: '打开知识库',
+    relatedEntities: '关联实体',
+    noRelatedEntities: '暂无关联实体',
   },
 }
 

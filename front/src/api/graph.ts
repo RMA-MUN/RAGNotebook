@@ -26,6 +26,10 @@ export const graphApi = {
     const res = await client.get<ApiResponse<GraphView>>(endpoints.graphNoteRelated(id))
     return res.data.data
   },
+  docRelated: async (id: string) => {
+    const res = await client.get<ApiResponse<GraphView>>(endpoints.graphDocRelated(id))
+    return res.data.data
+  },
   search: async (q: string) => {
     const res = await client.get<ApiResponse<GraphSearchResult>>(endpoints.graphSearch, { params: { q } })
     return res.data.data

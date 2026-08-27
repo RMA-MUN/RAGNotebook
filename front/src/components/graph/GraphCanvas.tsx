@@ -28,6 +28,7 @@ const PALETTES = {
 } as const
 
 const NOTE_FILL = '#94a3b8'
+const DOC_FILL = '#8b5cf6'
 const FALLBACK_FILL = '#64748b'
 const RECENTRE_DELAY_MS = 900
 const RECENTRE_ANIMATION = { duration: 450 }
@@ -48,7 +49,9 @@ const ALPHA_RELEASE_CAP = 0.3 // 松手保留适量余能：弹簧回收过程�
 const ALPHA_MIN_STOP = 0.02
 
 function nodeRadius(n: Pick<GraphNode, 'node_type'>): number {
-  return n.node_type === 'note' ? 10 : 14
+  if (n.node_type === 'note') return 10
+  if (n.node_type === 'doc') return 12
+  return 14
 }
 
 function randOffset(radius: number): { x: number; y: number } {
@@ -297,13 +300,15 @@ export function GraphCanvas({ view, typeColors, onSelectNode, fitSignal = 0 }: P
         const pos = nextNodes.find((p) => p.id === n.id)
         return {
           id: n.id,
-          type: n.node_type === 'note' ? 'rect' : 'circle',
+          type: n.node_type === 'note' ? 'rect' : n.node_type === 'doc' ? 'diamond' : 'circle',
           data: { label: n.label, node_type: n.node_type, entity_type_id: n.entity_type_id },
           style: {
-            size: n.node_type === 'note' ? 16 : 24,
+            size: n.node_type === 'note' ? 16 : n.node_type === 'doc' ? 20 : 24,
             fill: n.node_type === 'note'
               ? NOTE_FILL
-              : (n.entity_type_id && typeColors[n.entity_type_id]) || FALLBACK_FILL,
+              : n.node_type === 'doc'
+                ? DOC_FILL
+                : (n.entity_type_id && typeColors[n.entity_type_id]) || FALLBACK_FILL,
             stroke: palette.nodeStroke,
             labelText: n.label,
             labelPlacement: 'bottom',
