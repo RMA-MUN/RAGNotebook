@@ -28,6 +28,7 @@ export default defineConfig({
       '/user': { target: BACKEND_TARGET, changeOrigin: true },
       '/file': { target: BACKEND_TARGET, changeOrigin: true },
       '/media': { target: BACKEND_TARGET, changeOrigin: true },
+      '/api/graph': { target: BACKEND_TARGET, changeOrigin: true },
     },
   },
 })

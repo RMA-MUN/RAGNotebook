@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { graphApi } from '../api/graph'
 import { GraphCanvas } from '../components/graph/GraphCanvas'
@@ -14,6 +15,14 @@ export default function GraphPage() {
   const [activeType, setActiveType] = useState<string>('')
   const [selected, setSelected] = useState<{ id: string; nodeType: 'entity' | 'note' } | null>(null)
   const [layout, setLayout] = useState<'force' | 'radial'>('force')
+  const [searchParams] = useSearchParams()
+
+  // 双链/实体链接携带 ?entity=<id> 进入图谱页时，直接选中该实体
+  const entityParam = searchParams.get('entity')
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 路由参数驱动的一次性选中
+    if (entityParam) setSelected({ id: entityParam, nodeType: 'entity' })
+  }, [entityParam])
 
   const reload = useCallback(async () => {
     const [v, ty] = await Promise.all([

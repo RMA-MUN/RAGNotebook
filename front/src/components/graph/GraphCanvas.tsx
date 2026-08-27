@@ -15,6 +15,7 @@ export function GraphCanvas({ view, typeColors, onSelectNode }: Props) {
 
   useEffect(() => {
     if (!containerRef.current) return
+    let destroyed = false
     const graph = new Graph({
       container: containerRef.current,
       autoFit: 'view',
@@ -50,13 +51,19 @@ export function GraphCanvas({ view, typeColors, onSelectNode }: Props) {
       layout: { type: 'force', preventOverlap: true },
       behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element', 'click-select'],
     })
-    graph.render()
     graphRef.current = graph
     graph.on('node:click', (evt: IElementEvent) => {
       const id = (evt.target as unknown as { id?: string })?.id
       if (id) onSelectNode?.(String(id))
     })
+    // render 为异步：组件卸载/重建时 pending render 会以 rejected promise 结束，需吞掉（destroyed 竞态防护）
+    void graph.render().catch(() => {
+      if (!destroyed) {
+        console.warn('[G6] graph.render 失败', graph)
+      }
+    })
     return () => {
+      destroyed = true
       graph.destroy()
       graphRef.current = null
     }
