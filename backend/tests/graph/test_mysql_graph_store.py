@@ -3,6 +3,7 @@ import pytest
 from app.graph.schemas.graph import EntityIn, TypeIn
 from app.graph.storage.mysql_graph_store import MySQLGraphStore
 from app.models.graph import (
+    GraphDoc,
     GraphEntity,
     GraphEntityNote,
     GraphEntityType,
@@ -102,3 +103,51 @@ async def test_types_crud(db_session):
     assert t.name == "org"
     types = await store.list_types("u1")
     assert any(x.name == "org" for x in types)
+
+
+@pytest.mark.asyncio
+async def test_get_overview_includes_doc_nodes_and_mention_edges(db_session):
+    await _seed(db_session)
+    db_session.add(GraphDoc(id="md51", user_id="u1", filename="报告.pdf"))
+    db_session.add(GraphEntityNote(id="end1", user_id="u1", entity_id="e1", note_id="md51",
+                                   mention_count=1, context=[{"snippet": "x"}], source_type="doc"))
+    await db_session.commit()
+    store = MySQLGraphStore(db_session)
+    view = await store.get_overview("u1", type_ids=None, limit=20)
+    doc_nodes = [n for n in view.nodes if n.node_type == "doc"]
+    assert any(n.id == "md51" and n.label == "报告.pdf" for n in doc_nodes)
+    doc_edges = [e for e in view.edges if e.source == "md51"]
+    assert any(e.target == "e1" and e.kind == "relation" for e in doc_edges)
+    # 文档节点不应被误当作笔记节点
+    assert "md51" not in {n.id for n in view.nodes if n.node_type == "note"}
+
+
+@pytest.mark.asyncio
+async def test_get_doc_graph(db_session):
+    await _seed(db_session)
+    db_session.add(GraphDoc(id="md51", user_id="u1", filename="报告.pdf"))
+    db_session.add(GraphEntityNote(id="end1", user_id="u1", entity_id="e1", note_id="md51",
+                                   mention_count=1, context=[{"snippet": "x"}], source_type="doc"))
+    await db_session.commit()
+    store = MySQLGraphStore(db_session)
+    view = await store.get_doc_graph("u1", "md51")
+    node_ids = {n.id for n in view.nodes}
+    assert "md51" in node_ids
+    assert "e1" in node_ids
+    doc_node = next(n for n in view.nodes if n.node_type == "doc")
+    assert doc_node.label == "报告.pdf"
+    assert any(e.source == "md51" and e.target == "e1" for e in view.edges)
+
+
+@pytest.mark.asyncio
+async def test_get_entity_notes_marks_doc_source(db_session):
+    await _seed(db_session)
+    db_session.add(GraphDoc(id="md51", user_id="u1", filename="报告.pdf"))
+    db_session.add(GraphEntityNote(id="end2", user_id="u1", entity_id="e1", note_id="md51",
+                                   mention_count=1, context=[{"snippet": "x"}], source_type="doc"))
+    await db_session.commit()
+    store = MySQLGraphStore(db_session)
+    links = await store.get_entity_notes("u1", "e1")
+    assert {link.source_type for link in links} == {"note", "doc"}
+    doc_link = next(link for link in links if link.source_type == "doc")
+    assert doc_link.source_name == "报告.pdf"
