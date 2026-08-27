@@ -197,16 +197,25 @@ def make_fake_chat_model(responses: list[str] | None = None):
     return GenericFakeChatModel(messages=iter(messages))
 
 
-class FakeAgentExecutor:
-    """AgentExecutor 内存替身：astream 产出预设 chunk。
+class FakeAgent:
+    """create_agent 返回的 CompiledStateGraph 内存替身。
 
+    - ainvoke：直接返回预设 messages 状态（非流式路径）。
+    - astream_events：按序产出预设事件（流式路径，v2 事件流）。
     用于在编排层测试 get_agent_response / get_agent_stream_response，
     避免触发 LangChain 真实的 agent 规划循环。
     """
 
-    def __init__(self, outputs: list[str] | None = None):
-        self.outputs = outputs or ["这是假 Agent 的回答。"]
+    def __init__(self, messages: list | None = None, events: list[dict] | None = None):
+        self.messages = messages or [AIMessage(content="这是假 Agent 的回答。")]
+        self.events = events or []
+        self.inputs = []
 
-    async def astream(self, inputs: dict):
-        for out in self.outputs:
-            yield {"output": out}
+    async def ainvoke(self, inputs: dict):
+        self.inputs.append(inputs)
+        return {"messages": self.messages}
+
+    async def astream_events(self, inputs: dict, version: str = "v2"):
+        self.inputs.append(inputs)
+        for event in self.events:
+            yield event
