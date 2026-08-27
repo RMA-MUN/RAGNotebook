@@ -22,6 +22,7 @@ from app.graph.schemas.graph import (
 )
 from app.graph.storage.graph_store import GraphStore
 from app.models.graph import (
+    GraphDoc,
     GraphEntity,
     GraphEntityNote,
     GraphEntityType,
@@ -221,7 +222,16 @@ class MySQLGraphStore(GraphStore):
         rows = (await self.session.execute(
             select(GraphEntityNote).where(GraphEntityNote.user_id == user_id,
                                           GraphEntityNote.entity_id == entity_id))).scalars().all()
+        # 文档关联行（note_id 存 md5）补上文件名，前端可区分展示
+        doc_names: dict[str, str] = {}
+        doc_ids = [r.note_id for r in rows if r.source_type == "doc"]
+        if doc_ids:
+            docs = (await self.session.execute(
+                select(GraphDoc).where(GraphDoc.user_id == user_id,
+                                       GraphDoc.id.in_(doc_ids)))).scalars().all()
+            doc_names = {d.id: d.filename for d in docs}
         return [EntityNoteLink(entity_id=r.entity_id, note_id=r.note_id,
+                               source_type=r.source_type, source_name=doc_names.get(r.note_id),
                                mention_count=r.mention_count, context=r.context or []) for r in rows]
 
     async def get_overview(self, user_id: str, type_ids: list[str] | None, limit: int) -> GraphView:
@@ -237,13 +247,15 @@ class MySQLGraphStore(GraphStore):
                 select(GraphRelation).where(GraphRelation.user_id == user_id,
                                            or_(GraphRelation.source_id.in_(eids),
                                                GraphRelation.target_id.in_(eids))))).scalars().all()
-        # 包含笔记节点与 wiki 边（双链自动生长可见性）
-        ens = []
+        # 笔记提及（source_type 非 doc）：驱动笔记节点与 wiki 边（双链自动生长可见性）
+        note_ens = []
         if eids:
-            ens = (await self.session.execute(
+            note_ens = (await self.session.execute(
                 select(GraphEntityNote).where(GraphEntityNote.user_id == user_id,
-                                              GraphEntityNote.entity_id.in_(eids)))).scalars().all()
-        note_ids = {en.note_id for en in ens}
+                                              GraphEntityNote.entity_id.in_(eids),
+                                              or_(GraphEntityNote.source_type.is_(None),
+                                                  GraphEntityNote.source_type != "doc")))).scalars().all()
+        note_ids = {en.note_id for en in note_ens}
         wedges = []
         if note_ids:
             wedges = (await self.session.execute(
@@ -252,15 +264,56 @@ class MySQLGraphStore(GraphStore):
                                                GraphNoteEdge.target_note_id.in_(note_ids))))).scalars().all()
         # wiki 边另一端可能是不含实体关联的笔记（仅被双链引用）——补齐节点，避免悬空边
         note_ids |= {w.source_note_id for w in wedges} | {w.target_note_id for w in wedges}
+        # 文档提及（source_type='doc'）+ 文档节点（graph_docs 提供 id=md5 与文件名）
+        doc_ens = []
+        if eids:
+            doc_ens = (await self.session.execute(
+                select(GraphEntityNote).where(GraphEntityNote.user_id == user_id,
+                                              GraphEntityNote.entity_id.in_(eids),
+                                              GraphEntityNote.source_type == "doc"))).scalars().all()
+        docs = (await self.session.execute(
+            select(GraphDoc).where(GraphDoc.user_id == user_id))).scalars().all()
         nodes = [GraphNode(id=e.id, label=e.display_name or e.name, node_type="entity",
                            entity_type_id=e.type_id) for e in entities]
         nodes += [GraphNode(id=n, label="笔记", node_type="note") for n in note_ids]
+        nodes += [GraphNode(id=d.id, label=d.filename, node_type="doc") for d in docs]
         edges = [GraphEdge(id=r.id, source=r.source_id, target=r.target_id, kind="relation",
                            relation_type=r.relation_type) for r in rels]
         edges += [GraphEdge(id=en.id, source=en.note_id, target=en.entity_id, kind="relation",
-                            relation_type="提及") for en in ens]
+                            relation_type="提及") for en in note_ens]
+        edges += [GraphEdge(id=en.id, source=en.note_id, target=en.entity_id, kind="relation",
+                            relation_type="提及") for en in doc_ens]
         edges += [GraphEdge(id=w.id, source=w.source_note_id, target=w.target_note_id, kind=w.kind)
                   for w in wedges]
+        return GraphView(nodes=nodes, edges=edges)
+
+    async def get_doc_graph(self, user_id: str, doc_id: str) -> GraphView:
+        """返回文档子图：文档节点 + 其关联实体及实体间关系（与 get_note_graph 对称）。"""
+        doc = (await self.session.execute(
+            select(GraphDoc).where(GraphDoc.user_id == user_id, GraphDoc.id == doc_id))).scalar_one_or_none()
+        ens = (await self.session.execute(
+            select(GraphEntityNote).where(GraphEntityNote.user_id == user_id,
+                                          GraphEntityNote.note_id == doc_id,
+                                          GraphEntityNote.source_type == "doc"))).scalars().all()
+        entity_ids = {en.entity_id for en in ens}
+        entities = []
+        if entity_ids:
+            entities = (await self.session.execute(
+                select(GraphEntity).where(GraphEntity.user_id == user_id,
+                                          GraphEntity.id.in_(entity_ids)))).scalars().all()
+        rels = []
+        if entity_ids:
+            rels = (await self.session.execute(
+                select(GraphRelation).where(GraphRelation.user_id == user_id,
+                                           or_(GraphRelation.source_id.in_(entity_ids),
+                                               GraphRelation.target_id.in_(entity_ids))))).scalars().all()
+        nodes = [GraphNode(id=doc_id, label=doc.filename if doc else "文档", node_type="doc")]
+        nodes += [GraphNode(id=e.id, label=e.display_name or e.name, node_type="entity",
+                            entity_type_id=e.type_id) for e in entities]
+        edges = [GraphEdge(id=en.id, source=en.note_id, target=en.entity_id, kind="relation",
+                           relation_type="提及") for en in ens]
+        edges += [GraphEdge(id=r.id, source=r.source_id, target=r.target_id, kind="relation",
+                            relation_type=r.relation_type) for r in rels]
         return GraphView(nodes=nodes, edges=edges)
 
     # ---- 类型 ----

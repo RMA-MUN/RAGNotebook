@@ -81,7 +81,7 @@ class ExtractResult(BaseModel):
 class GraphNode(BaseModel):
     id: str
     label: str
-    node_type: str  # "entity" | "note"
+    node_type: str  # "entity" | "note" | "doc"
     entity_type_id: str | None = None
 
 
@@ -101,12 +101,15 @@ class GraphView(BaseModel):
 class EntityNoteLink(BaseModel):
     entity_id: str
     note_id: str
+    source_type: str = "note"  # note/doc
+    source_name: str | None = None  # 文档时为其 filename
     mention_count: int = 0
     context: list[dict] = Field(default_factory=list)
 
 
 class ExtractLog(BaseModel):
     note_id: str
+    source_type: str = "note"
     content_hash: str
     status: str
     new_count: int = 0

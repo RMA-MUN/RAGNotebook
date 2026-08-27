@@ -58,12 +58,16 @@ class GraphStore(ABC):
         """返回笔记的双链图：笔记节点、笔记提及的实体及实体间关系。"""
 
     @abstractmethod
+    async def get_doc_graph(self, user_id: str, doc_id: str) -> GraphView:
+        """返回知识库文档的子图：文档节点（id=md5）、其关联实体及实体间关系。"""
+
+    @abstractmethod
     async def get_entity_notes(self, user_id: str, entity_id: str) -> list[EntityNoteLink]:
-        """返回提及该实体的笔记列表（含提及次数与上下文片段）。"""
+        """返回提及该实体的笔记/文档列表（含提及次数与上下文片段；source_type 区分 note/doc，文档带 source_name=文件名）。"""
 
     @abstractmethod
     async def get_overview(self, user_id: str, type_ids: list[str] | None, limit: int) -> GraphView:
-        """返回实体总览图：可按 type_ids 过滤；含笔记节点与 wiki 双链边，避免悬空边。"""
+        """返回实体总览图：可按 type_ids 过滤；含笔记节点、文档节点与 wiki 双链边，避免悬空边。"""
 
     # 类型
     @abstractmethod
