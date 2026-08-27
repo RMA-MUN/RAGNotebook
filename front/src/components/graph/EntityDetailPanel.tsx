@@ -1,48 +1,92 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
+import { X } from 'lucide-react'
 import { graphApi } from '../../api/graph'
-import type { EntityNoteLink, GraphEntity } from '../../types/graph'
+import ConfirmDialog from '../common/ConfirmDialog'
+import type { EntityNoteLink, EntityType, GraphEntity } from '../../types/graph'
 
 interface Props {
   nodeId: string
   nodeType: 'entity' | 'note'
+  types?: EntityType[]
   onClose: () => void
   onChanged: () => void
 }
 
-export function EntityDetailPanel({ nodeId, nodeType, onClose, onChanged }: Props) {
+export function EntityDetailPanel({ nodeId, nodeType, types = [], onClose, onChanged }: Props) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [entity, setEntity] = useState<GraphEntity | null>(null)
   const [links, setLinks] = useState<EntityNoteLink[]>([])
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
+  // 挂载时拉取一次（父组件以 key=nodeType:id 重挂载本组件来切换目标，
+  // 因此无需在 nodeId 变化时清空旧数据；latest 守卫拦下卸载后的迟到响应）
   useEffect(() => {
     if (nodeType !== 'entity') return
-    void graphApi.entity(nodeId).then((e) => setEntity(e))
-    void graphApi.entityNotes(nodeId).then((l) => setLinks(l))
-  }, [nodeId, nodeType])
+    let latest = true
+    void (async () => {
+      try {
+        const [e, ls] = await Promise.all([graphApi.entity(nodeId), graphApi.entityNotes(nodeId)])
+        if (!latest) return
+        setEntity(e)
+        setLinks(ls ?? [])
+      } catch {
+        if (latest) toast.error(t('graph.loadEntityFailed'))
+      }
+    })()
+    return () => { latest = false }
+  }, [nodeId, nodeType, t])
+
+  const handleDelete = async () => {
+    if (!entity) return
+    try {
+      await graphApi.deleteEntity(entity.id)
+      toast.success(t('graph.deleteSuccess'))
+      onClose()
+      onChanged()
+    } catch {
+      toast.error(t('graph.deleteFailed'))
+    }
+  }
+
+  const closeBtn = (
+    <button onClick={onClose} aria-label={t('graph.close')}
+      className="float-right p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text)]">
+      <X size={16} />
+    </button>
+  )
 
   if (nodeType === 'note') {
     return (
       <div className="fixed right-0 top-0 h-full w-80 border-l bg-[var(--color-card)] p-4">
-        <button onClick={onClose} className="float-right">×</button>
+        {closeBtn}
         <h2 className="text-lg font-semibold">{t('graph.noteTitle')}</h2>
-        <p className="mt-2 text-sm text-[var(--color-text-secondary)]">{nodeId}</p>
+        <p className="mt-2 break-all text-sm text-[var(--color-text-secondary)]">{nodeId}</p>
+        <button className="mt-4 rounded bg-[var(--color-accent)] px-2 py-1 text-sm text-white"
+          onClick={() => navigate(`/notes/${nodeId}`)}>
+          {t('graph.openNote')}
+        </button>
       </div>
     )
   }
 
+  const typeName = types.find((ty) => ty.id === entity?.type_id)?.display_name || entity?.type_id
+
   return (
     <div className="fixed right-0 top-0 h-full w-80 overflow-auto border-l bg-[var(--color-card)] p-4">
-      <button onClick={onClose} className="float-right">×</button>
+      {closeBtn}
       <h2 className="text-lg font-semibold">{entity?.display_name || entity?.name || nodeId}</h2>
       {entity?.description && <p className="mt-2 text-sm">{entity.description}</p>}
       {entity && (
         <div className="mt-4 space-y-2 text-sm">
-          <div><span className="font-medium">{t('graph.aliases')}:</span> {entity.aliases.join(', ') || '—'}</div>
-          <div><span className="font-medium">{t('graph.type')}:</span> {entity.type_id || '—'}</div>
+          <div><span className="font-medium">{t('graph.aliases')}:</span> {(entity.aliases ?? []).join(', ') || '—'}</div>
+          <div><span className="font-medium">{t('graph.type')}:</span> {typeName || '—'}</div>
           <div className="mt-2 flex gap-2">
-            <button className="rounded bg-[var(--color-accent)] px-2 py-1 text-white"
-              onClick={() => { void graphApi.deleteEntity(entity.id); onChanged() }}>
+            <button className="rounded bg-[var(--color-danger)] px-2 py-1 text-white"
+              onClick={() => setConfirmDelete(true)}>
               {t('graph.delete')}
             </button>
           </div>
@@ -50,13 +94,22 @@ export function EntityDetailPanel({ nodeId, nodeType, onClose, onChanged }: Prop
       )}
       <div className="mt-4">
         <h3 className="font-medium">{t('graph.relatedNotes')}</h3>
+        {links.length === 0 && <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">{t('graph.noRelatedNotes')}</p>}
         {links.map((l) => (
-          <div key={l.note_id} className="mt-1 text-sm text-[var(--color-accent)]">
-            {l.note_id}
+          <div key={l.note_id} className="mt-2">
+            <button className="break-all text-sm text-[var(--color-accent)] hover:underline"
+              onClick={() => navigate(`/notes/${l.note_id}`)}>
+              {l.note_id}
+            </button>
             {l.context[0] && <p className="text-xs text-[var(--color-text-secondary)]">“{l.context[0].snippet}”</p>}
           </div>
         ))}
       </div>
+      <ConfirmDialog open={confirmDelete} onOpenChange={setConfirmDelete}
+        title={t('graph.deleteConfirmTitle')}
+        message={t('graph.deleteConfirmMessage', { name: entity?.display_name || entity?.name || nodeId })}
+        confirmText={t('graph.delete')} variant="danger"
+        onConfirm={() => { void handleDelete() }} />
     </div>
   )
 }
