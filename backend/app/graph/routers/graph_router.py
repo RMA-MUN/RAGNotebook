@@ -68,6 +68,13 @@ async def note_related(note_id: str, user_id: str = Depends(get_current_user_id)
     return success_response(data=view.model_dump())
 
 
+@graph_router.get("/docs/{doc_id}/related")
+async def doc_related(doc_id: str, user_id: str = Depends(get_current_user_id),
+                      db: AsyncSession = Depends(get_db)):
+    view = await get_graph_store(db).get_doc_graph(user_id, doc_id)
+    return success_response(data=view.model_dump())
+
+
 @graph_router.get("/search")
 async def search(q: str = Query(..., min_length=1),
                  user_id: str = Depends(get_current_user_id),
@@ -95,8 +102,9 @@ async def extract_logs(note_id: str | None = Query(None),
         stmt = stmt.where(GraphExtractLog.note_id == note_id)
     rows = (await db.execute(stmt.order_by(GraphExtractLog.triggered_at.desc()).limit(50))).scalars().all()
     return success_response(data=[{
-        "note_id": r.note_id, "content_hash": r.content_hash, "status": r.status,
-        "new_count": r.new_count, "update_count": r.update_count, "error_message": r.error_message,
+        "note_id": r.note_id, "source_type": r.source_type, "content_hash": r.content_hash,
+        "status": r.status, "new_count": r.new_count, "update_count": r.update_count,
+        "error_message": r.error_message,
     } for r in rows])
 
 
