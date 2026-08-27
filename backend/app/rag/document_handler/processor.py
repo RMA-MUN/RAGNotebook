@@ -161,6 +161,9 @@ class DocumentProcessor:
                     })
                 logger.info(f"【向量数据库】开始切分文档: {filename}")
 
+                # 记录切分前的全文，供知识库文档入图谱抽取使用
+                full_text = "\n".join(d.page_content for d in document)
+
                 document: list[Document] = await self.spliter.split_documents(document)
                 if not document:
                     if progress_callback:
@@ -198,6 +201,14 @@ class DocumentProcessor:
 
                 original_filename = file_names.get(file_path, filename) if files else filename
                 await self.md5_store.save_md5_hex(md5_hex, filename, original_filename, user_id)
+
+                # 知识库文档入图谱：入库成功后后台异步抽取实体（懒加载避免循环依赖；失败不影响上传主流程）
+                try:
+                    from app.graph.services.graph_service import maybe_schedule_doc_extraction
+                    asyncio.create_task(
+                        maybe_schedule_doc_extraction(user_id, md5_hex, filename, full_text))
+                except Exception as e:
+                    logger.error(f"触发文档图谱抽取失败 filename={filename}: {e}")
 
                 if progress_callback:
                     await progress_callback({

@@ -192,6 +192,13 @@ class VectorStoreService:
             # 同步清理该用户在磁盘上存储的所有 PDF 提取图片
             # 删除文档时必须连带删除对应的图片资源，否则会留下无法被引用的"脏"文件
             delete_user_all_images(user_id)
+            # 图谱联动：清空该用户的文档节点/关联/抽取日志（仅真正删文档时；失败不影响删除主流程）
+            if delete_documents:
+                try:
+                    from app.graph.services.graph_service import cleanup_all_docs_graph
+                    await cleanup_all_docs_graph(user_id)
+                except Exception as e:
+                    logger.error(f"【图谱】清空用户 {user_id} 文档图谱数据失败: {e}")
         except Exception as e:
             logger.error(f"【向量数据库】删除用户 {user_id} 的MD5记录时出错: {e}")
 
@@ -221,6 +228,14 @@ class VectorStoreService:
 
             # 删除该文档对应的 PDF 提取图片目录
             delete_image_directory(user_id, md5_to_delete)
+
+            # 图谱联动：清理该文档的节点/关联/抽取日志（仅真正删文档时；失败不影响删除主流程）
+            if delete_documents:
+                try:
+                    from app.graph.services.graph_service import cleanup_doc_graph
+                    await cleanup_doc_graph(user_id, md5_to_delete)
+                except Exception as e:
+                    logger.error(f"【图谱】清理文档 {filename} 图谱数据失败: {e}")
 
             return True
 
@@ -254,6 +269,14 @@ class VectorStoreService:
 
             # 清理磁盘上该用户的 PDF 提取图片
             delete_image_directory(user_id, md5_to_delete)
+
+            # 图谱联动：清理该文档的节点/关联/抽取日志（仅真正删文档时；失败不影响删除主流程）
+            if delete_documents:
+                try:
+                    from app.graph.services.graph_service import cleanup_doc_graph
+                    await cleanup_doc_graph(user_id, md5_to_delete)
+                except Exception as e:
+                    logger.error(f"【图谱】清理文档 {md5_to_delete} 图谱数据失败: {e}")
 
             return True
 
