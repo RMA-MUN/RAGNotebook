@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback } from 'react'
 import type { SSEMessage, KnowledgeSSEMessage } from '../types/api'
+import { JWT_KEY } from '../api/client'
 
 type SSECallback = {
   onThinking?: (stage: string, content?: string, details?: Record<string, unknown>) => void
@@ -21,7 +22,7 @@ export function useSSE() {
       abortRef.current = new AbortController()
 
       try {
-        const token = localStorage.getItem('jwt_token')
+        const token = localStorage.getItem(JWT_KEY)
         const isFormData = body instanceof FormData
 
         const response = await fetch(url, {
