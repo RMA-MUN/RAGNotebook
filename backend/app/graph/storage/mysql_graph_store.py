@@ -250,6 +250,8 @@ class MySQLGraphStore(GraphStore):
                 select(GraphNoteEdge).where(GraphNoteEdge.user_id == user_id,
                                            or_(GraphNoteEdge.source_note_id.in_(note_ids),
                                                GraphNoteEdge.target_note_id.in_(note_ids))))).scalars().all()
+        # wiki 边另一端可能是不含实体关联的笔记（仅被双链引用）——补齐节点，避免悬空边
+        note_ids |= {w.source_note_id for w in wedges} | {w.target_note_id for w in wedges}
         nodes = [GraphNode(id=e.id, label=e.display_name or e.name, node_type="entity",
                            entity_type_id=e.type_id) for e in entities]
         nodes += [GraphNode(id=n, label="笔记", node_type="note") for n in note_ids]

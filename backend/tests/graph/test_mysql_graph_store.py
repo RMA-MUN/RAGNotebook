@@ -67,7 +67,21 @@ async def test_get_overview_filters_by_type(db_session):
     store = MySQLGraphStore(db_session)
     view = await store.get_overview("u1", type_ids=["t1"], limit=20)
     assert {n.id for n in view.nodes if n.node_type == "entity"} == {"e1", "e2"}
-    assert {n.id for n in view.nodes if n.node_type == "note"} == {"n1"}
+    assert {n.id for n in view.nodes if n.node_type == "note"} == {"n1", "n2"}
+
+
+@pytest.mark.asyncio
+async def test_get_overview_includes_wiki_edge_only_notes(db_session):
+    """wiki 边另一端笔记（无实体关联）也必须出现在节点中，防止悬空边。"""
+    await _seed(db_session)
+    db_session.add(GraphNoteEdge(id="w2", user_id="u1", source_note_id="n1", target_note_id="n3", kind="wiki"))
+    await db_session.commit()
+    store = MySQLGraphStore(db_session)
+    view = await store.get_overview("u1", type_ids=None, limit=20)
+    node_ids = {n.id for n in view.nodes}
+    endpoint_ids = {e.source for e in view.edges} | {e.target for e in view.edges}
+    assert "n3" in node_ids
+    assert endpoint_ids <= node_ids
 
 
 @pytest.mark.asyncio
