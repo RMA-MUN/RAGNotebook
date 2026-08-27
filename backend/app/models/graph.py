@@ -56,7 +56,9 @@ class GraphEntityNote(Base):
     id = Column(String(36), primary_key=True, comment="UUID")
     user_id = Column(String(36), index=True, nullable=False)
     entity_id = Column(String(36), index=True, nullable=False)
-    note_id = Column(String(36), index=True, nullable=False)
+    note_id = Column(String(36), index=True, nullable=False, comment="笔记 UUID 或文档 md5")
+    source_type = Column(String(10), default="note", server_default="note", nullable=False,
+                         comment="note/doc")
     mention_count = Column(Integer, default=0, nullable=False)
     context = Column(JSON, default=list, comment="提及证据片段列表")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -79,7 +81,9 @@ class GraphExtractLog(Base):
 
     id = Column(String(36), primary_key=True, comment="UUID")
     user_id = Column(String(36), index=True, nullable=False)
-    note_id = Column(String(36), nullable=False)
+    note_id = Column(String(36), nullable=False, comment="笔记 UUID 或文档 md5")
+    source_type = Column(String(10), default="note", server_default="note", nullable=False,
+                         comment="note/doc")
     content_hash = Column(String(64), nullable=False)
     status = Column(String(20), default="pending", nullable=False, comment="pending/success/failed")
     new_count = Column(Integer, default=0, nullable=False)
@@ -87,3 +91,12 @@ class GraphExtractLog(Base):
     error_message = Column(Text, nullable=True)
     triggered_at = Column(DateTime(timezone=True), server_default=func.now())
     finished_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class GraphDoc(Base):
+    __tablename__ = "graph_docs"
+
+    id = Column(String(36), primary_key=True, comment="文档 md5")
+    user_id = Column(String(36), index=True, nullable=False)
+    filename = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
