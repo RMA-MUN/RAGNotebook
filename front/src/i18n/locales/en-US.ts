@@ -6,6 +6,7 @@ const enUS = {
     sessions: 'Sessions',
     review: 'Daily Review',
     knowledge: 'Knowledge Base',
+    graph: 'Knowledge Graph',
     profile: 'Profile',
     settings: 'Settings',
     about: 'About',

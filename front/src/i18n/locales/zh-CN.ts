@@ -6,6 +6,7 @@ const zhCN = {
     sessions: '会话管理',
     review: '每日回顾',
     knowledge: '知识库',
+    graph: '知识图谱',
     profile: '个人信息',
     settings: '设置',
     about: '关于我们',
