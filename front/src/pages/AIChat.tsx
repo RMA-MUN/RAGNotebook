@@ -43,6 +43,8 @@ export default function AIChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef('')
   const rafRef = useRef<number | null>(null)
+  const pendingThinkingRef = useRef<ThinkingStep[]>([])
+  const thinkingTimerRef = useRef<number | null>(null)
 
   const flushContent = useCallback(() => {
     setMessages((prev) => {
@@ -63,6 +65,11 @@ export default function AIChat() {
         cancelAnimationFrame(rafRef.current)
         rafRef.current = null
       }
+      if (thinkingTimerRef.current !== null) {
+        clearTimeout(thinkingTimerRef.current)
+        thinkingTimerRef.current = null
+      }
+      pendingThinkingRef.current = []
     }
   }, [])
 
@@ -112,8 +119,37 @@ export default function AIChat() {
       { query, session_id: sessionId },
       {
         onThinking: (stage, content, details) => {
-          setThinkingSteps((prev) => [...prev, { stage, content: content || '', details }])
-          setCurrentThinking(prev => prev ? `${prev}\n${content}` : (content || ''))
+          const step: ThinkingStep = { stage, content: content || '', details }
+          const isPlaceholder = Boolean(details?.placeholder)
+          if (isPlaceholder) {
+            // 占位事件立即落地，让「正在规划」折叠框第一时间出现
+            setThinkingSteps((prev) => [...prev, step])
+            return
+          }
+          // 真实步骤加入待渲染队列，按 150ms 间隔逐个 flush，形成依次推进的节奏；
+          // 若上一步是占位（同 stage），则替换而非新增，避免叠两条。
+          pendingThinkingRef.current.push(step)
+          setCurrentThinking((prev) => prev ? `${prev}\n${content}` : (content || ''))
+          if (thinkingTimerRef.current !== null) return
+          const flushOne = () => {
+            const next = pendingThinkingRef.current.shift()
+            if (!next) {
+              thinkingTimerRef.current = null
+              return
+            }
+            setThinkingSteps((prev) => {
+              const lastIdx = prev.length - 1
+              const last = prev[lastIdx]
+              if (last && last.stage === next.stage && last.details?.placeholder) {
+                const replaced = [...prev]
+                replaced[lastIdx] = next
+                return replaced
+              }
+              return [...prev, next]
+            })
+            thinkingTimerRef.current = window.setTimeout(flushOne, 150)
+          }
+          thinkingTimerRef.current = window.setTimeout(flushOne, 150)
         },
         onResponse: (content, sessionId) => {
           if (!hasResponseStarted) {

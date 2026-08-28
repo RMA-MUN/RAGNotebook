@@ -55,6 +55,14 @@ async def query_stream(
 
         rag_task = asyncio.create_task(run_rag())
         try:
+            # 先发占位：让前端「正在规划」折叠框立即出现，而不是干等一整轮 LLM
+            yield "data: " + json.dumps({
+                "type": "thinking",
+                "stage": "agentic_plan",
+                "content": "正在规划检索策略…",
+                "details": {"placeholder": True},
+            }, ensure_ascii=False) + "\n\n"
+
             while True:
                 event = await thinking_queue.get()
                 if event is rag_done:
