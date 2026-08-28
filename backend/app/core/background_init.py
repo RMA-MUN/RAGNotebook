@@ -47,6 +47,9 @@ class _BackgroundInitManager:
             # 2. ChromaDB（NoteService，依赖 embed_model）
             await self._init_note_service()
 
+            # 2.5 预热向量库服务（线程内初始化，避免上传时切片线程与事件循环线程在 _init_lock 上互相阻塞）
+            await self._init_vector_store()
+
             # 3. 重排序模型（引入 torch、sentence_transformers 等重型框架）
             await self._init_reranker()
 
@@ -88,6 +91,13 @@ class _BackgroundInitManager:
         )
         logger.info("✅ NoteService（ChromaDB）初始化完成")
         self.note_service_ready.set()
+
+    async def _init_vector_store(self):
+        """预热 VectorStoreService 单例（Chroma 初始化较慢，提前在线程内完成，避免运行时锁竞争阻塞事件循环）"""
+        from app.rag.vector_store import VectorStoreService
+
+        await asyncio.to_thread(lambda: VectorStoreService())
+        logger.info("✅ VectorStoreService（ChromaDB）预热完成")
 
     async def _init_reranker(self):
         """检查并初始化重排序模型（触发 torch 等重型框架加载）"""

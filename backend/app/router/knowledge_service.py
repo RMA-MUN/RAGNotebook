@@ -6,6 +6,7 @@ import time
 from collections.abc import AsyncGenerator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from queue import Empty as QueueEmpty
 
 import magic
 from fastapi import HTTPException, UploadFile
@@ -306,7 +307,8 @@ class KnowledgeService:
         """消费切片队列 → 写入向量库 → yield SSE 进度事件"""
         while state.written_count < valid_count:
             try:
-                result = queue.get(block=True, timeout=0.1)
+                # 阻塞式队列在协程里会饿死事件循环：改为线程内等待（每次至多 0.1s）
+                result = await asyncio.to_thread(queue.get, True, 0.1)
 
                 state.sliced_count += 1
 
@@ -350,7 +352,7 @@ class KnowledgeService:
 
                 queue.task_done()
 
-            except Exception:
+            except QueueEmpty:
                 continue
 
     async def handle_add_vector_multiple_stream(
@@ -389,7 +391,8 @@ class KnowledgeService:
         async for sse in self._process_slice_results(queue, len(valid_files), store, state, user_id):
             yield sse
 
-        executor.shutdown(wait=True)
+        # shutdown(wait=True) 会阻塞事件循环线程，切片任务在此处必已全部完成，移到线程等待
+        await asyncio.to_thread(executor.shutdown, True)
 
         logger.info(
             f"【SSE上传】文件处理完成，总数: {total_files}，"

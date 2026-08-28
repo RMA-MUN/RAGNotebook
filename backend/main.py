@@ -79,6 +79,10 @@ async def root():
 async def say_hello(name: str):
     return {"message": f"Hello {name}"}
 
+@app.get('/health')
+async def health_check():
+    return {"message": "The service is healthy"}
+
 
 @app.on_event("startup")
 async def startup_event():

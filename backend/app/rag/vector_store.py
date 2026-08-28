@@ -214,6 +214,20 @@ class VectorStoreService:
             md5_to_delete = await self.md5_store.delete_by_filename(user_id, filename)
             if md5_to_delete is None:
                 logger.warning(f"【向量数据库】文件 {filename} 不存在于用户 {user_id} 的MD5记录中")
+                # 兜底：md5 记录缺失（历史残留/记录文件丢失）时仍按文件名清理向量与文档图谱，防残留
+                if delete_documents:
+                    try:
+                        await asyncio.to_thread(
+                            self.vectors_store.delete,
+                            where={"$and": [{"user_id": user_id}, {"original_filename": filename}]}
+                        )
+                    except Exception as e:
+                        logger.error(f"【向量数据库】按文件名清理向量失败 {filename}: {e}")
+                    try:
+                        from app.graph.services.graph_service import cleanup_doc_graph_by_filename
+                        await cleanup_doc_graph_by_filename(user_id, filename)
+                    except Exception as e:
+                        logger.error(f"【图谱】按文件名清理文档图谱失败 {filename}: {e}")
                 return False
 
             logger.info(f"【向量数据库】已删除用户 {user_id} 的文件 {filename} 的MD5记录")
@@ -255,6 +269,21 @@ class VectorStoreService:
             success = await self.md5_store.delete_single_md5(user_id, md5_to_delete)
             if not success:
                 logger.warning(f"【向量数据库】MD5记录 {md5_to_delete} 不存在")
+                # 兜底：md5 记录缺失但向量库/图谱可能仍有该文档 → 仍清理，防残留
+                if delete_documents:
+                    try:
+                        where_clause = {"$and": [{"user_id": user_id}, {"md5": md5_to_delete}]}
+                        await asyncio.to_thread(
+                            self.vectors_store.delete,
+                            where=where_clause
+                        )
+                    except Exception as e:
+                        logger.error(f"【向量数据库】按MD5清理向量失败 {md5_to_delete}: {e}")
+                    try:
+                        from app.graph.services.graph_service import cleanup_doc_graph
+                        await cleanup_doc_graph(user_id, md5_to_delete)
+                    except Exception as e:
+                        logger.error(f"【图谱】清理文档 {md5_to_delete} 图谱数据失败: {e}")
                 return False
 
             logger.info(f"【向量数据库】已删除用户 {user_id} 的MD5记录: {md5_to_delete}")

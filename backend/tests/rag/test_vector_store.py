@@ -238,6 +238,42 @@ class TestDeletions:
         # 已删除的 md5 再次删除 → False
         assert await service.delete_single_md5("u1", "m1") is False
 
+    async def test_delete_by_filename_cleans_stale_chroma_and_graph_when_md5_missing(self, service_factory, monkeypatch):
+        """md5 记录缺失时删除仍应按文件名兜底清理向量与文档图谱（防残留）。"""
+        service, store, _, _ = service_factory([
+            _doc("A", user_id="u1", source="a.txt", original_filename="a.txt", md5="m1"),
+            _doc("B", user_id="u1", source="b.txt", original_filename="b.txt", md5="m2"),
+        ])
+        fallback_calls = []
+
+        async def _fake_cleanup_by_filename(user_id, filename):
+            fallback_calls.append((user_id, filename))
+
+        monkeypatch.setattr("app.graph.services.graph_service.cleanup_doc_graph_by_filename",
+                            _fake_cleanup_by_filename)
+
+        # 无 md5 记录（历史残留/记录文件丢失）→ 仍返回 False，但按文件名清理
+        assert await service.delete_by_filename("u1", "a.txt") is False
+        remaining = store.get(where={"user_id": "u1"})
+        assert [m["md5"] for m in remaining["metadatas"]] == ["m2"]
+        assert fallback_calls == [("u1", "a.txt")]
+
+    async def test_delete_single_md5_cleans_stale_graph_when_md5_missing(self, service_factory, monkeypatch):
+        """md5 记录缺失但向量库仍有该文档 → 删除仍应清理向量与文档图谱。"""
+        service, store, _, _ = service_factory([
+            _doc("A", user_id="u1", source="a.txt", original_filename="a.txt", md5="m1"),
+        ])
+        fallback_calls = []
+
+        async def _fake_cleanup(user_id, doc_id):
+            fallback_calls.append((user_id, doc_id))
+
+        monkeypatch.setattr("app.graph.services.graph_service.cleanup_doc_graph", _fake_cleanup)
+
+        assert await service.delete_single_md5("u1", "m1") is False
+        assert store.get(where={"user_id": "u1"})["ids"] == []
+        assert fallback_calls == [("u1", "m1")]
+
 
 class TestMd5Passthrough:
     async def test_get_and_list_records(self, service_factory):
