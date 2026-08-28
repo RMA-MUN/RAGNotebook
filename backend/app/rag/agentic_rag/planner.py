@@ -24,6 +24,19 @@ FRESHNESS_TERMS = (
     "news",
 )
 
+_ENTITY_PROMPTS = (
+    "关系",
+    "关联",
+    "实体",
+    "概念",
+    "是什么",
+    "有哪些相关",
+    "who is",
+    "what is",
+    "relationship",
+    "entity",
+)
+
 _CASUAL_GREETINGS = {
     "hi",
     "hello",
@@ -43,6 +56,12 @@ def has_freshness_term(query: str) -> bool:
 def _is_casual_greeting(query: str) -> bool:
     normalized = re.sub(r"[\s!！?？。,.，]+", "", query).lower()
     return normalized in _CASUAL_GREETINGS
+
+
+def _is_entity_query(query: str) -> bool:
+    """判断问题是否偏向实体/概念关系，命中则优先走知识图谱检索。"""
+    lowered = query.lower()
+    return any(term in lowered for term in _ENTITY_PROMPTS)
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
@@ -91,9 +110,23 @@ def _create_default_chat_model():
         return None
 
 
+def _resolve_shared_chat_model():
+    """优先复用后台已预热的 chat_model（连接已建立），避免每消息重新实例化。
+
+    未预热完成时回落自建兜底，保证规划不阻塞。
+    """
+    try:
+        from app.core.background_init import init_manager
+        if init_manager.chat_model is not None:
+            return init_manager.chat_model
+    except Exception:
+        pass
+    return _create_default_chat_model()
+
+
 class AgenticRagPlanner:
     def __init__(self, chat_model=None):
-        self.chat_model = chat_model if chat_model is not None else _create_default_chat_model()
+        self.chat_model = chat_model if chat_model is not None else _resolve_shared_chat_model()
         self.prompt_template = _load_prompt()
 
     async def plan(self, query: str) -> RetrievalPlan:
@@ -120,6 +153,15 @@ class AgenticRagPlanner:
                 steps=[],
                 allow_web_fallback=False,
                 reason="Casual greeting does not require retrieval.",
+            )
+
+        if _is_entity_query(query):
+            return RetrievalPlan(
+                need_retrieval=True,
+                steps=[RetrievalStep(tool="search_graph", query=query),
+                       RetrievalStep(tool="hybrid_search", query=query)],
+                allow_web_fallback=has_freshness_term(query),
+                reason="Entity-oriented query, prefer knowledge graph plus local retrieval.",
             )
 
         return RetrievalPlan(

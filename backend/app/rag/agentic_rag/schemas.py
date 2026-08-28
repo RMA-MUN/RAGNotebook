@@ -3,10 +3,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-EvidenceSource = Literal["note", "knowledge_base", "web"]
+EvidenceSource = Literal["note", "knowledge_base", "graph", "web"]
 RetrievalTool = Literal[
     "search_notes",
     "search_knowledge_base",
+    "search_graph",
     "hybrid_search",
     "web_search",
 ]

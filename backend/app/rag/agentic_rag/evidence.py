@@ -6,6 +6,7 @@ from app.rag.agentic_rag.schemas import Evidence
 _SOURCE_LABELS = {
     "note": "笔记",
     "knowledge_base": "知识库",
+    "graph": "知识图谱",
     "web": "外部搜索",
 }
 

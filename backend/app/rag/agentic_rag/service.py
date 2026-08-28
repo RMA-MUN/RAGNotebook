@@ -1,7 +1,9 @@
+import asyncio
 import inspect
 from collections.abc import Callable
 from typing import Any
 
+from app.core.logger_handler import logger
 from app.rag.agentic_rag.evaluator import AnswerabilityEvaluator
 from app.rag.agentic_rag.evidence import format_evidence_context, merge_evidence
 from app.rag.agentic_rag.local_retriever import LocalRetriever
@@ -51,7 +53,25 @@ class AgenticRagService:
         if not plan.need_retrieval:
             return AgenticRagResult(context="", evidences=[], plan=plan, answerability=None, used_web=False)
 
-        local_evidences = await self.local_retriever.search(user_id, plan.steps)
+        graph_steps = [step for step in plan.steps if step.tool == "search_graph"]
+        text_steps = [step for step in plan.steps if step.tool != "search_graph"]
+
+        # 图检索（含 LLM 实体抽取）与文本检索并行，避免 LLM 抽取拉长整体延迟
+        graph_task = asyncio.create_task(self._search_graph_only(user_id, graph_steps))
+        text_task = asyncio.create_task(self.local_retriever.search(user_id, text_steps))
+        local_evidences = []
+        graph_evidences = []
+        if graph_steps:
+            # 图检索本身内部会再次调 LLM 抽取实体；失败不阻塞文本检索
+            try:
+                graph_evidences = await graph_task
+            except Exception as e:
+                logger.warning(f"图谱检索失败: {e}")
+        if text_steps:
+            local_evidences = await text_task
+        await asyncio.gather(graph_task, text_task, return_exceptions=True)
+        local_evidences = [*local_evidences, *graph_evidences]
+
         await self._emit(
             thinking_callback,
             "local_retrieval",
@@ -62,6 +82,7 @@ class AgenticRagService:
                 "results": [self._evidence_preview(evidence) for evidence in local_evidences],
             },
         )
+        await asyncio.sleep(0)  # 分帧：让各阶段落入不同事件循环 tick，避免一次性涌入前端
 
         answerability = self.evaluator.evaluate(query, local_evidences)
         await self._emit(
@@ -75,6 +96,7 @@ class AgenticRagService:
                 "web_queries": answerability.web_queries,
             },
         )
+        await asyncio.sleep(0)
 
         web_evidences = await self._maybe_search_web(query, plan, answerability, thinking_callback)
         fused_evidences = merge_evidence([*local_evidences, *web_evidences])
@@ -88,6 +110,7 @@ class AgenticRagService:
                 "fused_count": len(fused_evidences),
             },
         )
+        await asyncio.sleep(0)
 
         context = format_evidence_context(fused_evidences)
         await self._emit(
@@ -133,6 +156,12 @@ class AgenticRagService:
             },
         )
         return web_evidences
+
+    async def _search_graph_only(self, user_id: str, steps: list) -> list[Evidence]:
+        """仅执行 search_graph 步骤（无其他文本步骤时也不抛错）。"""
+        if not steps:
+            return []
+        return await self.local_retriever.search(user_id, steps)
 
     async def _emit(
         self,

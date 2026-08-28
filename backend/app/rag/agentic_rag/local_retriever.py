@@ -5,6 +5,8 @@ from typing import Any
 from langchain_core.documents import Document
 
 from app.db.db_config import AsyncSessionLocal
+from app.graph.storage import get_graph_store
+from app.rag.agentic_rag.query_entity_extractor import QueryEntityExtractor
 from app.rag.agentic_rag.schemas import Evidence, RetrievalStep
 from app.rag.vector_store import VectorStoreService
 
@@ -15,10 +17,12 @@ class LocalRetriever:
         note_service: Any | None = None,
         vector_store: Any | None = None,
         session_factory: Callable[[], Any] = AsyncSessionLocal,
+        query_entity_extractor: QueryEntityExtractor | None = None,
     ):
         self.note_service = note_service
         self.vector_store = vector_store
         self.session_factory = session_factory
+        self.query_entity_extractor = query_entity_extractor
 
     async def search(self, user_id: str, steps: list[RetrievalStep]) -> list[Evidence]:
         evidences: list[Evidence] = []
@@ -28,6 +32,8 @@ class LocalRetriever:
                 evidences.extend(await self._search_notes(user_id, step))
             elif step.tool == "search_knowledge_base":
                 evidences.extend(await self._search_knowledge_base(user_id, step))
+            elif step.tool == "search_graph":
+                evidences.extend(await self._search_graph(user_id, step))
             elif step.tool == "hybrid_search":
                 evidences.extend(await self._search_notes(user_id, step))
                 evidences.extend(await self._search_knowledge_base(user_id, step))
@@ -49,6 +55,57 @@ class LocalRetriever:
         retriever = await vector_store.get_retriever(step.query, user_id)
         documents = (await retriever.ainvoke(step.query))[: step.top_k]
         return [self._document_to_evidence(document) for document in documents]
+
+    async def _search_graph(self, user_id: str, step: RetrievalStep) -> list[Evidence]:
+        """从知识图谱检索实体：先用 LLM（兜底规则）从问句抽实体候选词，再逐词匹配图谱。
+
+        实体本身没有正文，因此证据内容 = 实体描述 + 类型 + 别名 + 关联笔记标题列表；
+        若实体无描述，则用其关联笔记的标题占位，避免注入空内容被 LLM 忽略。
+        同一实体（别名/多条查询词命中同一行）按实体 id 去重。
+        """
+        evidences: list[Evidence] = []
+        names = await self._entity_candidates(step.query)
+        async with self.session_factory() as db:
+            store = get_graph_store(db)
+            seen_entity_ids: set[str] = set()
+            for name in names:
+                entities = await store.search_entities(user_id, name, limit=step.top_k)
+                for entity in entities:
+                    if entity.id in seen_entity_ids:
+                        continue
+                    seen_entity_ids.add(entity.id)
+                    links = await store.get_entity_notes(user_id, entity.id)
+                    noted: set[str] = set()
+                    notes: list[str] = []
+                    for link in links:
+                        label = link.source_name or link.note_id
+                        if label in noted:
+                            continue
+                        noted.add(label)
+                        notes.append(label)
+                    title = entity.display_name or entity.name
+                    content = entity.description or ""
+                    if content:
+                        content = f"{content}（类型：{entity.type_id or '未分类'}；别名：{', '.join(entity.aliases) if entity.aliases else '—'}）"
+                    if notes:
+                        content = f"{content}\n关联笔记：{'、'.join(notes)}" if content else "关联笔记：" + "、".join(notes)
+                    evidences.append(Evidence(
+                        id=entity.id,
+                        source="graph",
+                        title=title,
+                        content=content or title,
+                        metadata={"type_id": entity.type_id, "aliases": entity.aliases},
+                    ))
+        return evidences
+
+    async def _entity_candidates(self, query: str) -> list[str]:
+        """从问句抽实体候选词。优先 LLM，失败回落规则拆词。"""
+        extractor = self.query_entity_extractor or QueryEntityExtractor()
+        try:
+            return await extractor.extract(query)
+        except Exception as e:
+            logger.warning(f"查询实体抽取失败，回落规则: {query}: {e}")
+            return QueryEntityExtractor._fallback_candidates(query)
 
     def _note_service(self):
         if self.note_service is not None:

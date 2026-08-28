@@ -92,3 +92,32 @@ async def test_planner_falls_back_to_hybrid_search_without_web_for_non_fresh_que
     assert plan.steps[0].tool == "hybrid_search"
     assert plan.steps[0].query == query
     assert plan.allow_web_fallback is False
+
+
+async def test_planner_falls_back_to_graph_for_entity_query_on_model_error():
+    planner = AgenticRagPlanner(chat_model=FakeChatModel(error=RuntimeError("model down")))
+
+    plan = await planner.plan("DeepSeek 是什么")
+
+    assert plan.need_retrieval is True
+    assert plan.steps[0].tool == "search_graph"
+    assert plan.steps[0].query == "DeepSeek 是什么"
+    assert plan.steps[1].tool == "hybrid_search"
+    assert plan.metadata["source"] == "fallback"
+
+
+async def test_planner_preserves_llm_search_graph_step():
+    model = FakeChatModel(
+        FakeMessage(
+            '{"need_retrieval": true, "steps": [{"tool": "search_graph", '
+            '"query": "量子计算和 FastAPI 的关系", "top_k": 4}], '
+            '"allow_web_fallback": false, "reason": "answer with knowledge graph"}'
+        )
+    )
+    planner = AgenticRagPlanner(chat_model=model)
+
+    plan = await planner.plan("量子计算和 FastAPI 的关系")
+
+    assert plan.steps[0].tool == "search_graph"
+    assert plan.steps[0].query == "量子计算和 FastAPI 的关系"
+    assert plan.steps[0].top_k == 4

@@ -9,3 +9,4 @@ write_assistant_prompt: app/prompt/write_assistant_prompt.txt
 agentic_rag_planner_prompt: app/prompt/agentic_rag_planner.txt
 agentic_rag_answerability_prompt: app/prompt/agentic_rag_answerability.txt
 entity_extraction_prompt: app/prompt/entity_extraction_prompt.txt
+query_entity_extraction_prompt: app/prompt/query_entity_extraction.txt

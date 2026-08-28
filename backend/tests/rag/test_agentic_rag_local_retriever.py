@@ -204,3 +204,137 @@ async def test_web_search_step_is_skipped_locally():
     assert evidences == []
     assert note_service.calls == []
     assert vector_store.calls == []
+
+
+class FakeGraphEntity:
+    def __init__(self, id, name, display_name, description=None, aliases=None, type_id=None):
+        self.id = id
+        self.name = name
+        self.display_name = display_name
+        self.description = description
+        self.aliases = aliases or []
+        self.type_id = type_id
+
+
+class FakeGraphLink:
+    def __init__(self, note_id, source_type="note", source_name=None):
+        self.note_id = note_id
+        self.source_type = source_type
+        self.source_name = source_name
+
+
+class FakeGraphStore:
+    def __init__(self, entities, links_by_entity=None):
+        self.entities = entities
+        self.links_by_entity = links_by_entity or {}
+        self.calls = []
+
+    async def search_entities(self, user_id, query, limit):
+        self.calls.append(("search_entities", user_id, query, limit))
+        return self.entities[:limit]
+
+    async def get_entity_notes(self, user_id, entity_id):
+        self.calls.append(("get_entity_notes", user_id, entity_id))
+        return self.links_by_entity.get(entity_id, [])
+
+
+class FakeExtractor:
+    def __init__(self, names):
+        self.names = names
+
+    async def extract(self, query):
+        return self.names
+
+
+class FakeGraphSession:
+    def __init__(self, store):
+        self.store = store
+
+    async def __aenter__(self):
+        return self.store
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+@pytest.mark.asyncio
+async def test_search_graph_converts_entity_with_description_and_notes_to_evidence(monkeypatch):
+    entity = FakeGraphEntity("ent-1", "DeepSeek", "DeepSeek",
+                             description="开源大模型公司", aliases=["深度求索"], type_id="tech-id")
+    link = FakeGraphLink("note-1", source_type="note", source_name="deepseek")
+    store = FakeGraphStore([entity], {"ent-1": [link]})
+
+    import app.rag.agentic_rag.local_retriever as lm
+    monkeypatch.setattr(
+        lm,
+        "get_graph_store",
+        lambda session: session.store,
+    )
+
+    class _Sess:
+        def __init__(self):
+            self.store = store
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    retriever = LocalRetriever(
+        note_service=FakeNoteService([]),
+        vector_store=FakeVectorStore([]),
+        session_factory=_Sess,
+        query_entity_extractor=FakeExtractor(["DeepSeek"]),
+    )
+
+    evidences = await retriever.search(
+        "user-1",
+        [RetrievalStep(tool="search_graph", query="DeepSeek", top_k=3)],
+    )
+
+    assert len(evidences) == 1
+    assert evidences[0].id == "ent-1"
+    assert evidences[0].source == "graph"
+    assert evidences[0].title == "DeepSeek"
+    assert "开源大模型公司" in evidences[0].content
+    assert "deepseek" in evidences[0].content
+    assert evidences[0].metadata["type_id"] == "tech-id"
+
+
+@pytest.mark.asyncio
+async def test_search_graph_uses_title_as_content_when_no_description_or_notes(monkeypatch):
+    entity = FakeGraphEntity("ent-2", "Shor", "Shor", description=None, aliases=None)
+    store = FakeGraphStore([entity], {})
+
+    class _Sess:
+        def __init__(self):
+            self.store = store
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    import app.rag.agentic_rag.local_retriever as lm
+    monkeypatch.setattr(
+        lm,
+        "get_graph_store",
+        lambda session: session.store,
+    )
+
+    retriever = LocalRetriever(
+        note_service=FakeNoteService([]),
+        vector_store=FakeVectorStore([]),
+        session_factory=_Sess,
+        query_entity_extractor=FakeExtractor(["Shor"]),
+    )
+
+    evidences = await retriever.search(
+        "user-1",
+        [RetrievalStep(tool="search_graph", query="Shor", top_k=5)],
+    )
+
+    assert len(evidences) == 1
+    assert evidences[0].content == "Shor"
