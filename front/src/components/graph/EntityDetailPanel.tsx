@@ -149,7 +149,7 @@ export function EntityDetailPanel({ nodeId, nodeType, types = [], onClose, onCha
             ) : (
               <button className="break-all text-sm text-[var(--color-accent)] hover:underline"
                 onClick={() => navigate(`/notes/${l.note_id}`)}>
-                {l.note_id}
+                {l.source_name || l.note_id}
               </button>
             )}
             {l.context[0] && <p className="text-xs text-[var(--color-text-secondary)]">“{l.context[0].snippet}”</p>}

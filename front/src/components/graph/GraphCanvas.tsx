@@ -32,6 +32,7 @@ const DOC_FILL = '#8b5cf6'
 const FALLBACK_FILL = '#64748b'
 const RECENTRE_DELAY_MS = 900
 const RECENTRE_ANIMATION = { duration: 450 }
+const RESIZE_DEBOUNCE_MS = 200
 
 // 力学参数：斥力使孤立节点散开，弹簧沿边聚拢关联节点，重力把整体收在原点附近。
 // 星型结构（单笔记挂大量实体）全靠斥力撑开空间；弹簧必须显式加强——
@@ -43,6 +44,7 @@ const GRAVITY_STRENGTH = 0.04 // 各轴向原点的距离比例回拉，防止�
 const COLLIDE_PADDING = 8
 const DRAG_START_PX = 4 // 位移超过该值才算拖拽，否则视为点击选中
 const ALPHA_INIT = 1 // 首帧起爆（大爆炸→冷却收敛）
+const ROOT_BIRTH_JITTER = 10 // 首帧根节点（笔记）在原点处的抖动半径：全部堆在视口中心起爆
 const ALPHA_INCREMENTAL = 0.25 // SSE 增量到货时的轻唤醒
 const ALPHA_DRAG_TARGET = 0.45 // 拖拽期间的能量水平：决定力传导到邻域的"活性"；约束已由弹簧+重力提供，能量可以放开
 const ALPHA_RELEASE_CAP = 0.3 // 松手保留适量余能：弹簧回收过程可见（弹性回弹），随后自然冷却
@@ -74,17 +76,18 @@ function birthPosition(id: string, edges: GraphEdge[], existing: Map<string, Sim
   return randOffset(150)
 }
 
-/** 合帧绘制：setData 后与物理 tick 共用，避免重入排队 */
-function scheduleDraw(graph: Graph, gate: { current: boolean }) {
-  if (gate.current) return
-  gate.current = true
-  void graph.draw()
+/** 合帧绘制：setData 后与物理 tick 共用，避免重入排队；gate 存放进行中的绘制 Promise，可据此衔接首帧后的视口操作 */
+function scheduleDraw(graph: Graph, gate: { current: Promise<void> | null }): Promise<void> {
+  if (gate.current) return gate.current
+  const drawn = graph.draw()
     .catch((err: unknown) => {
       if (!graph.destroyed) console.warn('[graph] 帧绘制失败:', err)
     })
     .finally(() => {
-      gate.current = false
+      gate.current = null
     })
+  gate.current = drawn
+  return drawn
 }
 
 export function GraphCanvas({ view, typeColors, onSelectNode, fitSignal = 0 }: Props) {
@@ -101,13 +104,21 @@ export function GraphCanvas({ view, typeColors, onSelectNode, fitSignal = 0 }: P
 
   const renderedOnceRef = useRef(false)
   const lastFitSignalRef = useRef(0)
-  const drawingRef = useRef(false)
+  const drawingRef = useRef<Promise<void> | null>(null)
+  // G6 的画布/相机在首次 draw 前不存在，视口类 API 必须等首帧绘制完成才能调用
+  const canvasReadyRef = useRef(false)
 
   // 图实例与模拟器只创建/销毁一次；G6 只做样式映射与逐帧回写渲染，物理由外部 d3-force 驱动
   useEffect(() => {
     if (!containerRef.current) return
+    const container = containerRef.current
     const graph = new Graph({
-      container: containerRef.current,
+      container,
+      // 显式传入容器尺寸：G6 自测容器在某些时序下会把高度量成 0，导致画布配置高度错误、
+      // 视口居中算出 cy=0（整场爆炸贴顶）。挂载后布局已稳定，此处量得的就是最终尺寸；
+      // 后续尺寸变化由下方 ResizeObserver 走 graph.resize 跟随
+      width: container.clientWidth,
+      height: container.clientHeight,
       // 关闭全局更新动画：物理 tick 每帧回写坐标，若经补间会永远追赶滞后，表现为"拖拽不跟手"
       animation: false,
       node: { style: { lineWidth: 1, stroke: palette.nodeStroke } },
@@ -115,7 +126,6 @@ export function GraphCanvas({ view, typeColors, onSelectNode, fitSignal = 0 }: P
       behaviors: ['drag-canvas', 'zoom-canvas', 'click-select', 'auto-adapt-label'],
     })
     graphRef.current = graph
-
     const sim = forceSimulation<SimNode>([])
       .force('charge', forceManyBody<SimNode>().strength(CHARGE_STRENGTH))
       // 显式弹簧强度 + 双轴重力：两者共同保证任何被拖散的成分都会缓慢但确定地归位，
@@ -136,6 +146,23 @@ export function GraphCanvas({ view, typeColors, onSelectNode, fitSignal = 0 }: P
       if (!g || g.destroyed) return
       void g.fitView(undefined, RECENTRE_ANIMATION)
     })
+
+    // 容器尺寸跟随：未开 autoResize 时画布会停留在旧尺寸（显示不全）。防抖合并连续触发；
+    // 已适配过视野则重新 fitView，入场进行中则仅保持世界原点居中
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null
+    const resizeObserver = new ResizeObserver(() => {
+      if (resizeTimer) clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => {
+        resizeTimer = null
+        const g = graphRef.current
+        const el = containerRef.current
+        if (!g || g.destroyed || !el) return
+        g.resize(el.clientWidth, el.clientHeight)
+        if (initialFitDone) void g.fitView(undefined, RECENTRE_ANIMATION)
+        else if (canvasReadyRef.current) void g.fitCenter(RECENTRE_ANIMATION)
+      }, RESIZE_DEBOUNCE_MS)
+    })
+    resizeObserver.observe(containerRef.current)
 
     // 拖拽采用"增量映射"，不经过任何绝对坐标换算：以节点当前世界坐标为锚，
     // 把指针的屏幕位移除以相机缩放后累加到钉扎点。DPR、容器偏移、页面缩放等
@@ -247,6 +274,8 @@ export function GraphCanvas({ view, typeColors, onSelectNode, fitSignal = 0 }: P
     })
 
     return () => {
+      resizeObserver.disconnect()
+      if (resizeTimer) clearTimeout(resizeTimer)
       window.removeEventListener('pointermove', onWindowPointerMove)
       window.removeEventListener('pointerup', endDrag)
       window.removeEventListener('pointercancel', endDrag)
@@ -257,7 +286,8 @@ export function GraphCanvas({ view, typeColors, onSelectNode, fitSignal = 0 }: P
       graphRef.current = null
       simRef.current = null
       nodesRef.current = []
-      drawingRef.current = false
+      drawingRef.current = null
+      canvasReadyRef.current = false
       renderedOnceRef.current = false
     }
     // 初始配色仅取决于挂载时主题；后续主题切换走数据对账路径重映射样式
@@ -274,18 +304,28 @@ export function GraphCanvas({ view, typeColors, onSelectNode, fitSignal = 0 }: P
     const prev = new Map(nodesRef.current.map((n) => [n.id, n]))
     let structuralChange = isFirstRender
     const nextNodes: SimNode[] = []
+    const placed = new Map<string, SimNode>()
+    // 第一遍：沿用旧位置；首次渲染的根节点（笔记）直接在世界原点出生——
+    // 原点即视口中心，整张图从屏幕正中堆叠起爆，而不是散落在中心四周
     for (const n of view.nodes) {
       const old = prev.get(n.id)
       if (old) {
         nextNodes.push(old)
-      } else {
+        placed.set(n.id, old)
+      } else if (isFirstRender && n.node_type === 'note') {
         structuralChange = true
-        nextNodes.push({
-          id: n.id,
-          r: nodeRadius(n),
-          ...(isFirstRender ? randOffset(150) : birthPosition(n.id, view.edges, prev)),
-        })
+        const node: SimNode = { id: n.id, r: nodeRadius(n), ...randOffset(ROOT_BIRTH_JITTER) }
+        nextNodes.push(node)
+        placed.set(n.id, node)
       }
+    }
+    // 第二遍：其余新节点从已就位的邻居"长出来"（可锚定本轮先放置的节点），无邻居可用才在中心附近散布
+    for (const n of view.nodes) {
+      if (placed.has(n.id)) continue
+      structuralChange = true
+      const node: SimNode = { id: n.id, r: nodeRadius(n), ...birthPosition(n.id, view.edges, placed) }
+      nextNodes.push(node)
+      placed.set(n.id, node)
     }
     if (nextNodes.length !== prev.size) structuralChange = true
     nodesRef.current = nextNodes
@@ -337,7 +377,25 @@ export function GraphCanvas({ view, typeColors, onSelectNode, fitSignal = 0 }: P
     renderedOnceRef.current = true
 
     // 无结构变化（如切主题/类型筛选）时模拟器可能静止，确保样式映射立即被绘制出来
-    scheduleDraw(graph, drawingRef)
+    const drawn = scheduleDraw(graph, drawingRef)
+
+    // 首帧绘制完成后把真实内容包围盒中心对齐到视口中心：d3 重力把布局往世界原点 (0,0) 收拢，
+    // 但首帧节点还没收拢到原点（从邻居 birthPosition/randOffset 散落出生），质心 ≠ (0,0)，
+    // 若像旧逻辑用 translateTo(canvasCenter) 只钉原点，首帧就会偏出屏幕正中。
+    // 用 fitCenter（只居中不缩放，见 G6 viewport.js focus(): delta = canvasCenter - bboxCenter）——
+    // 既满足「炸开前就在正中」，又避免过早 fitView 缩放导致爆炸过程跑偏
+    if (isFirstRender) {
+      void drawn.then(() => {
+        const el = containerRef.current
+        if (graph.destroyed || !el) return
+        canvasReadyRef.current = true
+        // 先按最新容器尺寸校正画布（防御初始化与首帧之间的布局变动），再按真实内容居中
+        graph.resize(el.clientWidth, el.clientHeight)
+        graph.fitCenter(RECENTRE_ANIMATION).catch((err: unknown) => {
+          console.warn('[graph] 视口居中失败:', err)
+        })
+      })
+    }
 
     sim.nodes(nextNodes)
     sim.force(
