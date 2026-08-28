@@ -46,6 +46,8 @@ class GraphRelation(Base):
     relation_type = Column(String(50), nullable=False)
     properties = Column(JSON, default=dict)
     confidence = Column(Float, default=0.0, nullable=False)
+    source_note_id = Column(String(36), nullable=True, comment="来源笔记 UUID 或文档 md5（NULL=手动创建，不被自动清理）")
+    source_type = Column(String(10), nullable=True, comment="note/doc（NULL=手动创建，不被自动清理）")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

@@ -29,6 +29,7 @@ from app.models.graph import (
     GraphNoteEdge,
     GraphRelation,
 )
+from app.models.note import Note
 
 SEED_TYPE_COLORS = {"person": "#E4572E", "tech": "#1F6C9F", "concept": "#2A9D8F",
                     "org": "#E9C46A", "place": "#9B5DE5", "project": "#F4A261", "event": "#D90429"}
@@ -230,8 +231,16 @@ class MySQLGraphStore(GraphStore):
                 select(GraphDoc).where(GraphDoc.user_id == user_id,
                                        GraphDoc.id.in_(doc_ids)))).scalars().all()
             doc_names = {d.id: d.filename for d in docs}
+        # 笔记关联行补上标题（note_id 存笔记 UUID），与文档走 GraphDoc 的方式对称
+        note_names: dict[str, str] = {}
+        note_ids = [r.note_id for r in rows if r.source_type != "doc"]
+        if note_ids:
+            notes = (await self.session.execute(
+                select(Note).where(Note.user_id == user_id,
+                                   Note.id.in_(note_ids)))).scalars().all()
+            note_names = {n.id: n.title for n in notes}
         return [EntityNoteLink(entity_id=r.entity_id, note_id=r.note_id,
-                               source_type=r.source_type, source_name=doc_names.get(r.note_id),
+                               source_type=r.source_type, source_name=doc_names.get(r.note_id) or note_names.get(r.note_id),
                                mention_count=r.mention_count, context=r.context or []) for r in rows]
 
     async def get_overview(self, user_id: str, type_ids: list[str] | None, limit: int) -> GraphView:
