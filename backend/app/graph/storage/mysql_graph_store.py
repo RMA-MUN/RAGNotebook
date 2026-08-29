@@ -51,6 +51,7 @@ async def _seed_system_types(session: AsyncSession):
 
 
 def _entity_to_schema(row: GraphEntity) -> Entity:
+    """ORM 行 → Entity 模型（JSON 列容忍 NULL）。"""
     return Entity(id=row.id, user_id=row.user_id, name=row.name, display_name=row.display_name,
                   type_id=row.type_id, description=row.description,
                   aliases=row.aliases or [], confidence=row.confidence,
@@ -58,11 +59,17 @@ def _entity_to_schema(row: GraphEntity) -> Entity:
 
 
 class MySQLGraphStore(GraphStore):
+    """关系表版实现：与 Neo4jGraphStore 逐方法语义对齐（契约见 GraphStore docstring）。
+
+    无向量/全文能力，Chunk 检索扩展方法走基类 NotImplementedError 默认（测试环境回落路径）。
+    """
+
     def __init__(self, session: AsyncSession):
         self.session = session
 
     # ---- 实体 ----
     async def upsert_entity(self, user_id: str, entity: EntityIn) -> Entity:
+        """按名称去重 upsert：精确名 → 别名命中（全量扫描比对）→ 新建；合并语义与 Neo4j 版一致。"""
         stmt = select(GraphEntity).where(GraphEntity.user_id == user_id, GraphEntity.name == entity.name)
         row = (await self.session.execute(stmt)).scalar_one_or_none()
         if row is None:
@@ -94,12 +101,14 @@ class MySQLGraphStore(GraphStore):
         return _entity_to_schema(row)
 
     async def get_entity(self, user_id: str, entity_id: str) -> Entity | None:
+        """按 id 取单个实体；不存在返回 None。"""
         row = (await self.session.execute(
             select(GraphEntity).where(GraphEntity.id == entity_id, GraphEntity.user_id == user_id)
         )).scalar_one_or_none()
         return _entity_to_schema(row) if row else None
 
     async def search_entities(self, user_id: str, query: str, limit: int) -> list[Entity]:
+        """name/display_name LIKE 模糊匹配（Neo4j 版为 CONTAINS，测试环境够用）。"""
         like = f"%{query}%"
         rows = (await self.session.execute(
             select(GraphEntity)
@@ -110,6 +119,7 @@ class MySQLGraphStore(GraphStore):
         return [_entity_to_schema(r) for r in rows]
 
     async def delete_entity(self, user_id: str, entity_id: str) -> None:
+        """删实体并手动级联清理其关系与来源关联（MySQL 无 DETACH DELETE，需逐表删）。"""
         await self.session.execute(delete(GraphRelation).where(
             GraphRelation.user_id == user_id,
             or_(GraphRelation.source_id == entity_id, GraphRelation.target_id == entity_id)))
@@ -119,6 +129,7 @@ class MySQLGraphStore(GraphStore):
             GraphEntity.user_id == user_id, GraphEntity.id == entity_id))
 
     async def merge_entities(self, user_id: str, target_id: str, source_id: str) -> Entity:
+        """合并实体：关系与来源关联重定向到 target 后删除 source，属性并合（调用方负责 commit）。"""
         target = (await self.session.execute(
             select(GraphEntity).where(GraphEntity.id == target_id, GraphEntity.user_id == user_id)
         )).scalar_one_or_none()
@@ -151,6 +162,7 @@ class MySQLGraphStore(GraphStore):
 
     # ---- 关系 ----
     async def create_relation(self, user_id: str, rel: RelationIn) -> Relation:
+        """新建 RELATES_TO 关系行（properties 为 JSON 列，免序列化）。"""
         row = GraphRelation(id=str(uuid.uuid4()), user_id=user_id, source_id=rel.source_id,
                             target_id=rel.target_id, relation_type=rel.relation_type,
                             properties=rel.properties, confidence=rel.confidence)
@@ -161,11 +173,13 @@ class MySQLGraphStore(GraphStore):
                         confidence=row.confidence)
 
     async def delete_relation(self, user_id: str, relation_id: str) -> None:
+        """按关系 id 删除单条关系。"""
         await self.session.execute(delete(GraphRelation).where(
             GraphRelation.user_id == user_id, GraphRelation.id == relation_id))
 
     # ---- 查询 ----
     async def get_neighbors(self, user_id: str, entity_id: str, depth: int) -> GraphView:
+        """RELATES_TO 逐层 BFS 取邻居子图（depth 钳制 1~3），与 Neo4j 版对齐。"""
         depth = max(1, min(depth, 3))
         ids = {entity_id}
         cur = {entity_id}
@@ -193,6 +207,7 @@ class MySQLGraphStore(GraphStore):
         return GraphView(nodes=nodes, edges=edges)
 
     async def get_note_graph(self, user_id: str, note_id: str) -> GraphView:
+        """笔记子图：双链相邻笔记 + 它们关联的实体 + 实体间关系。"""
         edges = (await self.session.execute(
             select(GraphNoteEdge).where(GraphNoteEdge.user_id == user_id,
                                        or_(GraphNoteEdge.source_note_id == note_id,
@@ -220,6 +235,7 @@ class MySQLGraphStore(GraphStore):
         return GraphView(nodes=nodes, edges=edges)
 
     async def get_entity_notes(self, user_id: str, entity_id: str) -> list[EntityNoteLink]:
+        """反查实体的来源关联（笔记/文档），补齐来源名（文档取 filename、笔记取 title）。"""
         rows = (await self.session.execute(
             select(GraphEntityNote).where(GraphEntityNote.user_id == user_id,
                                           GraphEntityNote.entity_id == entity_id))).scalars().all()
@@ -244,6 +260,7 @@ class MySQLGraphStore(GraphStore):
                                mention_count=r.mention_count, context=r.context or []) for r in rows]
 
     async def get_overview(self, user_id: str, type_ids: list[str] | None, limit: int) -> GraphView:
+        """总览子图：实体 + 关系 + 笔记/文档提及边 + WIKI 双链，画布首页用（结构对齐 Neo4j 版）。"""
         await _seed_system_types(self.session)
         stmt = select(GraphEntity).where(GraphEntity.user_id == user_id)
         if type_ids:
@@ -327,6 +344,7 @@ class MySQLGraphStore(GraphStore):
 
     # ---- 类型 ----
     async def list_types(self, user_id: str) -> list[EntityType]:
+        """用户可见类型列表（含系统预置），首次调用惰性种入系统类型。"""
         await _seed_system_types(self.session)
         rows = (await self.session.execute(
             select(GraphEntityType).where(or_(GraphEntityType.user_id.is_(None),
@@ -335,6 +353,7 @@ class MySQLGraphStore(GraphStore):
                            color=r.color, icon=r.icon, is_system=r.is_system) for r in rows]
 
     async def upsert_type(self, user_id: str, type_in: TypeIn) -> EntityType:
+        """按 (user_id, name) upsert 类型：已存在更新展示属性，不存在新建。"""
         stmt = select(GraphEntityType).where(
             GraphEntityType.user_id == user_id, GraphEntityType.name == type_in.name)
         row = (await self.session.execute(stmt)).scalar_one_or_none()
@@ -352,6 +371,7 @@ class MySQLGraphStore(GraphStore):
                           color=row.color, icon=row.icon, is_system=row.is_system)
 
     async def delete_type(self, user_id: str, type_id: str) -> None:
+        """删除类型并将关联实体降级未分类（不级联删实体）。"""
         # 实体 type_id 置空降级未分类，不级联删实体
         await self.session.execute(update(GraphEntity).where(
             GraphEntity.user_id == user_id, GraphEntity.type_id == type_id).values(type_id=None))

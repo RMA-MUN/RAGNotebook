@@ -15,6 +15,13 @@ interface Props {
   onChanged: () => void
 }
 
+/**
+ * 图谱画布右侧详情栏：按 nodeType 渲染三种面板。
+ * - entity: 实体详情（描述/别名/类型）+ 来源关联（笔记跳笔记页、文档跳知识库）+ 删除（带确认）；
+ * - note:   笔记面板（跳转打开笔记）；
+ * - doc:    文档面板（关联实体列表，数据来自文档子图接口）。
+ * 父组件以 key=nodeType:id 强制重挂载来切换目标，组件内不做目标切换过渡。
+ */
 export function EntityDetailPanel({ nodeId, nodeType, types = [], onClose, onChanged }: Props) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -57,6 +64,7 @@ export function EntityDetailPanel({ nodeId, nodeType, types = [], onClose, onCha
     return () => { latest = false }
   }, [nodeId, nodeType, t])
 
+  // 删除实体（后端级联清其关系与来源关联），成功后关面板并通知画布刷新
   const handleDelete = async () => {
     if (!entity) return
     try {
@@ -76,6 +84,7 @@ export function EntityDetailPanel({ nodeId, nodeType, types = [], onClose, onCha
     </button>
   )
 
+  // 笔记/文档面板先行早退，以下为实体面板
   if (nodeType === 'note') {
     return (
       <div className="fixed right-0 top-0 h-full w-80 border-l bg-[var(--color-card)] p-4">

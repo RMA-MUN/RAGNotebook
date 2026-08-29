@@ -34,7 +34,7 @@ async def extract_entities(title: str, content: str, chat_model) -> ExtractResul
     """调用 LLM 抽取实体与关系，返回结构化 ExtractResult。"""
     prompt = load_prompt("entity_extraction_prompt").replace("{title}", title or "").replace("{content}", (content or "")[:6000])
     result = None
-    # 路径一：JSON mode
+    # 路径一：JSON mode（LangChain 模型均支持 bind(response_format)；hasattr 判断恒真，保留作兼容占位）
     if hasattr(chat_model, "with_config") or True:
         try:
             from langchain_core.messages import HumanMessage
