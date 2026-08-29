@@ -120,3 +120,15 @@ class ExtractLog(BaseModel):
 class MergeRequest(BaseModel):
     target_id: str
     source_id: str
+
+
+class ChunkHit(BaseModel):
+    """种子检索命中的 chunk（Neo4j Chunk 节点的检索投影）。"""
+    id: str
+    kind: str  # note/doc
+    source_id: str  # 笔记 UUID 或文档 md5
+    source_name: str | None = None  # 笔记标题或文档文件名
+    chunk_index: int = 0
+    text: str
+    score: float | None = None  # RRF 融合分（图扩展路径可能为 None）
+    metadata: dict = Field(default_factory=dict)  # vector_score/fulltext_score 等

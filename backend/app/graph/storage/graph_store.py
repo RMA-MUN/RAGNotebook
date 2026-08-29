@@ -1,11 +1,13 @@
 """GraphStore 存储层抽象接口。
 
-service 层只依赖本接口；未来迁移 Neo4j 时新增 Neo4jGraphStore 实现，
-并通过 storage/__init__.py 的 get_graph_store() 工厂切换，service 层零改动。
+service 层只依赖本接口；通过 storage/__init__.py 的 get_graph_store() 工厂切换实现。
+基础 15 个方法为实体/关系/画布语义，MySQL 与 Neo4j 双实现；
+"Chunk 检索"扩展方法仅 Neo4jGraphStore 提供（MySQL 无向量/全文能力），默认抛 NotImplementedError。
 """
 from abc import ABC, abstractmethod
 
 from app.graph.schemas.graph import (
+    ChunkHit,
     Entity,
     EntityIn,
     EntityNoteLink,
@@ -18,6 +20,7 @@ from app.graph.schemas.graph import (
 
 
 class GraphStore(ABC):
+    """图谱存储统一接口：方法 docstring 即行为契约，MySQL/Neo4j 双实现必须对齐（测试双跑保证）。"""
     # 实体
     @abstractmethod
     async def upsert_entity(self, user_id: str, entity: EntityIn) -> Entity:
@@ -81,3 +84,65 @@ class GraphStore(ABC):
     @abstractmethod
     async def delete_type(self, user_id: str, type_id: str) -> None:
         """删除类型，并将引用它的实体 type_id 置空（降级未分类，不级联删实体）。"""
+
+    # ---- Chunk 检索扩展（仅 Neo4jGraphStore 实现；MySQL 无向量/全文能力） ----
+
+    async def ensure_source_node(self, user_id: str, source_type: str, source_id: str, title: str) -> None:
+        """确保 Note/Doc 源节点存在（note→Note{title}，doc→Doc{filename}）。"""
+        raise NotImplementedError("当前 GraphStore 实现不支持 Chunk 存储")
+
+    async def upsert_chunks(self, user_id: str, source_type: str, source_id: str, source_name: str,
+                            chunks: list[dict]) -> None:
+        """按 (kind, source_id, chunk_index) 幂等写入 Chunk 节点（含 text 与 embedding）。
+
+        chunks 每项：{chunk_index, text, embedding, page?, image_paths?}。
+        """
+        raise NotImplementedError("当前 GraphStore 实现不支持 Chunk 存储")
+
+    async def delete_chunks_by_source(self, user_id: str, source_type: str, source_id: str) -> None:
+        """删除某来源的全部 Chunk 节点（连带 Chunk 级 MENTIONS 边）。"""
+        raise NotImplementedError("当前 GraphStore 实现不支持 Chunk 存储")
+
+    async def set_source_mentions(self, user_id: str, source_type: str, source_id: str,
+                                  links: list[dict]) -> None:
+        """先清后插来源级 MENTIONS 边（Note/Doc→Entity，{mention_count, context}）。"""
+        raise NotImplementedError("当前 GraphStore 实现不支持 Chunk 存储")
+
+    async def set_chunk_mentions(self, user_id: str, source_type: str, source_id: str,
+                                 links: list[dict]) -> None:
+        """先清后插 Chunk 级 MENTIONS 边（Chunk→Entity）。
+
+        links 每项：{entity_id, chunk_indexes: [int]}，按 (kind, source_id, chunk_index) 定位 Chunk。
+        """
+        raise NotImplementedError("当前 GraphStore 实现不支持 Chunk 存储")
+
+    async def set_relations_from_source(self, user_id: str, source_type: str, source_id: str,
+                                        rels: list[dict]) -> None:
+        """先清后插带溯源的实体关系（RELATES_TO {source_id, source_type}）。"""
+        raise NotImplementedError("当前 GraphStore 实现不支持 Chunk 存储")
+
+    async def set_note_wiki_edges(self, user_id: str, note_id: str, links: list[dict]) -> None:
+        """先清后插笔记双链出边（links: [{target_note_id, kind}]；单向存储、查询双向匹配）。"""
+        raise NotImplementedError("当前 GraphStore 实现不支持 Chunk 存储")
+
+    async def search_chunks(self, user_id: str, query_embedding: list[float] | None,
+                            text_query: str | None, kinds: list[str] | None, limit: int) -> list[ChunkHit]:
+        """种子检索：向量 + 全文（RRF 融合）返回 top chunk。"""
+        raise NotImplementedError("当前 GraphStore 实现不支持 Chunk 检索")
+
+    async def get_chunks_mentioning(self, user_id: str, entity_ids: list[str], limit: int) -> list[ChunkHit]:
+        """返回提及给定实体的 chunk（图扩展证据）。"""
+        raise NotImplementedError("当前 GraphStore 实现不支持 Chunk 检索")
+
+    async def clear_source_data(self, user_id: str, source_type: str, source_id: str) -> list[str]:
+        """删除源节点/Chunk/溯源关系，返回删除前曾关联的实体 id（供孤儿清扫）。"""
+        raise NotImplementedError("当前 GraphStore 实现不支持 Chunk 存储")
+
+    async def sweep_orphan_entities(self, user_id: str, candidate_entity_ids: list[str],
+                                    removed_source_ids: list[str]) -> None:
+        """孤儿清扫：摘除 source_note_ids 中被删来源；无剩余来源关联且引用为空的实体级联删除。"""
+        raise NotImplementedError("当前 GraphStore 实现不支持 Chunk 存储")
+
+    async def clear_all_docs(self, user_id: str) -> None:
+        """清空用户全部文档图谱（Doc 节点/doc Chunk/doc 溯源关系），并清扫孤儿实体。"""
+        raise NotImplementedError("当前 GraphStore 实现不支持 Chunk 存储")
