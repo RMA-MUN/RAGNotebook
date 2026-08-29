@@ -9,6 +9,8 @@ _DROP_SCHEMA_STMTS = (
     "DROP INDEX chunk_text_index IF EXISTS",
     "DROP INDEX chunk_user_index IF EXISTS",
     "DROP INDEX chunk_source_index IF EXISTS",
+    "DROP INDEX chunk_source_user_index IF EXISTS",
+    "DROP INDEX doc_user_index IF EXISTS",
     "DROP INDEX entity_user_index IF EXISTS",
     "DROP CONSTRAINT chunk_id_unique IF EXISTS",
     "DROP CONSTRAINT entity_id_unique IF EXISTS",
