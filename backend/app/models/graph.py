@@ -1,5 +1,6 @@
-"""知识图谱六张表 ORM 模型（全部带 user_id 隔离）。"""
+"""知识图谱 ORM 模型（全部带 user_id 隔离）。"""
 from sqlalchemy import Boolean, Column, DateTime, Float, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy.dialects import mysql
 from sqlalchemy.sql import func
 
 from app.models.chat_history import Base
@@ -102,3 +103,31 @@ class GraphDoc(Base):
     user_id = Column(String(36), index=True, nullable=False)
     filename = Column(String(255), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class GraphBuildTask(Base):
+    """图谱构建任务表：worker 异步消费（pending → running → completed/failed）。
+
+    payload 为 JSON 字符串：笔记 {"text": 正文}；文档 {"chunks": [{text, page?, image_paths?}]}
+    或 {"text": 全文}（无预切切片时由 worker 兜底现切）。
+    """
+    __tablename__ = "graph_build_tasks"
+    __table_args__ = (UniqueConstraint("user_id", "source_type", "source_id",
+                                       name="uq_graph_build_user_source"),)
+
+    id = Column(String(36), primary_key=True, comment="UUID")
+    user_id = Column(String(36), index=True, nullable=False)
+    source_type = Column(String(10), nullable=False, comment="note/doc")
+    source_id = Column(String(64), nullable=False, comment="笔记 UUID 或文档 md5")
+    title = Column(String(255), nullable=True, comment="笔记标题或文档文件名")
+    content_hash = Column(String(64), nullable=False, comment="触发时的内容哈希")
+    payload = Column(Text().with_variant(mysql.LONGTEXT(), "mysql"),
+                     nullable=True, comment="任务载荷 JSON")
+    status = Column(String(20), default="pending", server_default="pending", nullable=False,
+                    comment="pending/running/completed/failed")
+    attempts = Column(Integer, default=0, server_default="0", nullable=False)
+    force = Column(Boolean, default=False, server_default="0", nullable=False,
+                   comment="强制重抽（跳过内容哈希判重）")
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

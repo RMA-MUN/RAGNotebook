@@ -1,3 +1,7 @@
+"""应用后台初始化：AI 模型 → Neo4j Schema/图谱 worker → NoteService → 知识库 → 重排序。
+
+初始化顺序即依赖顺序；Neo4j 相关步骤失败仅告警不阻塞启动（存储回落 MySQL）。
+"""
 import asyncio
 import time
 
@@ -21,6 +25,10 @@ class _BackgroundInitManager:
         self.note_service_ready = asyncio.Event()
         self.reranker_ready = asyncio.Event()
 
+        # 图谱构建 worker（Neo4j 主路径；stop_event 置位后退出）
+        self.graph_worker_stop = asyncio.Event()
+        self._graph_worker_task: asyncio.Task | None = None
+
         # 初始化后的实例（初始化完成前为 None）
         self.chat_model = None
         self.embed_model = None
@@ -43,6 +51,12 @@ class _BackgroundInitManager:
 
             # 1. AI 模型（调用 factory 中的工厂类）
             await self._init_models()
+
+            # 1.5 Neo4j 图谱连接与 Schema（失败仅告警，不阻塞启动）
+            await self._init_graph()
+
+            # 1.6 图谱构建 worker（任务表持久化，重启自动恢复消费）
+            self._start_graph_worker()
 
             # 2. ChromaDB（NoteService，依赖 embed_model）
             await self._init_note_service()
@@ -80,16 +94,50 @@ class _BackgroundInitManager:
 
         self.models_ready.set()
 
+    async def _init_graph(self):
+        """初始化 Neo4j 图谱 Schema（幂等；未配置或失败时仅告警，不阻塞启动）"""
+        from app.graph.storage.neo4j_client import ensure_graph_schema, neo4j_configured
+
+        if not neo4j_configured():
+            logger.warning("⚠️ NEO4J_URI 未配置，图谱存储回落 MySQL")
+            return
+        try:
+            await ensure_graph_schema(self.embed_model)
+        except Exception as e:
+            logger.error(f"❌ Neo4j Schema 初始化失败: {e}", exc_info=True)
+
+    def _start_graph_worker(self):
+        """启动图谱构建 worker（幂等；仅 Neo4j 主路径需要消费任务表）。"""
+        if self._graph_worker_task is not None and not self._graph_worker_task.done():
+            return
+        from app.graph.storage.neo4j_client import neo4j_configured
+
+        if not neo4j_configured():
+            logger.info("Neo4j 未配置，图谱构建 worker 不启动")
+            return
+        self.graph_worker_stop.clear()
+        self._graph_worker_task = asyncio.create_task(
+            _run_graph_worker(self.graph_worker_stop))
+        logger.info("✅ 图谱构建 worker 已启动")
+
+    async def stop_graph_worker(self):
+        """停止图谱构建 worker（应用 shutdown 时调用）。"""
+        self.graph_worker_stop.set()
+        if self._graph_worker_task is not None:
+            try:
+                await asyncio.wait_for(self._graph_worker_task, timeout=5.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                self._graph_worker_task.cancel()
+            self._graph_worker_task = None
+
     async def _init_note_service(self):
-        """初始化 NoteService（ChromaDB，依赖 embed_model）"""
+        """初始化 NoteService（向量能力已迁 Neo4j，此处仅构建业务单例）"""
         await self.models_ready.wait()
 
         from app.services.note_service import NoteService
 
-        self.note_service = await asyncio.to_thread(
-            lambda: NoteService(embed_model=self.embed_model)
-        )
-        logger.info("✅ NoteService（ChromaDB）初始化完成")
+        self.note_service = NoteService()
+        logger.info("✅ NoteService 初始化完成")
         self.note_service_ready.set()
 
     async def _init_vector_store(self):
@@ -109,6 +157,16 @@ class _BackgroundInitManager:
         self.reorder_service = ReorderService()
         logger.info("✅ ReorderService 初始化完成")
         self.reranker_ready.set()
+
+
+async def _run_graph_worker(stop_event: asyncio.Event):
+    """包装 worker 循环，异常不拖垮初始化管理器。"""
+    from app.graph.services.graph_worker import run_worker_loop
+
+    try:
+        await run_worker_loop(stop_event)
+    except Exception as e:
+        logger.error(f"图谱构建 worker 异常退出: {e}", exc_info=True)
 
 
 # 全局单例

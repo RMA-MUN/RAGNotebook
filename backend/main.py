@@ -113,6 +113,12 @@ async def shutdown_event():
     await close_redis()
     logger.info("Redis连接已关闭")
 
+    # 停止图谱构建 worker 并关闭 Neo4j 驱动（未配置时为空操作）
+    await init_manager.stop_graph_worker()
+    from app.graph.storage.neo4j_client import close_neo4j_driver
+    await close_neo4j_driver()
+    logger.info("Neo4j驱动已关闭")
+
     # 关闭 SQLAlchemy 引擎（释放 aiomysql 连接池，避免 GC 时事件循环已关闭）
     from app.db.db_config import async_engine
     await async_engine.dispose()
