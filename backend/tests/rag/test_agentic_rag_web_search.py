@@ -4,6 +4,14 @@ import pytest
 from app.rag.agentic_rag.web_search import WebSearchClient
 
 
+@pytest.fixture(autouse=True)
+def _clean_web_search_env(monkeypatch):
+    """屏蔽开发 .env 泄漏进 os.environ 的真实搜索配置（factory 等 import 时 load_dotenv），
+    否则 api_key/provider 传 None/"" 的用例会回落到真 key 发起真实网络请求。"""
+    for var in ("WEB_SEARCH_ENABLED", "WEB_SEARCH_PROVIDER", "WEB_SEARCH_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+
+
 class FakeAsyncClient:
     def __init__(self, response=None, exc: Exception | None = None):
         self.response = response

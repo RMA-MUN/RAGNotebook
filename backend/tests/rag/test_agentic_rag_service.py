@@ -34,7 +34,7 @@ class FakeEvaluator:
         self.result = result
         self.calls = []
 
-    def evaluate(self, query, evidences):
+    async def evaluate(self, query, evidences):
         self.calls.append({"query": query, "evidences": list(evidences)})
         return self.result
 
@@ -149,6 +149,30 @@ async def test_run_falls_back_to_web_and_keeps_local_evidence_first():
     assert result.context.index("来源：笔记《Note》") < result.context.index("来源：外部搜索《Web Result》")
     assert result.used_web is True
     assert web_search.calls == [{"query": "fresh agentic rag news", "max_results": 5}]
+
+
+@pytest.mark.asyncio
+async def test_run_triggers_web_when_not_answerable_even_if_plan_vetoes():
+    """白居易场景：planner 没开 web 回落，但本地证据不可答时仍应兜底搜网。"""
+    local_evidence = _evidence("n1", "note", "Unrelated quantum note", "量子计算入门")
+    web_evidence = _evidence("w1", "web", "Bai Juyi was a Tang dynasty poet.", "白居易")
+    planner = FakePlanner(_plan(need_retrieval=True, allow_web_fallback=False))
+    local_retriever = FakeLocalRetriever([local_evidence])
+    evaluator = FakeEvaluator(_answerability(answerable=False, web_queries=["白居易 唐代诗人"]))
+    web_search = FakeWebSearchClient([web_evidence])
+    service = AgenticRagService(
+        planner=planner,
+        local_retriever=local_retriever,
+        evaluator=evaluator,
+        web_search_client=web_search,
+    )
+
+    result = await service.run("给我讲讲白居易", user_id="user-1")
+
+    assert result.used_web is True
+    assert web_search.calls == [{"query": "白居易 唐代诗人", "max_results": 5}]
+    assert result.evidences == [local_evidence, web_evidence]
+    assert "来源：外部搜索《白居易》" in result.context
 
 
 @pytest.mark.asyncio

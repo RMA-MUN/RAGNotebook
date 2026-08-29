@@ -8,7 +8,7 @@ from app.rag.agentic_rag.evaluator import AnswerabilityEvaluator
 from app.rag.agentic_rag.evidence import format_evidence_context, merge_evidence
 from app.rag.agentic_rag.local_retriever import LocalRetriever
 from app.rag.agentic_rag.planner import AgenticRagPlanner
-from app.rag.agentic_rag.schemas import AgenticRagResult, AnswerabilityResult, Evidence, RetrievalPlan
+from app.rag.agentic_rag.schemas import AgenticRagResult, AnswerabilityResult, Evidence
 from app.rag.agentic_rag.web_search import WebSearchClient
 
 
@@ -84,7 +84,7 @@ class AgenticRagService:
         )
         await asyncio.sleep(0)  # 分帧：让各阶段落入不同事件循环 tick，避免一次性涌入前端
 
-        answerability = self.evaluator.evaluate(query, local_evidences)
+        answerability = await self.evaluator.evaluate(query, local_evidences)
         await self._emit(
             thinking_callback,
             "answerability",
@@ -98,7 +98,7 @@ class AgenticRagService:
         )
         await asyncio.sleep(0)
 
-        web_evidences = await self._maybe_search_web(query, plan, answerability, thinking_callback)
+        web_evidences = await self._maybe_search_web(query, answerability, thinking_callback)
         fused_evidences = merge_evidence([*local_evidences, *web_evidences])
         await self._emit(
             thinking_callback,
@@ -131,12 +131,15 @@ class AgenticRagService:
     async def _maybe_search_web(
         self,
         query: str,
-        plan: RetrievalPlan,
         answerability: AnswerabilityResult,
         thinking_callback: ThinkingCallback | None,
     ) -> list[Evidence]:
-        if not plan.allow_web_fallback:
-            return []
+        """web 兜底：answerability 判不可答（或显式给出 web_queries）即触发。
+
+        planner 的 allow_web_fallback 仅作规划提示、不再一票否决——
+        本地知识缺口（检索回来的证据与问题不相关）同样需要搜网；
+        硬开关收敛到 WebSearchClient 自身（WEB_SEARCH_ENABLED/provider/key）。
+        """
         if answerability.answerable and not answerability.web_queries:
             return []
 
