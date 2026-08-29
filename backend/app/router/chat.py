@@ -1,3 +1,8 @@
+"""Chat 路由：Agent 对话（流式/非流式）与 Agentic RAG 前置检索编排。
+
+流式端点时序：先发占位 thinking 帧（前端折叠框即时出现）→ 转发 RAG 真实思考事件 →
+Agent 流式回答 → done；RAG 失败不阻塞回答（rag_context 置空继续走 Agent）。
+"""
 import asyncio
 import json
 import uuid
@@ -10,7 +15,7 @@ from app.agent.agent import get_agent_stream_response
 from app.core.rate_limit import rate_limit
 from app.core.success_response import success_response
 from app.rag.agentic_rag.service import AgenticRagService
-from app.schemas.models import QueryRequest, RAGRequest, RAGResponse, ReorderRequest, ReorderResponse, SessionResponse
+from app.schemas.models import QueryRequest, ReorderRequest, ReorderResponse, SessionResponse
 from app.utils.auth_utils import get_current_user_id
 
 chat_router = APIRouter(prefix="/chat", tags=["chat"])
@@ -90,18 +95,6 @@ async def query_stream(
             "Connection": "keep-alive"
         }
     )
-
-
-@chat_router.post("/rag/query", response_model=RAGResponse)
-async def query_rag(
-        request: RAGRequest,
-        user_id: str = Depends(get_current_user_id),
-        router_service=Depends(get_router_service),
-        _: None = Depends(rate_limit(limit=15, window=60))
-):
-    """RAG检索"""
-    response = await router_service.handle_rag_query(request.query, user_id)
-    return success_response(data=RAGResponse(response=response))
 
 
 @chat_router.get("/session/{session_id}", response_model=SessionResponse)
