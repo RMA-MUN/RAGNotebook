@@ -84,15 +84,16 @@ def probe_embedding_dims(embed_model) -> int:
 
 
 _SCHEMA_DDL = (
-    "CREATE CONSTRAINT chunk_id_unique IF NOT EXISTS FOR (c:Chunk) REQUIRE c.id IS UNIQUE",
+    # Chunk/Doc 不设单列 id 唯一约束：id 是业务键（md5/来源:序号）跨用户可重复，
+    # 隔离由 (id, user_id) 复合 MERGE 键保证，查询一律叠加 user_id 过滤
     "CREATE CONSTRAINT entity_id_unique IF NOT EXISTS FOR (e:Entity) REQUIRE e.id IS UNIQUE",
     "CREATE CONSTRAINT entity_user_name_unique IF NOT EXISTS FOR (e:Entity) REQUIRE (e.user_id, e.name) IS UNIQUE",
     "CREATE CONSTRAINT entity_type_id_unique IF NOT EXISTS FOR (t:EntityType) REQUIRE t.id IS UNIQUE",
     "CREATE CONSTRAINT note_id_unique IF NOT EXISTS FOR (n:Note) REQUIRE n.id IS UNIQUE",
-    "CREATE CONSTRAINT doc_id_unique IF NOT EXISTS FOR (d:Doc) REQUIRE d.id IS UNIQUE",
     "CREATE INDEX chunk_user_index IF NOT EXISTS FOR (c:Chunk) ON (c.user_id)",
-    "CREATE INDEX chunk_source_index IF NOT EXISTS FOR (c:Chunk) ON (c.kind, c.source_id)",
+    "CREATE INDEX chunk_source_user_index IF NOT EXISTS FOR (c:Chunk) ON (c.user_id, c.kind, c.source_id)",
     "CREATE INDEX entity_user_index IF NOT EXISTS FOR (e:Entity) ON (e.user_id)",
+    "CREATE INDEX doc_user_index IF NOT EXISTS FOR (d:Doc) ON (d.user_id)",
 )
 
 

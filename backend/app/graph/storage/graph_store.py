@@ -27,6 +27,13 @@ class GraphStore(ABC):
         """按名称或别名去重写入实体；已存在则合并：aliases/source_note_ids 取去重并集、confidence 取 max，type_id/description 非空才覆盖。"""
 
     @abstractmethod
+    async def update_entity(self, user_id: str, entity_id: str, entity: EntityIn) -> Entity | None:
+        """按 id 定位整体更新（支持改名），不改名时等价字段覆盖；实体不存在返回 None，目标名与其它实体冲突抛 ValueError。
+
+        与 upsert_entity 的差异：upsert 按名称去重（改名会创建新实体），本方法按 id 定位、语义就是"编辑这个实体"。
+        """
+
+    @abstractmethod
     async def get_entity(self, user_id: str, entity_id: str) -> Entity | None:
         """按 id 精确查找实体（限定 user_id），不存在返回 None。"""
 
@@ -45,7 +52,7 @@ class GraphStore(ABC):
     # 关系
     @abstractmethod
     async def create_relation(self, user_id: str, rel: RelationIn) -> Relation:
-        """创建一条实体关系，返回带 id 的 Relation。"""
+        """创建一条实体关系，返回带 id 的 Relation；任一端实体不存在抛 ValueError（调用方转 404）。"""
 
     @abstractmethod
     async def delete_relation(self, user_id: str, relation_id: str) -> None:

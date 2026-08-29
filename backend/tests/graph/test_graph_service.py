@@ -1,4 +1,3 @@
-import asyncio
 
 import pytest
 from sqlalchemy import select
@@ -442,3 +441,49 @@ async def test_cleanup_doc_graph_removes_doc_rows_and_deletes_orphan_entity(db_s
     # 无其他来源的孤儿实体被清理（与其他来源共享的实体才保留）
     assert (await db_session.execute(
         select(GraphEntity).where(GraphEntity.user_id == "u1"))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_update_entity_renames_in_place(db_session):
+    """P1 回归：更新实体按 id 定位——改名原地生效，不再经按名去重误建新实体。"""
+    import pytest as _pytest
+
+    from app.graph.schemas.graph import EntityIn, RelationIn
+    from app.graph.storage.mysql_graph_store import MySQLGraphStore
+
+    store = MySQLGraphStore(db_session)
+    e = await store.upsert_entity("u1", EntityIn(name="旧名", display_name="旧名", confidence=0.5))
+    await store.create_relation("u1", RelationIn(
+        source_id=e.id, target_id=e.id, relation_type="自环"))
+
+    updated = await store.update_entity(
+        "u1", e.id, EntityIn(name="新名", display_name="新名", confidence=0.9))
+    assert updated is not None and updated.id == e.id and updated.name == "新名"
+    rows = (await db_session.execute(
+        select(GraphEntity).where(GraphEntity.user_id == "u1"))).scalars().all()
+    assert len(rows) == 1  # 改名不新建
+    rels = (await db_session.execute(
+        select(GraphRelation).where(GraphRelation.user_id == "u1"))).scalars().all()
+    assert len(rels) == 1  # 原有关系不受影响
+
+    # 改成已有实体名 → 冲突报错而非静默合并
+    await store.upsert_entity("u1", EntityIn(name="另一实体", confidence=0.5))
+    with _pytest.raises(ValueError):
+        await store.update_entity("u1", e.id, EntityIn(name="另一实体", confidence=0.5))
+
+    # 不存在的实体 → None
+    assert await store.update_entity("u1", "no-such", EntityIn(name="x", confidence=0.5)) is None
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_create_relation_missing_entity_raises(db_session):
+    """P1 回归：任一端实体不存在时创建关系抛 ValueError（防幽灵成功）。"""
+    from app.graph.schemas.graph import RelationIn
+    from app.graph.storage.mysql_graph_store import MySQLGraphStore
+
+    store = MySQLGraphStore(db_session)
+    with pytest.raises(ValueError):
+        await store.create_relation("u1", RelationIn(
+            source_id="ghost-a", target_id="ghost-b", relation_type="x"))
+    await db_session.rollback()

@@ -100,6 +100,29 @@ class MySQLGraphStore(GraphStore):
         await self.session.flush()
         return _entity_to_schema(row)
 
+    async def update_entity(self, user_id: str, entity_id: str, entity: EntityIn) -> Entity | None:
+        """按 id 定位整体更新（支持改名）；实体不存在返回 None，目标名与其它实体冲突抛 ValueError。"""
+        row = (await self.session.execute(
+            select(GraphEntity).where(GraphEntity.id == entity_id, GraphEntity.user_id == user_id)
+        )).scalar_one_or_none()
+        if row is None:
+            return None
+        conflict = (await self.session.execute(
+            select(GraphEntity.id).where(GraphEntity.user_id == user_id,
+                                         GraphEntity.name == entity.name,
+                                         GraphEntity.id != entity_id))).scalar_one_or_none()
+        if conflict is not None:
+            raise ValueError(f"实体名 {entity.name} 已被其它实体占用")
+        row.name = entity.name
+        row.display_name = entity.display_name or entity.name
+        row.type_id = entity.type_id
+        row.description = entity.description
+        row.aliases = entity.aliases
+        row.confidence = entity.confidence
+        row.source_note_ids = entity.source_note_ids
+        await self.session.flush()
+        return _entity_to_schema(row)
+
     async def get_entity(self, user_id: str, entity_id: str) -> Entity | None:
         """按 id 取单个实体；不存在返回 None。"""
         row = (await self.session.execute(
@@ -162,7 +185,15 @@ class MySQLGraphStore(GraphStore):
 
     # ---- 关系 ----
     async def create_relation(self, user_id: str, rel: RelationIn) -> Relation:
-        """新建 RELATES_TO 关系行（properties 为 JSON 列，免序列化）。"""
+        """新建 RELATES_TO 关系行（properties 为 JSON 列，免序列化）；任一端实体不存在抛 ValueError。"""
+        src = (await self.session.execute(
+            select(GraphEntity.id).where(GraphEntity.id == rel.source_id,
+                                         GraphEntity.user_id == user_id))).scalar_one_or_none()
+        dst = (await self.session.execute(
+            select(GraphEntity.id).where(GraphEntity.id == rel.target_id,
+                                         GraphEntity.user_id == user_id))).scalar_one_or_none()
+        if src is None or dst is None:
+            raise ValueError("源或目标实体不存在，无法创建关系")
         row = GraphRelation(id=str(uuid.uuid4()), user_id=user_id, source_id=rel.source_id,
                             target_id=rel.target_id, relation_type=rel.relation_type,
                             properties=rel.properties, confidence=rel.confidence)

@@ -141,6 +141,35 @@ class Neo4jGraphStore(GraphStore):
         )
         return Entity(**created)
 
+    async def update_entity(self, user_id: str, entity_id: str, entity: EntityIn) -> Entity | None:
+        """按 id 定位整体更新（支持改名），与 upsert 的按名去重语义无关；实体不存在返回 None。
+
+        目标名与其它实体冲突抛 ValueError（(user_id, name) 唯一约束的前置友好校验）。
+        """
+        rows = await self._run(
+            "MATCH (e:Entity) WHERE e.id=$eid AND e.user_id=$uid RETURN e LIMIT 1",
+            {"eid": entity_id, "uid": user_id},
+        )
+        if not rows:
+            return None
+        conflict = await self._run(
+            "MATCH (e:Entity) WHERE e.user_id=$uid AND e.name=$name AND e.id<>$eid RETURN e LIMIT 1",
+            {"uid": user_id, "name": entity.name, "eid": entity_id},
+        )
+        if conflict:
+            raise ValueError(f"实体名 {entity.name} 已被其它实体占用")
+        await self._run(
+            "MATCH (e:Entity) WHERE e.id=$eid AND e.user_id=$uid "
+            "SET e.name=$name, e.display_name=$display_name, e.type_id=$type_id, "
+            "e.description=$description, e.aliases=$aliases, e.confidence=$confidence, "
+            "e.source_note_ids=$source_note_ids",
+            {"eid": entity_id, "uid": user_id, "name": entity.name,
+             "display_name": entity.display_name or entity.name, "type_id": entity.type_id,
+             "description": entity.description, "aliases": entity.aliases,
+             "confidence": entity.confidence, "source_note_ids": entity.source_note_ids},
+        )
+        return await self.get_entity(user_id, entity_id)
+
     async def get_entity(self, user_id: str, entity_id: str) -> Entity | None:
         """按 id 取单个实体；不存在返回 None。"""
         rows = await self._run(
@@ -216,7 +245,17 @@ class Neo4jGraphStore(GraphStore):
 
     # ---- 关系 ----
     async def create_relation(self, user_id: str, rel: RelationIn) -> Relation:
-        """在两实体间新建 RELATES_TO 边（properties 序列化为 JSON 存储）。"""
+        """在两实体间新建 RELATES_TO 边（properties 序列化为 JSON 存储）。
+
+        任一端实体不存在抛 ValueError（防幽灵成功：MATCH 不中时 CREATE 静默不执行）。
+        """
+        rows = await self._run(
+            "MATCH (a:Entity {id: $source_id, user_id: $uid}), (b:Entity {id: $target_id, user_id: $uid}) "
+            "RETURN a.id AS a, b.id AS b LIMIT 1",
+            {"source_id": rel.source_id, "target_id": rel.target_id, "uid": user_id},
+        )
+        if not rows:
+            raise ValueError("源或目标实体不存在，无法创建关系")
         rid = str(uuid.uuid4())
         await self._run(
             "MATCH (a:Entity {id: $source_id, user_id: $uid}), (b:Entity {id: $target_id, user_id: $uid}) "
@@ -486,26 +525,40 @@ class Neo4jGraphStore(GraphStore):
         )
 
     # ---- Chunk 检索扩展 ----
+    async def source_entity_candidates(self, user_id: str, source_type: str, source_id: str) -> list[str]:
+        """某来源此前关联的实体 id（source_note_ids 成员）——重抽后收缩引用的候选集。"""
+        rows = await self._run(
+            "MATCH (e:Entity) WHERE e.user_id=$uid AND $sid IN coalesce(e.source_note_ids, []) "
+            "RETURN collect(DISTINCT e.id) AS ids",
+            {"uid": user_id, "sid": source_id},
+        )
+        return list(rows[0]["ids"] or []) if rows else []
+
     async def ensure_source_node(self, user_id: str, source_type: str, source_id: str, title: str) -> None:
-        """确保 Note/Doc 源节点存在（作为 MENTIONS 边端点），缺失时按标题补建。"""
+        """确保 Note/Doc 源节点存在（作为 MENTIONS 边端点），缺失时按标题补建。
+
+        MERGE 键含 user_id：文档 source_id 是内容 md5，跨用户可重复，必须按用户隔离。
+        """
         if source_type == "doc":
             await self._run(
-                "MERGE (d:Doc {id: $sid}) "
-                "ON CREATE SET d.user_id = $uid, d.filename = $title, d.created_at = timestamp() "
+                "MERGE (d:Doc {id: $sid, user_id: $uid}) "
+                "ON CREATE SET d.created_at = timestamp() "
                 "SET d.filename = $title",
                 {"sid": source_id, "uid": user_id, "title": title},
             )
         else:
             await self._run(
-                "MERGE (n:Note {id: $sid}) "
-                "ON CREATE SET n.user_id = $uid "
+                "MERGE (n:Note {id: $sid, user_id: $uid}) "
                 "SET n.title = $title",
                 {"sid": source_id, "uid": user_id, "title": title},
             )
 
     async def upsert_chunks(self, user_id: str, source_type: str, source_id: str, source_name: str,
                             chunks: list[dict]) -> None:
-        """批量写入来源 Chunk；id 固定为 来源类型:来源ID:序号，MERGE 保证重复抽取幂等覆盖。"""
+        """批量写入来源 Chunk；业务键为 (user_id, 来源类型:来源ID:序号)，MERGE 保证重复抽取幂等覆盖。
+
+        文档 source_id 是 md5 跨用户可重复，id 不含 user_id 时会互相覆盖——隔离全靠复合 MERGE 键。
+        """
         rows = []
         for chunk in chunks:
             rows.append({
@@ -519,8 +572,8 @@ class Neo4jGraphStore(GraphStore):
             return
         await self._run(
             "UNWIND $rows AS row "
-            "MERGE (c:Chunk {id: row.id}) "
-            "SET c.user_id = row.user_id, c.kind = row.kind, c.source_id = row.source_id, "
+            "MERGE (c:Chunk {id: row.id, user_id: row.user_id}) "
+            "SET c.kind = row.kind, c.source_id = row.source_id, "
             "c.source_name = row.source_name, c.chunk_index = row.chunk_index, c.text = row.text, "
             "c.embedding = row.embedding, c.page = row.page, c.image_paths = row.image_paths",
             {"rows": rows},
@@ -534,45 +587,40 @@ class Neo4jGraphStore(GraphStore):
 
     async def set_source_mentions(self, user_id: str, source_type: str, source_id: str,
                                   links: list[dict]) -> None:
-        """links: [{entity_id, mention_count, context(list[dict])}]；context 序列化为 JSON。"""
-        await self._run(
-            "MATCH (src) WHERE (src:Note OR src:Doc) AND src.id=$sid AND src.user_id=$uid "
-            "MATCH (src)-[m:MENTIONS]->() DELETE m",
-            {"sid": source_id, "uid": user_id},
-        )
-        if not links:
-            return
+        """links: [{entity_id, mention_count, context(list[dict])}]；先清后插放同一事务（防中途失败半无关联）。
+
+        context 序列化为 JSON（Neo4j 列表属性只能是标量）。
+        """
         rows = [{"entity_id": link["entity_id"], "mention_count": link.get("mention_count", 0),
                  "context_json": json.dumps(link.get("context") or [], ensure_ascii=False)}
                 for link in links]
-        await self._run(
-            "UNWIND $rows AS row "
-            "MATCH (src) WHERE (src:Note OR src:Doc) AND src.id=$sid AND src.user_id=$uid "
-            "MATCH (e:Entity {id: row.entity_id, user_id: $uid}) "
-            "CREATE (src)-[:MENTIONS {id: randomUUID(), mention_count: row.mention_count, "
-            "context_json: row.context_json}]->(e)",
-            {"rows": rows, "sid": source_id, "uid": user_id},
+        await self._tx(
+            ("MATCH (src) WHERE (src:Note OR src:Doc) AND src.id=$sid AND src.user_id=$uid "
+             "MATCH (src)-[m:MENTIONS]->() DELETE m",
+             {"sid": source_id, "uid": user_id}),
+            ("UNWIND $rows AS row "
+             "MATCH (src) WHERE (src:Note OR src:Doc) AND src.id=$sid AND src.user_id=$uid "
+             "MATCH (e:Entity {id: row.entity_id, user_id: $uid}) "
+             "CREATE (src)-[:MENTIONS {id: randomUUID(), mention_count: row.mention_count, "
+             "context_json: row.context_json}]->(e)",
+             {"rows": rows, "sid": source_id, "uid": user_id}),
         )
 
     async def set_chunk_mentions(self, user_id: str, source_type: str, source_id: str,
                                  links: list[dict]) -> None:
-        """links: [{entity_id, chunk_indexes}]；先清本来源 Chunk 级边再插入。"""
-        await self._run(
-            "MATCH (:Chunk {user_id: $uid, kind: $kind, source_id: $sid})-[m:MENTIONS]->() DELETE m",
-            {"uid": user_id, "kind": source_type, "sid": source_id},
-        )
+        """links: [{entity_id, chunk_indexes}]；先清后插放同一事务（防中途失败半无关联）。"""
         rows = [{"entity_id": link["entity_id"],
                  "chunk_ids": [f"{source_type}:{source_id}:{idx}" for idx in link.get("chunk_indexes", [])]}
                 for link in links]
         rows = [row for row in rows if row["chunk_ids"]]
-        if not rows:
-            return
-        await self._run(
-            "UNWIND $rows AS row "
-            "MATCH (c:Chunk) WHERE c.id IN row.chunk_ids AND c.user_id = $uid "
-            "MATCH (e:Entity {id: row.entity_id, user_id: $uid}) "
-            "CREATE (c)-[:MENTIONS]->(e)",
-            {"rows": rows, "uid": user_id},
+        await self._tx(
+            ("MATCH (:Chunk {user_id: $uid, kind: $kind, source_id: $sid})-[m:MENTIONS]->() DELETE m",
+             {"uid": user_id, "kind": source_type, "sid": source_id}),
+            ("UNWIND $rows AS row "
+             "MATCH (c:Chunk) WHERE c.id IN row.chunk_ids AND c.user_id = $uid "
+             "MATCH (e:Entity {id: row.entity_id, user_id: $uid}) "
+             "CREATE (c)-[:MENTIONS]->(e)",
+             {"rows": rows, "uid": user_id}),
         )
 
     async def set_relations_from_source(self, user_id: str, source_type: str, source_id: str,
@@ -679,12 +727,15 @@ class Neo4jGraphStore(GraphStore):
         return hits
 
     async def get_chunks_mentioning(self, user_id: str, entity_ids: list[str], limit: int) -> list[ChunkHit]:
-        """取提及指定实体的 Chunk 原文（图谱证据补正文可引用；score 为 None 不参与排序）。"""
+        """取提及指定实体的 Chunk 原文（图谱证据补正文可引用；score 为 None 不参与排序）。
+
+        Chunk 按用户过滤：文档 md5 跨用户可重复，不同用户的同 id Chunk 是不同节点。
+        """
         if not entity_ids:
             return []
         rows = await self._run(
             "MATCH (c:Chunk)-[:MENTIONS]->(e:Entity) "
-            "WHERE e.user_id=$uid AND e.id IN $ids RETURN c LIMIT $limit",
+            "WHERE e.user_id=$uid AND e.id IN $ids AND c.user_id=$uid RETURN c LIMIT $limit",
             {"uid": user_id, "ids": entity_ids, "limit": max(1, limit)},
         )
         return [ChunkHit(

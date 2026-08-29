@@ -261,3 +261,73 @@ async def test_clear_all_docs(store, uid, _cleanup):
     assert await store.get_entity(uid, e.id) is None  # 失去唯一来源 → 孤儿清扫
     doc_hits = await store.search_chunks(uid, _vec(3), None, None, limit=5)
     assert doc_hits == []
+
+
+@pytest.mark.asyncio
+async def test_update_entity_rename_and_conflict(store, uid, _cleanup):
+    from app.graph.schemas.graph import EntityIn
+
+    e = await store.upsert_entity(uid, EntityIn(name="旧名", confidence=0.5))
+    updated = await store.update_entity(uid, e.id, EntityIn(name="新名", confidence=0.9))
+    assert updated.id == e.id and updated.name == "新名"
+    assert await store.search_entities(uid, "旧名", 5) == []  # 改名不新建、旧名不残留
+
+    await store.upsert_entity(uid, EntityIn(name="另一实体", confidence=0.5))
+    with pytest.raises(ValueError):
+        await store.update_entity(uid, e.id, EntityIn(name="另一实体", confidence=0.5))
+
+
+@pytest.mark.asyncio
+async def test_create_relation_missing_entity_raises(store, uid, _cleanup):
+    from app.graph.schemas.graph import RelationIn
+
+    with pytest.raises(ValueError):
+        await store.create_relation(uid, RelationIn(
+            source_id="ghost-a", target_id="ghost-b", relation_type="x"))
+
+
+@pytest.mark.asyncio
+async def test_multi_user_same_md5_isolated(store, _cleanup):
+    """P0 回归：两个用户上传同一 md5 文档，Doc/Chunk/提及按用户隔离互不可见。"""
+    from app.graph.schemas.graph import EntityIn
+    from app.graph.storage import neo4j_client
+
+    uid_a, uid_b = "ta" + uuid.uuid4().hex[:8], "tb" + uuid.uuid4().hex[:8]
+    md5 = "same" + uuid.uuid4().hex[:8]
+    driver = neo4j_client.get_neo4j_driver()
+    try:
+        await store.ensure_source_node(uid_a, "doc", md5, "同一文件.pdf")
+        await store.ensure_source_node(uid_b, "doc", md5, "同一文件.pdf")
+        ea = (await store.upsert_entity(uid_a, EntityIn(
+            name="共享实体", confidence=0.8, source_note_ids=[md5])))
+        eb = (await store.upsert_entity(uid_b, EntityIn(
+            name="共享实体", confidence=0.8, source_note_ids=[md5])))
+        assert ea.id != eb.id  # 实体按 (user_id, name) 隔离
+        await store.set_source_mentions(uid_a, "doc", md5, [
+            {"entity_id": ea.id, "mention_count": 1, "context": []}])
+        await store.set_source_mentions(uid_b, "doc", md5, [
+            {"entity_id": eb.id, "mention_count": 1, "context": []}])
+        await store.upsert_chunks(uid_a, "doc", md5, "同一文件.pdf",
+                                  [{"chunk_index": 0, "text": "用户A的正文"}])
+        await store.upsert_chunks(uid_b, "doc", md5, "同一文件.pdf",
+                                  [{"chunk_index": 0, "text": "用户B的正文"}])
+        await store.set_chunk_mentions(uid_a, "doc", md5,
+                                       [{"entity_id": ea.id, "chunk_indexes": [0]}])
+        await store.set_chunk_mentions(uid_b, "doc", md5,
+                                       [{"entity_id": eb.id, "chunk_indexes": [0]}])
+
+        # 各自的 chunk 提及查询只见自己的正文（修复前同 id Chunk 互相覆盖/串数据）
+        hits_a = await store.get_chunks_mentioning(uid_a, [ea.id], 5)
+        hits_b = await store.get_chunks_mentioning(uid_b, [eb.id], 5)
+        assert [h.text for h in hits_a] == ["用户A的正文"]
+        assert [h.text for h in hits_b] == ["用户B的正文"]
+
+        # 混合检索同样按用户隔离
+        seen_a = {h.text for h in await store.search_chunks(uid_a, None, "正文", None, 10)}
+        seen_b = {h.text for h in await store.search_chunks(uid_b, None, "正文", None, 10)}
+        assert seen_a == {"用户A的正文"}
+        assert seen_b == {"用户B的正文"}
+    finally:
+        for u in (uid_a, uid_b):
+            await driver.execute_query(
+                "MATCH (n) WHERE n.user_id = $uid DETACH DELETE n", {"uid": u})
