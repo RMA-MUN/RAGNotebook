@@ -78,18 +78,29 @@ function birthPosition(id: string, edges: GraphEdge[], existing: Map<string, Sim
 
 /** 合帧绘制：setData 后与物理 tick 共用，避免重入排队；gate 存放进行中的绘制 Promise，可据此衔接首帧后的视口操作 */
 function scheduleDraw(graph: Graph, gate: { current: Promise<void> | null }): Promise<void> {
-  // 卸载/StrictMode 双挂载的销毁可能落在调用侧入口守卫之后：这里兜底，避免对已销毁实例调 draw() 触发 G6 告警
-  if (graph.destroyed) return Promise.resolve()
   if (gate.current) return gate.current
-  const drawn = graph.draw()
-    .catch((err: unknown) => {
-      if (!graph.destroyed) console.warn('[graph] 帧绘制失败:', err)
+  // draw() 的异步管线不可取消，入口守卫拦不住「调用后才销毁」：开发环境 StrictMode 双挂载
+  // 会在首轮 draw 管线执行中途销毁实例，G6 内部打出 destroyed 告警。推迟到下一帧发起并
+  // 在发起前复查销毁状态——StrictMode 的销毁总在同步 commit 周期内完成，必然早于下一帧。
+  if (graph.destroyed) return Promise.resolve()
+  const deferred = new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      if (graph.destroyed) {
+        resolve()
+        return
+      }
+      graph.draw()
+        .catch((err: unknown) => {
+          if (!graph.destroyed) console.warn('[graph] 帧绘制失败:', err)
+        })
+        .then(() => resolve())
     })
-    .finally(() => {
-      gate.current = null
-    })
-  gate.current = drawn
-  return drawn
+  })
+  gate.current = deferred
+  deferred.then(() => {
+    if (gate.current === deferred) gate.current = null
+  })
+  return deferred
 }
 
 export function GraphCanvas({ view, typeColors, onSelectNode, fitSignal = 0 }: Props) {
