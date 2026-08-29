@@ -2,7 +2,7 @@
 import asyncio
 import json
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.routing import APIRouter
 
@@ -134,7 +134,12 @@ async def update_entity(entity_id: str, payload: EntityIn,
         confidence=updates.get("confidence", e.confidence),
         source_note_ids=e.source_note_ids,
     )
-    updated = await store.upsert_entity(user_id, merged)
+    # 按 id 整体更新：upsert_entity 按名称去重，改名会创建新实体而非修改
+    try:
+        updated = await store.update_entity(user_id, entity_id, merged)
+    except ValueError as e:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=str(e))
     await db.commit()
     return success_response(data=updated.model_dump())
 
@@ -194,7 +199,11 @@ async def delete_type(type_id: str, user_id: str = Depends(get_current_user_id),
 @graph_router.post("/relations")
 async def create_relation(payload: RelationIn, user_id: str = Depends(get_current_user_id),
                           db: AsyncSession = Depends(get_db)):
-    r = await get_graph_store(db).create_relation(user_id, payload)
+    try:
+        r = await get_graph_store(db).create_relation(user_id, payload)
+    except ValueError as e:
+        await db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
     await db.commit()
     return success_response(data=r.model_dump())
 
