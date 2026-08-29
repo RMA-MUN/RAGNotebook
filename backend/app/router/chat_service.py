@@ -4,7 +4,6 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from app.agent.agent import get_agent_response
 from app.core.logger_handler import logger
 from app.rag.reorder_service import reorder_service
 from app.services import session_manager as sm
@@ -12,20 +11,6 @@ from app.services import session_manager as sm
 
 class ChatService:
     """路由服务层，处理业务逻辑"""
-
-    async def handle_agent_query(self, query: str, session_id: str | None, user_id: str) -> tuple[str, dict, str]:
-        """处理智能代理查询逻辑"""
-        session_id = session_id or str(uuid.uuid4())
-
-        history = await sm.session_manager.get_history(session_id, user_id)
-
-        result = await get_agent_response(query, history)
-        response = result.get("response")
-        steps = result.get("steps", [])
-
-        await sm.session_manager.add_message(session_id, user_id, query, response)
-
-        return session_id, response, steps
 
     async def handle_get_session(self, session_id: str, user_id: str) -> list[tuple[str, str]]:
         """处理获取会话逻辑"""

@@ -23,12 +23,6 @@ class FakeChatService:
     def __init__(self):
         self.calls = []
 
-    async def handle_agent_query(self, query, session_id, user_id):
-        return "sid-1", "agent 回答", []
-
-    async def handle_rag_query(self, query, user_id):
-        return "RAG 摘要回答"
-
     async def handle_get_session(self, session_id, user_id):
         return [("你好", "你好呀")]
 
