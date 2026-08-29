@@ -12,7 +12,6 @@ export const endpoints = {
 
   // AI Chat
   agentQueryStream: '/chat/agent/query/stream',
-  ragQuery: '/chat/rag/query',
 
   // Sessions
   getSession: (id: string) => `/chat/session/${id}`,

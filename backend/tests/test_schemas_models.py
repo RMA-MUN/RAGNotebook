@@ -27,8 +27,6 @@ from app.schemas.models import (
     NoteUpdate,
     PageRequest,
     QueryRequest,
-    RAGRequest,
-    RAGResponse,
     ReorderRequest,
     ReorderResponse,
     RelatedNoteItem,
@@ -70,14 +68,6 @@ class TestQueryRequest:
 
     def test_query_must_be_str(self):
         _assert_raises_for(QueryRequest, {"query": 123}, "query")
-
-
-class TestRAGRequest:
-    def test_valid(self):
-        assert RAGRequest(query="q").query == "q"
-
-    def test_query_required(self):
-        _assert_raises_for(RAGRequest, {}, "query")
 
 
 class TestSessionResponse:
@@ -320,12 +310,6 @@ class TestNoteTemplateSchemas:
 
 
 class TestResponseModels:
-    def test_rag_response(self):
-        assert RAGResponse(response="r").response == "r"
-
-    def test_rag_response_required(self):
-        _assert_raises_for(RAGResponse, {}, "response")
-
     def test_related_notes_response(self):
         item = RelatedNoteItem(id="n1", title="t", content_preview="p", similarity=0.5, source="note")
         model = RelatedNotesResponse(notes=[item])

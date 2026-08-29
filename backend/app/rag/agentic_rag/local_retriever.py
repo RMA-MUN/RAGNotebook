@@ -1,26 +1,32 @@
-import hashlib
+"""本地检索器：全部走 Neo4j 图存储（种子 = Chunk 向量+全文，图扩展 = 实体/关系/提及 chunk）。
+
+- search_notes          → search_chunks(kinds=["note"])
+- search_knowledge_base → search_chunks(kinds=["doc"])
+- hybrid_search         → search_chunks(kinds=None)（单次调用，RRF 已融合笔记与文档）
+- search_graph          → 实体候选词匹配 → 实体证据 + 命中实体的 chunk 片段补充
+
+工具名保持不变，执行层已从 Chroma/EnsembleRetriever 切换为图存储。
+"""
+import asyncio
 from collections.abc import Callable
 from typing import Any
 
-from langchain_core.documents import Document
-
 from app.db.db_config import AsyncSessionLocal
+from app.graph.schemas.graph import ChunkHit
 from app.graph.storage import get_graph_store
+from app.graph.storage.neo4j_graph_store import Neo4jGraphStore
 from app.rag.agentic_rag.query_entity_extractor import QueryEntityExtractor
 from app.rag.agentic_rag.schemas import Evidence, RetrievalStep
-from app.rag.vector_store import VectorStoreService
 
 
 class LocalRetriever:
     def __init__(
         self,
         note_service: Any | None = None,
-        vector_store: Any | None = None,
         session_factory: Callable[[], Any] = AsyncSessionLocal,
         query_entity_extractor: QueryEntityExtractor | None = None,
     ):
         self.note_service = note_service
-        self.vector_store = vector_store
         self.session_factory = session_factory
         self.query_entity_extractor = query_entity_extractor
 
@@ -29,42 +35,35 @@ class LocalRetriever:
 
         for step in steps:
             if step.tool == "search_notes":
-                evidences.extend(await self._search_notes(user_id, step))
+                evidences.extend(await self._search_chunks(user_id, step, kinds=["note"]))
             elif step.tool == "search_knowledge_base":
-                evidences.extend(await self._search_knowledge_base(user_id, step))
+                evidences.extend(await self._search_chunks(user_id, step, kinds=["doc"]))
             elif step.tool == "search_graph":
                 evidences.extend(await self._search_graph(user_id, step))
             elif step.tool == "hybrid_search":
-                evidences.extend(await self._search_notes(user_id, step))
-                evidences.extend(await self._search_knowledge_base(user_id, step))
+                evidences.extend(await self._search_chunks(user_id, step, kinds=None))
 
         return evidences
 
-    async def _search_notes(self, user_id: str, step: RetrievalStep) -> list[Evidence]:
-        note_service = self._note_service()
-        if note_service is None:
-            return []
-
+    async def _search_chunks(self, user_id: str, step: RetrievalStep,
+                             kinds: list[str] | None) -> list[Evidence]:
+        """种子检索：向量 + 全文（store 内 RRF 融合）取 top chunk。"""
         async with self.session_factory() as db:
-            notes = await note_service.search_notes(db, user_id, step.query, top_k=step.top_k)
-
-        return [self._note_to_evidence(note) for note in notes]
-
-    async def _search_knowledge_base(self, user_id: str, step: RetrievalStep) -> list[Evidence]:
-        vector_store = self.vector_store or VectorStoreService()
-        retriever = await vector_store.get_retriever(step.query, user_id)
-        documents = (await retriever.ainvoke(step.query))[: step.top_k]
-        return [self._document_to_evidence(document) for document in documents]
+            store = get_graph_store(db)
+            embedding = await self._query_embedding(step.query)
+            try:
+                hits = await store.search_chunks(user_id, embedding, step.query, kinds, step.top_k)
+            except NotImplementedError:
+                # MySQL 回落实现无 Chunk 检索能力（测试环境）
+                return []
+            return [self._chunk_to_evidence(hit) for hit in hits]
 
     async def _search_graph(self, user_id: str, step: RetrievalStep) -> list[Evidence]:
-        """从知识图谱检索实体：先用 LLM（兜底规则）从问句抽实体候选词，再逐词匹配图谱。
-
-        实体本身没有正文，因此证据内容 = 实体描述 + 类型 + 别名 + 关联笔记标题列表；
-        若实体无描述，则用其关联笔记的标题占位，避免注入空内容被 LLM 忽略。
-        同一实体（别名/多条查询词命中同一行）按实体 id 去重。
-        """
+        """从知识图谱检索：先抽实体候选词匹配实体（证据=描述+类型+别名+关联来源），
+        Neo4j 主路径再补命中实体所在的 chunk 片段，让图谱证据有正文可引。"""
         evidences: list[Evidence] = []
         names = await self._entity_candidates(step.query)
+        matched_entity_ids: list[str] = []
         async with self.session_factory() as db:
             store = get_graph_store(db)
             seen_entity_ids: set[str] = set()
@@ -74,6 +73,7 @@ class LocalRetriever:
                     if entity.id in seen_entity_ids:
                         continue
                     seen_entity_ids.add(entity.id)
+                    matched_entity_ids.append(entity.id)
                     links = await store.get_entity_notes(user_id, entity.id)
                     noted: set[str] = set()
                     notes: list[str] = []
@@ -88,7 +88,7 @@ class LocalRetriever:
                     if content:
                         content = f"{content}（类型：{entity.type_id or '未分类'}；别名：{', '.join(entity.aliases) if entity.aliases else '—'}）"
                     if notes:
-                        content = f"{content}\n关联笔记：{'、'.join(notes)}" if content else "关联笔记：" + "、".join(notes)
+                        content = f"{content}\n关联来源：{'、'.join(notes)}" if content else "关联来源：" + "、".join(notes)
                     evidences.append(Evidence(
                         id=entity.id,
                         source="graph",
@@ -96,6 +96,14 @@ class LocalRetriever:
                         content=content or title,
                         metadata={"type_id": entity.type_id, "aliases": entity.aliases},
                     ))
+
+            if isinstance(store, Neo4jGraphStore) and matched_entity_ids:
+                try:
+                    chunk_hits = await store.get_chunks_mentioning(
+                        user_id, matched_entity_ids, limit=6)
+                except NotImplementedError:
+                    chunk_hits = []
+                evidences.extend(self._chunk_to_evidence(hit) for hit in chunk_hits)
         return evidences
 
     async def _entity_candidates(self, query: str) -> list[str]:
@@ -104,67 +112,31 @@ class LocalRetriever:
         try:
             return await extractor.extract(query)
         except Exception as e:
+            from app.core.logger_handler import logger
+
             logger.warning(f"查询实体抽取失败，回落规则: {query}: {e}")
             return QueryEntityExtractor._fallback_candidates(query)
 
-    def _note_service(self):
-        if self.note_service is not None:
-            return self.note_service
-
+    @staticmethod
+    async def _query_embedding(query: str) -> list[float] | None:
+        """query 向量实时计算（失败返回 None，退化为纯全文检索）。"""
         from app.core.background_init import init_manager
 
-        return init_manager.note_service
+        model = init_manager.embed_model
+        if model is None or not query:
+            return None
+        try:
+            return await asyncio.to_thread(model.embed_query, query)
+        except Exception:
+            return None
 
     @staticmethod
-    def _note_to_evidence(note: Any) -> Evidence:
+    def _chunk_to_evidence(hit: ChunkHit) -> Evidence:
         return Evidence(
-            id=str(getattr(note, "id", "")),
-            source="note",
-            title=str(getattr(note, "title", "无标题") or "无标题"),
-            content=str(getattr(note, "content", "") or ""),
+            id=hit.id,
+            source="note" if hit.kind == "note" else "knowledge_base",
+            title=hit.source_name or ("笔记" if hit.kind == "note" else "知识库文档"),
+            content=hit.text,
+            score=hit.score,
+            metadata={"source_id": hit.source_id, "chunk_index": hit.chunk_index, **hit.metadata},
         )
-
-    @staticmethod
-    def _document_to_evidence(document: Document) -> Evidence:
-        metadata = dict(document.metadata or {})
-        content = document.page_content or ""
-        evidence_id = _document_id(metadata, content)
-
-        return Evidence(
-            id=evidence_id,
-            source="knowledge_base",
-            title=_document_title(metadata),
-            content=content,
-            score=_metadata_score(metadata),
-            metadata=metadata,
-        )
-
-
-def _document_id(metadata: dict[str, Any], content: str) -> str:
-    for key in ("note_id", "id"):
-        value = metadata.get(key)
-        if value:
-            return str(value)
-
-    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
-    for key in ("source", "filename", "original_filename"):
-        value = metadata.get(key)
-        if value:
-            return f"{value}-{digest}"
-
-    return f"doc-{digest}"
-
-
-def _document_title(metadata: dict[str, Any]) -> str:
-    for key in ("title", "original_filename", "source", "filename"):
-        value = metadata.get(key)
-        if value:
-            return str(value)
-    return "知识库文档"
-
-
-def _metadata_score(metadata: dict[str, Any]) -> float | None:
-    score = metadata.get("score")
-    if isinstance(score, int | float):
-        return float(score)
-    return None
