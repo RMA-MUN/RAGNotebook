@@ -96,7 +96,8 @@ async def _ensure_extract_log(db: AsyncSession, user_id: str, source_id: str, co
 
 async def _run_extraction(source_id: str, user_id: str, title: str, body_hash: str,
                           body: str = None, source_type: str = "note",
-                          chunks: list[dict] | None = None) -> bool:
+                          chunks: list[dict] | None = None,
+                          claim_check=None) -> bool:
     """抽取管线：LLM 抽取 → upsert 实体/关系 → 先清后插来源关联 → 落日志 → 推送。
 
     source_type="note" 时额外做双链解析与笔记双链边；"doc" 时不做双链（文档不入笔记图）。
@@ -149,6 +150,12 @@ async def _run_extraction(source_id: str, user_id: str, title: str, body_hash: s
                 await db.commit()
                 return True
 
+            # 2.6 认领复检：抽取期间任务被重新入队（状态/令牌/哈希已变）则放弃写入，
+            #     防旧正文的抽取结果覆盖新任务（写图谱前的最后一道闸）
+            if claim_check is not None and not await claim_check():
+                logger.info(f"任务在抽取期间被重新入队，放弃写入 source_id={source_id}")
+                return True
+
             # 3/4. upsert 实体 + 关系（关系按来源溯源，先清后写）
             type_map = await _type_name_to_id(store, user_id)
             name_to_id: dict[str, str] = {}
@@ -181,6 +188,12 @@ async def _run_extraction(source_id: str, user_id: str, title: str, body_hash: s
                         target_id=rel["target_id"], relation_type=rel["relation_type"],
                         confidence=rel["confidence"], source_note_id=source_id,
                         source_type=source_type))
+
+            # 4.5 记录本来源此前关联的实体（Neo4j）：写入后据此收缩 source_note_ids 并孤儿清扫，
+            #     防正文已删除的旧实体继续以图证据身份存在
+            old_entity_ids: list[str] = []
+            if neo4j is not None:
+                old_entity_ids = await neo4j.source_entity_candidates(user_id, source_type, source_id)
 
             # 5. 来源级关联：先清后插（幂等覆盖 mentions）
             mention_links = [
@@ -217,6 +230,10 @@ async def _run_extraction(source_id: str, user_id: str, title: str, body_hash: s
                     await neo4j.set_chunk_mentions(user_id, source_type, source_id, [
                         {"entity_id": name_to_id[name], "chunk_indexes": idxs}
                         for name, idxs in matched.items() if name in name_to_id])
+                # 引用收缩：本轮抽取未再关联的旧实体摘除本来源，无任何引用残留即级联删除
+                removed = [eid for eid in old_entity_ids if eid not in name_to_id.values()]
+                if removed:
+                    await neo4j.sweep_orphan_entities(user_id, removed, [source_id])
 
             # 6. 笔记双链边：先清后插出边（目标笔记需存在；Neo4j 单向存储、查询双向匹配）
             if source_type == "note":
@@ -312,7 +329,7 @@ async def _enqueue_build_task(user_id: str, source_type: str, source_id: str, ti
             row.payload = payload_json
             row.status = "pending"
             row.error_message = None
-            row.force = force or row.force
+            row.force = force  # 按本次触发重置：手动强抽不永久粘滞到后续普通保存
             if content_changed:
                 row.attempts = 0
         await db.commit()
@@ -351,7 +368,8 @@ async def manual_re_extract(note_id: str, user_id: str) -> bool:
     """手动重抽：强制入队（worker 跳过内容哈希判重）。"""
     async with AsyncSessionLocal() as db:
         row = (await db.execute(select(GraphExtractLog).where(
-            GraphExtractLog.user_id == user_id, GraphExtractLog.note_id == note_id))).scalar_one_or_none()
+            GraphExtractLog.user_id == user_id, GraphExtractLog.note_id == note_id,
+            GraphExtractLog.source_type == "note"))).scalar_one_or_none()
         h = row.content_hash if row else content_hash("")
         if row is None:
             db.add(GraphExtractLog(id=str(uuid.uuid4()), user_id=user_id, note_id=note_id,
@@ -363,8 +381,12 @@ async def manual_re_extract(note_id: str, user_id: str) -> bool:
     return await _enqueue_build_task(user_id, "note", note_id, "", h, {}, force=True)
 
 
-async def process_task(task_id: str) -> bool:
+async def process_task(task_id: str, run_token: str | None = None) -> bool:
     """执行单条已认领（running）的构建任务：哈希判重 → 跑抽取管线 → 回写任务状态。
+
+    run_token 为 worker 认领时写入的令牌：执行前与回写前均校验未被替换——期间任务被
+    重新入队（编辑/force 触发）则本次结果作废（不写终态、不重试），防旧内容覆盖新任务。
+    传 None 走无令牌兼容路径（直接调用/旧测试）。
 
     返回任务是否到达终态（completed/failed）；重试（重回 pending）返回 False。
     """
@@ -373,10 +395,22 @@ async def process_task(task_id: str) -> bool:
             select(GraphBuildTask).where(GraphBuildTask.id == task_id))).scalar_one_or_none()
         if task is None or task.status != "running":
             return True
+        if run_token is not None and task.run_token != run_token:
+            # 认领即易主（重启恢复/重试竞态）：令牌已换，本次放弃
+            logger.info(f"任务令牌已替换，放弃本次执行 task_id={task_id}")
+            return True
         user_id, source_type, source_id = task.user_id, task.source_type, task.source_id
         title, body_hash, force = task.title or "", task.content_hash, bool(task.force)
         payload_raw = task.payload
         attempts = task.attempts
+
+        async def _claim_still_valid() -> bool:
+            """抽取中途校验：任务未被重新入队（状态/令牌/内容哈希均未变）才允许写图谱。"""
+            row = (await db.execute(
+                select(GraphBuildTask).where(GraphBuildTask.id == task_id))).scalar_one_or_none()
+            return (row is not None and row.status == "running"
+                    and (run_token is None or row.run_token == run_token)
+                    and row.content_hash == body_hash)
 
         if not force:
             proceed = await _ensure_extract_log(db, user_id, source_id, body_hash, source_type)
@@ -411,12 +445,18 @@ async def process_task(task_id: str) -> bool:
         chunks = None
 
     ok = await _run_extraction(source_id, user_id, title, body_hash,
-                               body=body, source_type=source_type, chunks=chunks)
+                               body=body, source_type=source_type, chunks=chunks,
+                               claim_check=_claim_still_valid)
 
     async with AsyncSessionLocal() as db:
         task = (await db.execute(
             select(GraphBuildTask).where(GraphBuildTask.id == task_id))).scalar_one_or_none()
         if task is None:
+            return True
+        # 认领守卫：执行期间任务被重新入队（状态/令牌已变）时本次结果作废，
+        # 不写终态、不重试——新载荷已回 pending，由新认领者消费
+        if run_token is not None and (task.status != "running" or task.run_token != run_token):
+            logger.info(f"任务执行期间被重新入队，丢弃本次结果 task_id={task_id}")
             return True
         if ok:
             task.status = "completed"

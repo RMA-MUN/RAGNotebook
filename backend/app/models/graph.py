@@ -1,5 +1,5 @@
 """知识图谱 ORM 模型（全部带 user_id 隔离）。"""
-from sqlalchemy import Boolean, Column, DateTime, Float, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects import mysql
 from sqlalchemy.sql import func
 
@@ -80,7 +80,11 @@ class GraphNoteEdge(Base):
 
 class GraphExtractLog(Base):
     __tablename__ = "graph_extract_logs"
-    __table_args__ = (UniqueConstraint("user_id", "note_id", name="uq_graph_extract_user_note"),)
+    # 唯一键含 source_type：note 用笔记 UUID、doc 用 md5，同用户两命名空间各行其是；
+    # 旧库需手动迁移：ALTER TABLE graph_extract_logs DROP INDEX uq_graph_extract_user_note,
+    #   ADD UNIQUE KEY uq_graph_extract_user_note_type (user_id, note_id, source_type)
+    __table_args__ = (UniqueConstraint("user_id", "note_id", "source_type",
+                                       name="uq_graph_extract_user_note_type"),)
 
     id = Column(String(36), primary_key=True, comment="UUID")
     user_id = Column(String(36), index=True, nullable=False)
@@ -110,6 +114,9 @@ class GraphBuildTask(Base):
 
     payload 为 JSON 字符串：笔记 {"text": 正文}；文档 {"chunks": [{text, page?, image_paths?}]}
     或 {"text": 全文}（无预切切片时由 worker 兜底现切）。
+    run_token 为认领令牌：worker 认领时生成并写入，执行方在写图谱数据与回写状态前
+    校验令牌未被替换——期间任务被重新入队（编辑触发/force）则旧执行自愿中止，
+    防止旧内容抽取结果覆盖新任务。
     """
     __tablename__ = "graph_build_tasks"
     __table_args__ = (UniqueConstraint("user_id", "source_type", "source_id",
@@ -127,7 +134,8 @@ class GraphBuildTask(Base):
                     comment="pending/running/completed/failed")
     attempts = Column(Integer, default=0, server_default="0", nullable=False)
     force = Column(Boolean, default=False, server_default="0", nullable=False,
-                   comment="强制重抽（跳过内容哈希判重）")
+                   comment="强制重抽（跳过内容哈希判重）；每次入队按本次触发重置")
+    run_token = Column(String(36), nullable=True, comment="当前认领令牌（worker 生成；重入队后旧令牌失效）")
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
