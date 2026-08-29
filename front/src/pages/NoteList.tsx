@@ -43,9 +43,11 @@ function getSavedOrder(): string[] {
 function buildCategoryList(customCategories: string[]) {
   const list = PREDEFINED_CATEGORIES.slice()
   for (const cat of customCategories) {
-    if (!PREDEFINED_VALUES.has(cat)) {
-      list.push({ label: cat, value: cat })
+    // 空分类（category 为空的笔记会被收集成 ''）与预定义「全部」的 value='' 撞重复 key，跳过
+    if (!cat || PREDEFINED_VALUES.has(cat)) {
+      continue
     }
+    list.push({ label: cat, value: cat })
   }
 
   const order = getSavedOrder()
