@@ -5,6 +5,7 @@ import { Send, Sparkles, Bot, User, ChevronDown, ChevronRight, Loader2 } from 'l
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeRaw from 'rehype-raw'
+import remarkGfm from 'remark-gfm'
 import { useSSE } from '../hooks/useSSE'
 import { sessionsApi } from '../api/sessions'
 import { useThemeStore } from '../stores/useThemeStore'
@@ -299,7 +300,7 @@ export default function AIChat() {
                       </div>
                     )}
                     <div className={`prose prose-sm max-w-none markdown-body${theme === 'dark' ? ' prose-invert' : ''}`}>
-                      <ReactMarkdown rehypePlugins={[rehypeHighlight, rehypeRaw]}>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight, rehypeRaw]}>
                         {msg.content}
                       </ReactMarkdown>
                     </div>

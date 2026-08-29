@@ -17,6 +17,7 @@ import rehypeHighlight from 'rehype-highlight'
 import { marked, type Token } from 'marked'
 import TurndownService from 'turndown'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { WikiLink } from './WikiLink'
 
 // marked: render [[...]] as clickable wiki links. Mirror the default text
@@ -698,7 +699,7 @@ const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(({ value,
     return (
       <div className="tiptap-wrapper h-full overflow-auto">
         <div className="max-w-3xl mx-auto px-10 py-10 prose prose-sm dark:prose-invert">
-          <ReactMarkdown rehypePlugins={[rehypeHighlight]}>{value}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{value}</ReactMarkdown>
         </div>
       </div>
     )
