@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     DEBUG_MODE: bool = True
     # 日志级别
     LOG_LEVEL: str = "INFO"
+    # Neo4j 知识图谱数据库（neo4j_uri 为空时图谱存储回落 MySQL）
+    NEO4J_URI: str = ""
+    NEO4J_USER: str = "neo4j"
+    NEO4J_PASSWORD: str = ""
 
     class Config:
         env_file = ".env"
