@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException
 
-from tests.conftest import install_fake_vector_store
 from tests.fakes import TEST_USER_ID
 
 
@@ -58,14 +57,11 @@ def install_fake_chat_service(monkeypatch):
     return service
 
 
-async def test_rag_query(client, monkeypatch):
-    service = install_fake_chat_service(monkeypatch)
+async def test_rag_query_retired_returns_404(client, monkeypatch):
+    """/chat/rag/query 已随 HyDE 旧链路退役（检索统一走 agentic RAG）。"""
+    install_fake_chat_service(monkeypatch)
     resp = await client.post("/chat/rag/query", json={"query": "什么是RAG"}, headers={"Authorization": "Bearer x"})
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["code"] == 200
-    assert body["data"]["response"] == "RAG 摘要回答"
-    assert service.calls == []
+    assert resp.status_code == 404
 
 
 async def test_get_session(client, monkeypatch):
@@ -117,17 +113,8 @@ async def test_reorder_documents(client, monkeypatch):
 # Agent 流式（真实 Agentic RAG 管线 + 全部 mock 组件）
 # ---------------------------------------------------------------------------
 async def test_agent_query_stream_real_agentic_rag_pipeline(client, real_note_service, monkeypatch):
-    install_fake_vector_store(monkeypatch, route_score=0.0)
-
-    # LocalRetriever 在模块加载时绑定了真实 VectorStoreService，
-    # 必须同时替换其模块内引用，避免测试触碰真实 ChromaDB 数据目录。
-    import app.rag.agentic_rag.local_retriever as local_retriever_module
-    from tests.conftest import FakeVectorStoreService
-
-    monkeypatch.setattr(
-        local_retriever_module, "VectorStoreService", lambda *args, **kwargs: FakeVectorStoreService()
-    )
-
+    # 检索层已切 Neo4j；测试环境（NEO4J_URI 被遮蔽）回落 MySQLGraphStore，
+    # 无 Chunk 能力 → LocalRetriever 安全返回空证据，管线不触碰任何向量库。
     import app.router.chat as chat_module
 
     async def fake_agent_stream(query, session_id, user_id, custom_tools=None, rag_context="", **kwargs):
@@ -245,8 +232,12 @@ async def test_agent_query_stream_uses_agentic_rag_context_before_agent_response
 
     frames = [json.loads(l[6:]) for l in lines if l.startswith("data: ")]
     assert calls == [("讲讲最新RAG", TEST_USER_ID)]
-    assert [frame["type"] for frame in frames] == ["thinking", "response", "done"]
+    # 时序：路由占位 thinking（让前端折叠框立即出现）→ RAG 真实事件 → agent 响应 → done
+    assert [frame["type"] for frame in frames] == ["thinking", "thinking", "response", "done"]
     assert frames[0]["stage"] == "agentic_plan"
+    assert frames[0]["details"] == {"placeholder": True}
+    assert frames[1]["stage"] == "agentic_plan"
+    assert "details" not in frames[1]
 
 
 async def test_agent_query_stream_requires_auth(raw_client):
@@ -279,13 +270,18 @@ async def test_agent_query_stream_emits_thinking_before_rag_finishes(monkeypatch
 
     response = await query_stream(QueryRequest(query="讲讲RAG"), user_id=TEST_USER_ID, _=None)
     stream_task = asyncio.create_task(_next_stream_chunk(response))
+    # 第一帧是路由层占位 thinking（RAG 尚未产出任何事件）
     first_chunk = await asyncio.wait_for(stream_task, timeout=0.2)
-
     assert json.loads(first_chunk.removeprefix("data: ").strip()) == {
         "type": "thinking",
         "stage": "agentic_plan",
-        "content": "planned",
+        "content": "正在规划检索策略…",
+        "details": {"placeholder": True},
     }
+
+    # RAG 管线的真实 thinking 事件仍先于 RAG 完成到达
+    real_chunk = await asyncio.wait_for(_next_stream_chunk(response), timeout=0.2)
+    assert json.loads(real_chunk.removeprefix("data: ").strip())["content"] == "planned"
 
     rag_finished.set()
     assert await asyncio.wait_for(_next_stream_chunk(response), timeout=0.2) == "agent response"

@@ -63,6 +63,15 @@ __all__ = [
     "make_fake_chat_model",
 ]
 
+
+@pytest.fixture(autouse=True)
+def _force_mysql_graph_store(monkeypatch):
+    """测试一律走 MySQLGraphStore 回落：屏蔽开发 .env 里的 NEO4J_URI，
+    保证 graph 系列测试在 SQLite 会话注入下行为与迁移前一致（Neo4j 集成测试单独 env 门控）。"""
+    from app.core.failed_response import settings
+
+    monkeypatch.setattr(settings, "NEO4J_URI", "", raising=False)
+
 # backend 目录加入 sys.path，保证 `from app...` 可导入（tests/__init__.py 已存在，通常已生效）
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:
@@ -180,13 +189,10 @@ async def fake_models(monkeypatch):
 
 @pytest_asyncio.fixture
 async def real_note_service(monkeypatch):
-    """真实 NoteService + FakeChromaStore（向量层替身），并挂到 init_manager。"""
-    import app.services.note_service as note_service_module
+    """真实 NoteService（向量能力已迁 Neo4j，无需替身 Chroma），并挂到 init_manager。"""
     from app.services.note_service import NoteService
 
-    monkeypatch.setattr(note_service_module, "Chroma", lambda **kwargs: FakeChromaStore())
-
-    service = NoteService(embed_model=None)
+    service = NoteService()
     install_init_manager_fakes(monkeypatch, note_service=service)
     return service
 

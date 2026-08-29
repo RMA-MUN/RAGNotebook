@@ -12,6 +12,7 @@ from app.graph.services.graph_service import (
     maybe_schedule_extraction,
 )
 from app.models.graph import (
+    GraphBuildTask,
     GraphDoc,
     GraphEntity,
     GraphEntityNote,
@@ -31,6 +32,7 @@ def test_content_hash_stable():
 @pytest.mark.asyncio
 async def test_maybe_schedule_extraction_triggers_once(db_session, session_factory, monkeypatch):
     from app.core.background_init import init_manager
+    from app.graph.services.graph_worker import _tick
     monkeypatch.setattr(init_manager, "chat_model",
                         make_fake_chat_model(['{"entities": [], "relations": []}']))
     monkeypatch.setattr("app.graph.services.graph_service.AsyncSessionLocal", session_factory)
@@ -40,16 +42,24 @@ async def test_maybe_schedule_extraction_triggers_once(db_session, session_facto
     db_session.add(Note(id="n1", user_id="u1", title="标题", content="v1"))
     await db_session.commit()
 
-    # hash 相同 → 不触发
-    triggered = await maybe_schedule_extraction("n1", "u1", "标题", "v1")
-    assert triggered is False
+    # 入队幂等：同来源重复触发覆盖载荷
+    assert await maybe_schedule_extraction("n1", "u1", "标题", "v1") is True
+    assert await maybe_schedule_extraction("n1", "u1", "标题", "v1") is True
 
-    # hash 不同 → 触发
-    triggered2 = await maybe_schedule_extraction("n1", "u1", "标题", "v2")
-    assert triggered2 is True
+    # worker 消费：hash 与已有成功日志一致 → 跳过抽取，任务直接完成
+    assert await _tick() is True
+    await db_session.rollback()  # 结束本会话快照，读取其他会话的提交
+    task = (await db_session.execute(
+        select(GraphBuildTask).where(GraphBuildTask.source_id == "n1"))).scalar_one()
+    assert task.status == "completed"
+    log = (await db_session.execute(
+        select(GraphExtractLog).where(GraphExtractLog.note_id == "n1"))).scalar_one()
+    assert log.status == "success" and log.content_hash == content_hash("v1")
 
-    # 等后台任务完成（fire-and-forget）
-    await asyncio.sleep(0.2)
+    # 内容变化 → 重新入队，worker 消费后重新抽取
+    assert await maybe_schedule_extraction("n1", "u1", "标题", "v2") is True
+    assert await _tick() is True
+    await db_session.rollback()
     log = (await db_session.execute(
         select(GraphExtractLog).where(GraphExtractLog.note_id == "n1"))).scalar_one()
     assert log.content_hash == content_hash("v2")
@@ -158,14 +168,14 @@ async def test_cleanup_note_graph_removes_all_relations(db_session):
 @pytest.mark.asyncio
 async def test_maybe_schedule_doc_extraction_creates_doc_and_triggers(db_session, session_factory, monkeypatch):
     from app.core.background_init import init_manager
+    from app.graph.services.graph_worker import _tick
     monkeypatch.setattr(init_manager, "chat_model",
                         make_fake_chat_model(['{"entities": [{"name": "Python", "mentions": ["Python"]}], "relations": []}']))
     monkeypatch.setattr("app.graph.services.graph_service.AsyncSessionLocal", session_factory)
 
-    triggered = await maybe_schedule_doc_extraction("u1", "md51", "报告.pdf", "用 Python 写的报告")
-    assert triggered is True
+    assert await maybe_schedule_doc_extraction("u1", "md51", "报告.pdf", "用 Python 写的报告") is True
 
-    await asyncio.sleep(0.2)
+    assert await _tick() is True
     doc = (await db_session.execute(select(GraphDoc).where(GraphDoc.id == "md51"))).scalar_one()
     assert doc.filename == "报告.pdf"
     log = (await db_session.execute(select(GraphExtractLog).where(
@@ -178,16 +188,26 @@ async def test_maybe_schedule_doc_extraction_creates_doc_and_triggers(db_session
 
 @pytest.mark.asyncio
 async def test_maybe_schedule_doc_extraction_skips_same_hash(db_session, session_factory, monkeypatch):
+    from app.graph.services.graph_worker import _tick
     monkeypatch.setattr("app.graph.services.graph_service.AsyncSessionLocal", session_factory)
     db_session.add(GraphExtractLog(id="logd", user_id="u1", note_id="md51",
                                    content_hash=content_hash("v1"), status="success", source_type="doc"))
     await db_session.commit()
 
-    triggered = await maybe_schedule_doc_extraction("u1", "md51", "报告.pdf", "v1")
-    assert triggered is False
-    # 即便跳过抽取，文档节点元数据也必须落库（否则总览图看不到文档节点）
+    # 入队总是成功（哈希判重移到 worker 侧）
+    assert await maybe_schedule_doc_extraction("u1", "md51", "报告.pdf", "v1") is True
+    # 文档节点元数据在入队时就落库（否则总览图看不到文档节点）
     doc = (await db_session.execute(select(GraphDoc).where(GraphDoc.id == "md51"))).scalar_one_or_none()
     assert doc is not None and doc.filename == "报告.pdf"
+
+    # worker 消费：hash 一致 → 跳过抽取，任务完成且日志保持原样
+    assert await _tick() is True
+    task = (await db_session.execute(
+        select(GraphBuildTask).where(GraphBuildTask.source_id == "md51"))).scalar_one()
+    assert task.status == "completed"
+    log = (await db_session.execute(select(GraphExtractLog).where(
+        GraphExtractLog.note_id == "md51"))).scalar_one()
+    assert log.status == "success" and log.content_hash == content_hash("v1")
 
 
 @pytest.mark.asyncio

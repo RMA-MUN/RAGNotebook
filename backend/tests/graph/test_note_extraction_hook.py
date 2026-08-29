@@ -20,7 +20,9 @@ async def test_create_note_triggers_extraction_and_delete_cleans(db_session, ses
 
     note = await real_note_service.create_note(db_session, "u1", NoteCreate(title="t", content="用 Python 写"))
     note_id = note.id
-    await asyncio.sleep(0.2)
+    await asyncio.sleep(0.05)  # note_service 内 create_task 触发的入队先落地
+    from app.graph.services.graph_worker import _tick
+    assert await _tick() is True  # worker 消费构建任务
     log = (await db_session.execute(select(GraphExtractLog).where(
         GraphExtractLog.note_id == note_id))).scalar_one()
     assert log.status == "success"
