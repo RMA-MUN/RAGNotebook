@@ -14,7 +14,6 @@ import zipfile
 from datetime import datetime, timedelta
 
 import pytest
-from langchain_core.documents import Document
 from sqlalchemy import select
 
 from app.models.note import Note
@@ -23,7 +22,6 @@ from app.schemas.models import NoteCreate, NoteUpdate
 from app.services.note_service import NoteService
 
 from tests.conftest import (
-    install_fake_vector_store,
     install_init_manager_fakes,
     patch_session_factory,
 )
@@ -84,27 +82,43 @@ class _RaisingChatModel:
         yield  # pragma: no cover
 
 
+def _hit(chunk_id, source_id, kind="note", source_name=None, score=0.5):
+    from app.graph.schemas.graph import ChunkHit
+
+    return ChunkHit(id=chunk_id, kind=kind, source_id=source_id, source_name=source_name,
+                    chunk_index=0, text="命中内容", score=score, metadata={})
+
+
+class _FakeChunkStore:
+    """search_chunks 替身（note_service 仅消费该方法）。"""
+
+    def __init__(self, hits=None, chunk_error=None):
+        self.hits = hits or []
+        self.chunk_error = chunk_error
+
+    async def search_chunks(self, user_id, query_embedding, text_query, kinds, limit):
+        if self.chunk_error:
+            raise self.chunk_error
+        filtered = [h for h in self.hits if not kinds or h.kind in kinds]
+        return filtered[:limit]
+
+
 # ---------------------------------------------------------------------------
 # create_note
 # ---------------------------------------------------------------------------
-async def test_create_note_commits_row_and_writes_vector(real_note_service, db_session, monkeypatch, session_factory):
+async def test_create_note_commits_row(real_note_service, db_session, monkeypatch, session_factory):
     svc = real_note_service
     patch_session_factory(monkeypatch, session_factory)
     _install_tag_chat(monkeypatch)
 
-    payload = NoteCreate(title="My Note", content="这是一段用于向量化的内容")
+    payload = NoteCreate(title="My Note", content="这是一段笔记内容")
     response = await svc.create_note(db_session, USER, payload)
 
     assert response.user_id == USER
     assert response.title == "My Note"
-    assert response.content == "这是一段用于向量化的内容"
+    assert response.content == "这是一段笔记内容"
     assert response.tags is None  # 用户未提供 → 后台任务稍后写入
     assert response.category is None
-
-    # 向量层已写入
-    got = svc.notes_store.get(where={"note_id": response.id})
-    assert got["ids"] == [response.id]
-    assert got["documents"] == ["这是一段用于向量化的内容"]
 
     await _pump()
 
@@ -147,7 +161,7 @@ async def test_update_note_not_found_returns_none(real_note_service, db_session)
     assert result is None
 
 
-async def test_update_note_content_change_deletes_and_re_adds_vector(real_note_service, db_session):
+async def test_update_note_content_change(real_note_service, db_session):
     svc = real_note_service
     created = await svc.create_note(db_session, USER, NoteCreate(title="旧标题", content="旧内容", tags=["t"], category="work"))
 
@@ -155,20 +169,14 @@ async def test_update_note_content_change_deletes_and_re_adds_vector(real_note_s
     assert updated.title == "新标题"
     assert updated.content == "新内容"
 
-    got = svc.notes_store.get(where={"note_id": created.id})
-    assert got["ids"] == [created.id]
-    assert got["documents"] == ["新内容"]
-    assert got["metadatas"][0]["title"] == "新标题"
 
-
-async def test_update_note_title_only_keeps_vector_untouched(real_note_service, db_session):
+async def test_update_note_title_only(real_note_service, db_session):
     svc = real_note_service
     created = await svc.create_note(db_session, USER, NoteCreate(title="旧标题", content="正文内容", tags=["t"], category="work"))
 
-    await svc.update_note(db_session, created.id, USER, NoteUpdate(title="新标题"))
-
-    got = svc.notes_store.get(where={"note_id": created.id})
-    assert got["documents"] == ["正文内容"]  # content 未变，向量未重写
+    updated = await svc.update_note(db_session, created.id, USER, NoteUpdate(title="新标题"))
+    assert updated.title == "新标题"
+    assert updated.content == "正文内容"  # content 未变
 
 
 # ---------------------------------------------------------------------------
@@ -256,34 +264,42 @@ async def test_list_notes_pinned_first(real_note_service, db_session):
 # ---------------------------------------------------------------------------
 # search_notes
 # ---------------------------------------------------------------------------
-async def test_search_notes_returns_mysql_backfill_in_store_order(real_note_service, db_session, monkeypatch, session_factory):
+async def test_search_notes_returns_mysql_backfill_in_hit_order(real_note_service, db_session, monkeypatch):
     svc = real_note_service
-    patch_session_factory(monkeypatch, session_factory)
     n1 = await _seed_note(db_session, USER, title="第一", content="vector target")
     n2 = await _seed_note(db_session, USER, title="第二", content="another target")
     ghost_id = _uid("ghost")
 
-    # 向量层预置命中：顺序故意与 ID 顺序相反，验证按向量顺序回填
-    svc.notes_store.add_documents(
-        [
-            Document(page_content="matches", metadata={"user_id": USER, "note_id": n2.id, "doc_type": "note", "title": "第二"}),
-            Document(page_content="matches", metadata={"user_id": USER, "note_id": n1.id, "doc_type": "note", "title": "第一"}),
-            Document(page_content="matches", metadata={"user_id": USER, "note_id": ghost_id, "doc_type": "note", "title": "幽灵"}),
-        ],
-        ids=[n2.id, n1.id, ghost_id],
-    )
+    # 图存储预置命中：顺序故意与 ID 顺序相反，验证按命中顺序回填
+    fake = _FakeChunkStore(hits=[
+        _hit("note:%s:0" % n2.id, n2.id),
+        _hit("note:%s:0" % n1.id, n1.id),
+        _hit("note:%s:0" % ghost_id, ghost_id),
+    ])
+    monkeypatch.setattr("app.services.note_service.get_graph_store", lambda db=None: fake)
 
     results = await svc.search_notes(db_session, USER, "query", top_k=10)
     assert [r.id for r in results] == [n2.id, n1.id]  # 幽灵笔记不在 MySQL 中 → 跳过
 
 
+async def test_search_notes_falls_back_to_like_without_chunk_support(real_note_service, db_session, monkeypatch):
+    """MySQL 回落实现（无 Chunk 能力）→ LIKE 兜底仍可搜索。"""
+    svc = real_note_service
+    n1 = await _seed_note(db_session, USER, title="语义笔记", content="语义内容")
+
+    fake = _FakeChunkStore(chunk_error=NotImplementedError("no chunk"))
+    monkeypatch.setattr("app.services.note_service.get_graph_store", lambda db=None: fake)
+
+    results = await svc.search_notes(db_session, USER, "语义", top_k=10)
+    assert [r.id for r in results] == [n1.id]
+
+
 async def test_search_notes_returns_empty_when_store_raises(real_note_service, db_session, monkeypatch):
     svc = real_note_service
+    await _seed_note(db_session, USER, title="存在", content="内容")
 
-    def _boom(*args, **kwargs):
-        raise RuntimeError("vector store down")
-
-    monkeypatch.setattr(svc.notes_store, "similarity_search", _boom)
+    fake = _FakeChunkStore(chunk_error=RuntimeError("neo4j down"))
+    monkeypatch.setattr("app.services.note_service.get_graph_store", lambda db=None: fake)
     assert await svc.search_notes(db_session, USER, "query") == []
 
 
@@ -295,7 +311,7 @@ async def test_delete_note_missing_returns_false(real_note_service, db_session):
     assert await svc.delete_note(db_session, _uid("missing"), USER) is False
 
 
-async def test_delete_note_removes_row_and_vector(real_note_service, db_session, session_factory):
+async def test_delete_note_removes_row(real_note_service, db_session, session_factory):
     svc = real_note_service
     created = await svc.create_note(db_session, USER, NoteCreate(title="待删", content="内容", tags=["t"], category="work"))
 
@@ -304,7 +320,6 @@ async def test_delete_note_removes_row_and_vector(real_note_service, db_session,
     async with session_factory() as s:
         row = (await s.execute(select(Note).where(Note.id == created.id))).scalar_one_or_none()
         assert row is None
-    assert svc.notes_store.get(where={"note_id": created.id})["ids"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +338,7 @@ async def test_get_category_stats(real_note_service, db_session):
     assert {c["category"]: c["count"] for c in stats["categories"]} == {"work": 2, "study": 1}
 
 
-async def test_delete_category_removes_notes_and_vectors(real_note_service, db_session, session_factory):
+async def test_delete_category_removes_notes(real_note_service, db_session, session_factory):
     svc = real_note_service
     w1 = await _seed_note(db_session, USER, title="w1", category="work")
     w2 = await _seed_note(db_session, USER, title="w2", category="work")
@@ -335,8 +350,6 @@ async def test_delete_category_removes_notes_and_vectors(real_note_service, db_s
     async with session_factory() as s:
         remaining = (await s.execute(select(Note.id).where(Note.user_id == USER))).scalars().all()
         assert remaining == [s1.id]
-    assert svc.notes_store.get(where={"note_id": w1.id})["ids"] == []
-    assert svc.notes_store.get(where={"note_id": w2.id})["ids"] == []
 
 
 async def test_delete_category_missing_returns_zero(real_note_service, db_session):
@@ -482,34 +495,29 @@ async def test_assist_stream_yields_sse_frames(monkeypatch):
 # ---------------------------------------------------------------------------
 async def test_get_related_notes_merges_note_and_kb_sources(real_note_service, db_session, monkeypatch):
     svc = real_note_service
-    install_fake_vector_store(monkeypatch)  # 替换知识库 VectorStoreService 为内存替身
-
-    # 预置知识库文档到替身的 vectors_store
-    from app.rag.vector_store import VectorStoreService as PatchedVS
-
-    kb_svc = PatchedVS()  # 触发 factory → 缓存实例
-    kb_svc.vectors_store.add_documents(
-        [Document(page_content="知识库切片内容", metadata={"source": "kb_doc.py", "original_filename": "kb_doc.py", "user_id": USER})],
-        ids=["kb1"],
-    )
-
     note_a = await svc.create_note(db_session, USER, NoteCreate(title="主笔记", content="主内容", tags=["t"], category="work"))
     note_b = await svc.create_note(db_session, USER, NoteCreate(title="相似笔记", content="相似内容", tags=["t"], category="work"))
+
+    # 图存储预置命中：主笔记自身 chunk（被排除）、相似笔记 chunk、知识库 chunk
+    fake = _FakeChunkStore(hits=[
+        _hit("note:%s:0" % note_a.id, note_a.id, source_name="主笔记"),
+        _hit("note:%s:0" % note_b.id, note_b.id, source_name="相似笔记", score=0.5),
+        _hit("doc:md5-1:0", "kb_doc.py", kind="doc", source_name="kb_doc.py", score=0.4),
+    ])
+    monkeypatch.setattr("app.services.note_service.get_graph_store", lambda db=None: fake)
 
     related = await svc.get_related_notes(db_session, note_a.id, USER, top_k=3)
 
     ids = [r["id"] for r in related]
     assert note_a.id not in ids  # 排除自身
     assert note_b.id in ids
-    sources = {r["source"] for r in related}
-    assert sources == {"note", "knowledge_base"}
     by_id = {r["id"]: r for r in related}
     assert by_id[note_b.id]["title"] == "相似笔记"
     assert by_id[note_b.id]["similarity"] == 0.5
     assert by_id["kb_doc.py"]["title"] == "kb_doc.py"
     assert by_id["kb_doc.py"]["source"] == "knowledge_base"
-    # 相似度升序排列
-    assert [r["similarity"] for r in related] == sorted(r["similarity"] for r in related)
+    # RRF 分数降序排列
+    assert [r["similarity"] for r in related] == sorted((r["similarity"] for r in related), reverse=True)
 
 
 async def test_get_related_notes_missing_note_returns_empty(real_note_service, db_session):
@@ -519,16 +527,14 @@ async def test_get_related_notes_missing_note_returns_empty(real_note_service, d
 
 async def test_get_related_notes_respects_top_k(real_note_service, db_session, monkeypatch):
     svc = real_note_service
-    install_fake_vector_store(monkeypatch)
-    from app.rag.vector_store import VectorStoreService as PatchedVS
-
-    kb_svc = PatchedVS()
-    kb_svc.vectors_store.add_documents(
-        [Document(page_content="kb", metadata={"source": "kb.py", "original_filename": "kb.py", "user_id": USER})],
-        ids=["kb1"],
-    )
     note_a = await svc.create_note(db_session, USER, NoteCreate(title="A", content="A内容", tags=["t"], category="work"))
     note_b = await svc.create_note(db_session, USER, NoteCreate(title="B", content="B内容", tags=["t"], category="work"))
+
+    fake = _FakeChunkStore(hits=[
+        _hit("note:%s:0" % note_b.id, note_b.id, source_name="B"),
+        _hit("doc:md5-9:0", "kb.py", kind="doc", source_name="kb.py"),
+    ])
+    monkeypatch.setattr("app.services.note_service.get_graph_store", lambda db=None: fake)
 
     related = await svc.get_related_notes(db_session, note_a.id, USER, top_k=1)
     assert len(related) == 1

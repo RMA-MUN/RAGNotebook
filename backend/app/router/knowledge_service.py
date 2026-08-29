@@ -320,15 +320,21 @@ class KnowledgeService:
                     try:
                         yield self._yield_writing_event(result, state)
 
-                        await asyncio.to_thread(store.vectors_store.add_documents, result.documents)
                         await store.save_md5_hex(result.md5, result.filename, result.filename, user_id)
 
-                        # 知识库文档入图谱：入库成功后后台异步抽取实体（懒加载避免循环依赖；失败不影响上传主流程）
+                        # 知识库文档入图谱：入库成功后入队构建任务（携带预切切片，保留页码/图片元数据；
+                        # 懒加载避免循环依赖；失败不影响上传主流程）
                         try:
                             from app.graph.services.graph_service import maybe_schedule_doc_extraction
                             full_text = "\n".join(d.page_content for d in result.documents)
+                            graph_chunks = [
+                                {"chunk_index": i, "text": d.page_content,
+                                 "page": d.metadata.get("page"),
+                                 "image_paths": d.metadata.get("image_paths") or []}
+                                for i, d in enumerate(result.documents)]
                             asyncio.create_task(
-                                maybe_schedule_doc_extraction(user_id, result.md5, result.filename, full_text))
+                                maybe_schedule_doc_extraction(user_id, result.md5, result.filename,
+                                                              full_text, chunks=graph_chunks))
                         except Exception as e:
                             logger.error(f"触发文档图谱抽取失败 filename={result.filename}: {e}")
 

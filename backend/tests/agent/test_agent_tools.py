@@ -13,7 +13,6 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
-from langchain_core.documents import Document
 from sqlalchemy import select
 
 from app.agent import agent_tools as tools
@@ -177,13 +176,6 @@ async def test_search_notes_tool_real_service(monkeypatch, user_ctx, patched_db,
     async with patched_db() as db:
         db.add(Note(id="n1", user_id=USER_ID, title="集成测试笔记", content=content, tags=["测试"], category="study"))
         await db.commit()
-    real_note_service.notes_store.add_documents(
-        [Document(page_content=content, metadata={
-            "user_id": USER_ID, "note_id": "n1", "doc_type": "note", "title": "集成测试笔记",
-        })],
-        ids=["n1"],
-    )
-
     out = await search_notes_tool.ainvoke({"query": "搜索", "top_k": 5})
     assert "找到 1 篇相关笔记" in out
     assert "**集成测试笔记**" in out
@@ -460,11 +452,15 @@ async def test_get_related_notes_tool_real(monkeypatch, user_ctx, patched_db, re
         db.add(Note(id="n2", user_id=USER_ID, title="相似笔记", content=content2))
         await db.commit()
 
-    store = real_note_service.notes_store
-    store.add_documents([
-        Document(page_content=content1, metadata={"user_id": USER_ID, "note_id": "n1", "doc_type": "note", "title": "锚点笔记"}),
-        Document(page_content=content2, metadata={"user_id": USER_ID, "note_id": "n2", "doc_type": "note", "title": "相似笔记"}),
-    ], ids=["n1", "n2"])
+    from app.graph.schemas.graph import ChunkHit
+
+    class _FakeStore:
+        async def search_chunks(self, user_id, query_embedding, text_query, kinds, limit):
+            return [ChunkHit(id="note:n2:0", kind="note", source_id="n2",
+                             source_name="相似笔记", chunk_index=0, text=content2,
+                             score=0.5, metadata={})]
+
+    monkeypatch.setattr("app.services.note_service.get_graph_store", lambda db=None: _FakeStore())
 
     out = await get_related_notes_tool.ainvoke({"note_id": "n1", "top_k": 3})
     assert "🔗 关联推荐（共 1 项）" in out

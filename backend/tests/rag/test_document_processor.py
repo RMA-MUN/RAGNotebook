@@ -4,11 +4,10 @@ from langchain_core.documents import Document
 
 import app.rag.document_handler.processor as proc_module
 from app.rag.document_handler.processor import DocumentProcessor
-from tests.fakes import FakeChromaStore
 
 
 def _processor():
-    return DocumentProcessor(FakeChromaStore(), md5_store=object())
+    return DocumentProcessor(md5_store=object())
 
 
 async def _async_loader(path, *args, **kwargs):

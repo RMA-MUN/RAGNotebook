@@ -1,5 +1,8 @@
 """
-笔记服务层 —— 包含 CRUD、向量双写、异步自动标签等核心业务逻辑。
+笔记服务层 —— 包含 CRUD、异步自动标签等核心业务逻辑。
+
+笔记向量检索已切换 Neo4j（Chunk 种子检索，见 graph_service 抽取管线）；
+Neo4j 不可用/未配置（MySQL 回落）时 search_notes 降级为 MySQL LIKE 匹配。
 """
 import asyncio
 import io
@@ -9,22 +12,16 @@ import uuid
 import zipfile
 from datetime import datetime, timedelta
 
-from langchain_chroma import Chroma
-from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logger_handler import logger
+from app.graph.storage import get_graph_store
 from app.models.note import Note
 from app.models.review_record import ReviewRecord
 from app.schemas.models import NoteCreate, NoteResponse, NoteUpdate
-from app.utils.config import chroma_config
-from app.utils.input_sanitizer import sanitize_content
-from app.utils.path_tool import get_abstract_path
 from app.utils.prompt_loader import load_prompt
-
-NOTES_COLLECTION_NAME = "notes_collection"
 
 # 艾宾浩斯间隔重复数组（天）
 INTERVALS = [1, 2, 4, 7, 15, 30]
@@ -46,25 +43,25 @@ class NoteService:
 
     职责：
     - 笔记 CRUD（MySQL 存储）
-    - 向量双写（ChromaDB notes_collection）
+    - 笔记语义搜索 / 关联推荐（Neo4j Chunk 种子检索）
     - 异步自动标签生成（LLM 后台任务）
     """
 
     def __init__(self, embed_model=None):
-        """
-        初始化 ChromaDB 笔记集合。复用现有 persist_directory 但使用独立 collection。
-        :param embed_model: 嵌入模型实例（后台初始化完成后传入）
-        """
-        persist_dir = get_abstract_path(chroma_config['persist_directory'])
-        self._notes_store = Chroma(
-            collection_name=NOTES_COLLECTION_NAME,
-            embedding_function=embed_model,
-            persist_directory=persist_dir,
-        )
+        """embed_model 参数保留兼容旧调用方（后台初始化传参），向量能力已迁 Neo4j。"""
 
-    @property
-    def notes_store(self):
-        return self._notes_store
+    async def _embed_query(self, text: str) -> list[float] | None:
+        """查询向量实时计算；模型未就绪或失败时返回 None（退化为纯全文检索）。"""
+        from app.core.background_init import init_manager
+
+        model = init_manager.embed_model
+        if model is None or not text:
+            return None
+        try:
+            return await asyncio.to_thread(model.embed_query, text)
+        except Exception as e:
+            logger.warning(f"查询向量计算失败，退化为全文检索: {e}")
+            return None
 
     def _doc_to_response(self, note: Note) -> NoteResponse:
         """
@@ -102,21 +99,6 @@ class NoteService:
         db.add(note)
         await db.commit()
         await db.refresh(note)
-
-        # 向量化写入 ChromaDB
-        try:
-            doc = Document(
-                page_content=sanitize_content(payload.content),
-                metadata={
-                    "user_id": user_id,
-                    "note_id": note_id,
-                    "doc_type": "note",
-                    "title": payload.title,
-                }
-            )
-            await asyncio.to_thread(lambda: self._notes_store.add_documents([doc], ids=[note_id]))
-        except Exception as e:
-            logger.error(f"笔记向量化失败 note_id={note_id}: {e}")
 
         # 若用户已提供 tags/category，跳过自动标签生成
         user_provided_meta = payload.tags is not None or payload.category is not None
@@ -158,27 +140,8 @@ class NoteService:
         await db.commit()
         await db.refresh(note)
 
-        # content 变更时同步更新向量
+        # content 变更时触发图谱重抽（Chunk/向量随管线重建）
         if content_changed:
-            try:
-                # 先删除旧向量，再写入新向量
-                await asyncio.to_thread(
-                    lambda: self._notes_store.delete(where={"note_id": note_id})
-                )
-                doc = Document(
-                    page_content=sanitize_content(note.content),
-                    metadata={
-                        "user_id": user_id,
-                        "note_id": note_id,
-                        "doc_type": "note",
-                        "title": note.title,
-                    }
-                )
-                await asyncio.to_thread(lambda: self._notes_store.add_documents([doc], ids=[note_id]))
-            except Exception as e:
-                logger.error(f"更新笔记向量失败 note_id={note_id}: {e}")
-
-            # 图谱重抽：内容变更才触发
             from app.graph.services.graph_service import maybe_schedule_extraction
             asyncio.create_task(
                 maybe_schedule_extraction(note_id, user_id, note.title, note.content))
@@ -189,7 +152,7 @@ class NoteService:
         """
         删除笔记：
         1. 删除 MySQL 中的笔记（review_records 通过 FK CASCADE 自动删除）
-        2. 删除 ChromaDB 中的向量
+        2. 图谱联动清理（Neo4j Note 节点/Chunk/双链边/实体关联/抽取日志）
         """
         stmt = select(Note).where(Note.id == note_id, Note.user_id == user_id)
         result = await db.execute(stmt)
@@ -203,14 +166,6 @@ class NoteService:
         from app.graph.services.graph_service import cleanup_note_graph
         await cleanup_note_graph(db, user_id, note_id)
         await db.commit()
-
-        # 清理向量
-        try:
-            await asyncio.to_thread(
-                lambda: self._notes_store.delete(where={"note_id": note_id})
-            )
-        except Exception as e:
-            logger.error(f"删除笔记向量失败 note_id={note_id}: {e}")
 
         return True
 
@@ -279,35 +234,46 @@ class NoteService:
 
     async def search_notes(self, db: AsyncSession, user_id: str, query: str, top_k: int = 10) -> list[NoteResponse]:
         """
-        语义搜索笔记：ChromaDB 向量检索 → MySQL 回填完整数据。
-        只搜索当前用户的笔记（通过 metadata filter）。
+        语义搜索笔记：Neo4j Chunk 种子检索（向量+全文）→ 按命中顺序回填 MySQL 完整数据。
+
+        Neo4j 不可用（MySQL 回落实现无 Chunk 能力）时降级为 MySQL LIKE 匹配。
         """
+        store = get_graph_store(db)
+        note_ids: list[str] = []
         try:
-            docs = await asyncio.to_thread(
-                self._notes_store.similarity_search,
-                query,
-                k=top_k,
-                filter={"$and": [{"user_id": user_id}, {"doc_type": "note"}]},
-            )
+            embedding = await self._embed_query(query)
+            hits = await store.search_chunks(user_id, embedding, query, ["note"], top_k * 3)
+            for hit in hits:
+                if hit.source_id and hit.source_id not in note_ids:
+                    note_ids.append(hit.source_id)
+        except NotImplementedError:
+            return await self._search_notes_like(db, user_id, query, top_k)
         except Exception as e:
             logger.error(f"笔记语义搜索失败: {e}")
             return []
 
-        note_ids = [doc.metadata.get("note_id") for doc in docs if doc.metadata.get("note_id")]
         if not note_ids:
             return []
 
-        # 从 MySQL 获取完整笔记信息并保持向量检索的顺序
+        # 从 MySQL 获取完整笔记信息并保持检索顺序（已删除的笔记跳过）
         stmt = select(Note).where(Note.id.in_(note_ids), Note.user_id == user_id)
         result = await db.execute(stmt)
         notes_map = {n.id: n for n in result.scalars().all()}
 
-        sorted_notes = []
-        for nid in note_ids:
-            if nid in notes_map:
-                sorted_notes.append(self._doc_to_response(notes_map[nid]))
+        return [self._doc_to_response(notes_map[nid]) for nid in note_ids if nid in notes_map]
 
-        return sorted_notes
+    async def _search_notes_like(self, db: AsyncSession, user_id: str, query: str,
+                                 top_k: int) -> list[NoteResponse]:
+        """MySQL LIKE 兜底搜索（Neo4j 回落场景）。"""
+        if not query or not query.strip():
+            return []
+        like = f"%{query.strip()}%"
+        rows = (await db.execute(
+            select(Note).where(Note.user_id == user_id,
+                               (Note.title.like(like)) | (Note.content.like(like)))
+            .order_by(Note.is_pinned.desc(), Note.updated_at.desc())
+            .limit(top_k))).scalars().all()
+        return [self._doc_to_response(n) for n in rows]
 
     async def get_related_notes(
         self,
@@ -317,67 +283,42 @@ class NoteService:
         top_k: int = 3,
     ) -> list[dict]:
         """
-        获取与当前笔记语义相似的其他笔记和知识库文档。
+        获取与当前笔记相关的其他笔记和知识库文档（Neo4j 种子检索，RRF 融合分排序）。
 
-        检索流程：
-        1. 用笔记内容同时在 notes_collection 和 rag_collection 检索
-        2. 合并结果并使用 reorder_service 重排序
-        3. 标注来源（note / knowledge_base）
+        - 用笔记全文作为查询，同时命中笔记与文档 chunk（kinds 不过滤）
+        - 排除自身；同来源多篇 chunk 取首个
+        - 标注来源（note / knowledge_base）
         """
         note = await self.get_note(db, note_id, user_id)
         if not note:
             return []
 
-        related_items = []
-
-        # 从笔记库检索相似笔记（排除自身）
+        store = get_graph_store(db)
         try:
-            note_docs = await asyncio.to_thread(
-                self._notes_store.similarity_search_with_score,
-                note.content,
-                k=top_k + 1,  # 多取一个，排除自身
-            )
-            for doc, score in note_docs:
-                meta_note_id = doc.metadata.get("note_id", "")
-                if meta_note_id == note_id:
-                    continue
-                related_items.append({
-                    "id": meta_note_id,
-                    "title": doc.metadata.get("title", "无标题"),
-                    "content_preview": doc.page_content[:150],
-                    "content": doc.page_content,
-                    "similarity": round(score, 4),
-                    "source": "note",
-                })
-        except Exception as e:
-            logger.error(f"从笔记库检索关联笔记失败: {e}")
+            embedding = await self._embed_query(note.content)
+            hits = await store.search_chunks(user_id, embedding, note.content, None, top_k * 4)
+        except (NotImplementedError, Exception) as e:  # noqa: B014  回落实现/图库故障均静默降级
+            logger.error(f"关联推荐检索失败: {e}")
+            return []
 
-        # 从知识库检索相关文档
-        try:
-            from app.rag.vector_store import VectorStoreService
-            vector_store = VectorStoreService()
-            # 直接使用 vectors_store 的 similarity_search_with_score
-            kb_docs = await asyncio.to_thread(
-                vector_store.vectors_store.similarity_search_with_score,
-                note.content,
-                k=top_k,
-                filter={"user_id": user_id},
-            )
-            for doc, score in kb_docs:
-                related_items.append({
-                    "id": doc.metadata.get("source", doc.metadata.get("filename", "")),
-                    "title": doc.metadata.get("original_filename", doc.metadata.get("source", "知识库文档")),
-                    "content_preview": doc.page_content[:150],
-                    "content": doc.page_content,  # 完整切片内容，供前端内联展开查看
-                    "similarity": round(score, 4),
-                    "source": "knowledge_base",
-                })
-        except Exception as e:
-            logger.error(f"从知识库检索关联文档失败: {e}")
-
-        # 按相似度降序排序（分数越低越相似），取 top_k
-        related_items.sort(key=lambda x: x["similarity"])
-        return related_items[:top_k]
+        related_items: list[dict] = []
+        seen_sources: set[str] = set()
+        for hit in hits:
+            if hit.source_id == note_id or hit.source_id in seen_sources:
+                continue
+            seen_sources.add(hit.source_id)
+            is_note = hit.kind == "note"
+            related_items.append({
+                "id": hit.source_id,
+                "title": hit.source_name or ("无标题" if is_note else "知识库文档"),
+                "content_preview": hit.text[:150],
+                "content": hit.text,  # 完整切片内容，供前端内联展开查看
+                "similarity": round(hit.score, 4) if hit.score is not None else 0.0,
+                "source": "note" if is_note else "knowledge_base",
+            })
+            if len(related_items) >= top_k:
+                break
+        return related_items
 
     @staticmethod
     def _extract_json(text: str) -> str:
@@ -564,15 +505,11 @@ class NoteService:
         await db.execute(
             delete(Note).where(Note.user_id == user_id, Note.category == category)
         )
-        await db.commit()
-
+        # 图谱联动清理：与删除同事务（删除 Chunk/双链边/实体关联/抽取日志，清扫孤儿实体）
+        from app.graph.services.graph_service import cleanup_note_graph
         for nid in note_ids:
-            try:
-                await asyncio.to_thread(
-                    lambda id=nid: self._notes_store.delete(where={"note_id": id})
-                )
-            except Exception as e:
-                logger.error(f"删除分类笔记向量失败 note_id={nid}: {e}")
+            await cleanup_note_graph(db, user_id, nid)
+        await db.commit()
 
         return len(note_ids)
 
@@ -627,14 +564,6 @@ class NoteService:
         for nid in existing_ids:
             await cleanup_note_graph(db, user_id, nid)
         await db.commit()
-
-        for nid in existing_ids:
-            try:
-                await asyncio.to_thread(
-                    lambda id=nid: self._notes_store.delete(where={"note_id": id})
-                )
-            except Exception as e:
-                logger.error(f"批量删除向量失败 note_id={nid}: {e}")
 
         return len(existing_ids)
 

@@ -3,7 +3,6 @@ import asyncio
 import json
 import zipfile
 
-from tests.conftest import install_fake_vector_store
 from tests.fakes import TEST_USER_ID
 
 
@@ -114,15 +113,17 @@ async def test_list_notes_invalid_sort(client, real_note_service):
 
 
 async def test_search_notes(client, real_note_service, session_factory, monkeypatch):
-    from app.core.background_init import init_manager
+    """Neo4j 主路径：图存储命中 note-1 的 chunk → MySQL 回填完整笔记。"""
+    from app.graph.schemas.graph import ChunkHit
 
-    # 预置一条带 metadata 的向量文档
-    notes_store = init_manager.note_service.notes_store
-    from langchain_core.documents import Document
-    notes_store.add_documents(
-        [Document(page_content="语义内容", metadata={"user_id": TEST_USER_ID, "note_id": "note-1", "doc_type": "note", "title": "语义笔记"})],
-        ids=["note-1"],
-    )
+    class _FakeStore:
+        async def search_chunks(self, user_id, query_embedding, text_query, kinds, limit):
+            assert kinds == ["note"]
+            return [ChunkHit(id="note:note-1:0", kind="note", source_id="note-1",
+                             source_name="语义笔记", chunk_index=0, text="语义内容",
+                             score=0.9, metadata={})]
+
+    monkeypatch.setattr("app.services.note_service.get_graph_store", lambda db=None: _FakeStore())
     async with session_factory() as s:
         from app.models.note import Note
         s.add(Note(id="note-1", user_id=TEST_USER_ID, title="语义笔记", content="语义内容"))
@@ -268,26 +269,22 @@ async def test_auto_tag_endpoint(client, real_note_service):
 
 
 async def test_related_notes(client, real_note_service, session_factory, monkeypatch):
-    from langchain_core.documents import Document
-    from app.core.background_init import init_manager
-
-    # get_related_notes 在函数内局部 import VectorStoreService，
-    # 必须替换模块属性，否则会构造真实单例并创建 ChromaDB 数据目录。
-    install_fake_vector_store(monkeypatch)
+    """Neo4j 主路径：图存储种子检索 → 自身排除、相似笔记保留。"""
+    from app.graph.schemas.graph import ChunkHit
 
     create_resp = await client.post("/note/create", json=_note_payload(), headers={"Authorization": "Bearer x"})
     note_id = create_resp.json()["data"]["id"]
 
-    # 向向量层追加一篇“相似笔记”，供关联推荐检索
-    init_manager.note_service.notes_store.add_documents(
-        [Document(page_content="相似内容", metadata={
-            "user_id": TEST_USER_ID, "note_id": "other-note", "doc_type": "note", "title": "相似笔记"})],
-        ids=["other-note"],
-    )
-    async with session_factory() as s:
-        from app.models.note import Note
-        s.add(Note(id="other-note", user_id=TEST_USER_ID, title="相似笔记", content="相似内容"))
-        await s.commit()
+    class _FakeStore:
+        async def search_chunks(self, user_id, query_embedding, text_query, kinds, limit):
+            return [ChunkHit(id=f"note:{note_id}:0", kind="note", source_id=note_id,
+                             source_name="主笔记", chunk_index=0, text="主内容",
+                             score=0.9, metadata={}),
+                    ChunkHit(id="note:other-note:0", kind="note", source_id="other-note",
+                             source_name="相似笔记", chunk_index=0, text="相似内容",
+                             score=0.5, metadata={})]
+
+    monkeypatch.setattr("app.services.note_service.get_graph_store", lambda db=None: _FakeStore())
 
     resp = await client.get(f"/note/{note_id}/related", headers={"Authorization": "Bearer x"})
     items = resp.json()["data"]
