@@ -280,7 +280,7 @@ ALGORITHM=HS256
 
 ## API 文档
 
-### FastAPI 后端 API		
+### FastAPI 后端 API
 
 启动服务后访问交互式文档：[http://localhost:8000/docs](http://localhost:8000/docs)
 

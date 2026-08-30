@@ -4,6 +4,7 @@
 响应 {"results": [{"index": int, "relevance_score": float}, ...]}。
 API 未配置或调用失败时返回 success=False，由调用方按原顺序 + similarity 0 降级。
 """
+
 from typing import Any
 
 import httpx
@@ -45,64 +46,36 @@ class ReorderService:
         """
         try:
             if not documents:
-                return {
-                    "success": True,
-                    "documents": [],
-                    "error": ""
-                }
+                return {"success": True, "documents": [], "error": ""}
 
             if thinking_callback:
-                await thinking_callback({
-                    "type": "thinking",
-                    "stage": "reorder",
-                    "content": f"正在计算 {len(documents)} 个文档的相关性分数..."
-                })
+                await thinking_callback({"type": "thinking", "stage": "reorder", "content": f"正在计算 {len(documents)} 个文档的相关性分数..."})
 
             scores = await self._rerank(query, documents)
 
             # 构建结果列表
             scored_documents = []
             for doc, score in zip(documents, scores):
-                scored_documents.append({
-                    "document": doc,
-                    "similarity": score
-                })
+                scored_documents.append({"document": doc, "similarity": score})
                 logger.info(f"【重排序服务】文档相似度分数: {score:.4f}")
 
             if thinking_callback:
                 score_details = []
                 for i, (doc, score) in enumerate(zip(documents, scores), 1):
-                    score_details.append({
-                        "index": i,
-                        "score": round(score, 4),
-                        "preview": doc[:100] + "..." if len(doc) > 100 else doc
-                    })
-                await thinking_callback({
-                    "type": "thinking",
-                    "stage": "reorder",
-                    "content": f"已计算完成 {len(documents)} 个文档的相关性分数，按分数降序排序",
-                    "details": {
-                        "scores": score_details
-                    }
-                })
+                    score_details.append({"index": i, "score": round(score, 4), "preview": doc[:100] + "..." if len(doc) > 100 else doc})
+                await thinking_callback(
+                    {"type": "thinking", "stage": "reorder", "content": f"已计算完成 {len(documents)} 个文档的相关性分数，按分数降序排序", "details": {"scores": score_details}}
+                )
 
             # 按相似度分数降序排序
             sorted_docs = sorted(scored_documents, key=lambda x: x["similarity"], reverse=True)
             logger.info(f"【重排序服务】文档重排序成功，返回 {len(sorted_docs)} 个文档")
 
-            return {
-                "success": True,
-                "documents": sorted_docs,
-                "error": ""
-            }
+            return {"success": True, "documents": sorted_docs, "error": ""}
         except Exception as e:
             error_msg = str(e)
             logger.error(f"【重排序服务】重排序失败: {error_msg}")
-            return {
-                "success": False,
-                "documents": [],
-                "error": error_msg
-            }
+            return {"success": False, "documents": [], "error": error_msg}
 
     @staticmethod
     async def format_reorder_result(sorted_docs: list[dict]) -> str:
