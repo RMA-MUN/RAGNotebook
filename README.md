@@ -8,11 +8,7 @@
   <img src="https://img.shields.io/github/forks/RMA-MUN/RAGNotebook?style=flat-square&label=Forks&color=green" alt="Forks">
 </a>
   <img src="https://img.shields.io/badge/python-v3.12.4-blue.svg" alt="Python">
-  <a href="https://github.com/RMA-MUN/RAGNotebook/actions/workflows/ci.yml">
-    <img src="https://github.com/RMA-MUN/RAGNotebook/actions/workflows/ci.yml/badge.svg" alt="CI">
-  </a>
 </div>
-
 
 AI 驱动的个人知识管理工具，融合 **笔记管理 + neo4j知识图谱 + GraphRAG + AI 写作辅助**，解决"笔记写了从不回看、知识散落成孤岛"的问题。
 
