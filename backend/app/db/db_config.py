@@ -1,20 +1,15 @@
-import os
-
-from dotenv import load_dotenv
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.logger_handler import logger
+from app.core.settings import settings
 from app.models.chat_history import Base
-
-# 加载环境变量
-load_dotenv()
 
 # 数据库URL
 ASYNC_DATABSE_URL = (
-    f"mysql+aiomysql://{os.getenv('MYSQL_USER', 'root')}:{os.getenv('MYSQL_PASSWORD', '')}"
-    f"@{os.getenv('MYSQL_HOST', 'localhost')}:{os.getenv('MYSQL_PORT', '3306')}"
-    f"/{os.getenv('MYSQL_DATABASE', 'chat_history')}?charset=utf8mb4"
+    f"mysql+aiomysql://{settings.MYSQL_USER}:{settings.MYSQL_PASSWORD}"
+    f"@{settings.MYSQL_HOST}:{settings.MYSQL_PORT}"
+    f"/{settings.MYSQL_DATABASE}?charset=utf8mb4"
 )
 
 # 创建异步引擎

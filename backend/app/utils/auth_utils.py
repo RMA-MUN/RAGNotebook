@@ -1,5 +1,4 @@
 import json
-import os
 import time
 import uuid
 from typing import Any
@@ -12,13 +11,12 @@ from passlib.context import CryptContext
 from sqlalchemy import select
 
 from app.core.failed_response import logger
+from app.core.settings import settings
 from app.db.db_config import AsyncSessionLocal
 from app.db.redis_config import connect_redis, set_redis_cache
 
-load_dotenv()
-
-SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = os.getenv("ALGORITHM")
+SECRET_KEY = settings.SECRET_KEY
+ALGORITHM = settings.ALGORITHM
 
 security = HTTPBearer()
 

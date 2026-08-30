@@ -104,7 +104,7 @@ async def startup_event():
 
     # 检查并重排序模型（在后台异步加载）
     await init_manager.start()
-    logger.info("部分资源正在初始化（模型加载、ChromaDB初始化等将在后台继续加载）")
+    logger.info("部分资源正在初始化")
 
 @app.on_event("shutdown")
 async def shutdown_event():

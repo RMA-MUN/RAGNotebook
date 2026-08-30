@@ -1,14 +1,10 @@
-import os
 from abc import ABC, abstractmethod
 
-from dotenv import load_dotenv
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
 
 from app.core.logger_handler import logger
-
-# 加载环境变量
-load_dotenv()
+from app.core.settings import settings
 
 
 def create_chat_openai(model: str, api_key: str | None, base_url: str | None,
@@ -43,12 +39,12 @@ def _resolve_openai_config(
     内部通用实现——各能力请通过 resolve_chat_config() / resolve_vision_config() /
     resolve_embed_config() 调用，保证每个能力只读自己那组环境变量。
     """
-    base_url = os.getenv(base_url_env)
-    api_key = os.getenv(api_key_env)
+    base_url = getattr(settings, base_url_env, None) or None
+    api_key = getattr(settings, api_key_env, None) or None
     if fallback_to_openai and not base_url and not api_key:
-        base_url = os.getenv("OPENAI_BASE_URL")
-        api_key = os.getenv("OPENAI_API_KEY")
-    model = os.getenv(model_env) or default_model
+        base_url = settings.OPENAI_BASE_URL or None
+        api_key = settings.OPENAI_API_KEY or None
+    model = getattr(settings, model_env, None) or default_model
     return {"model": model, "api_key": api_key, "base_url": base_url}
 
 
@@ -127,7 +123,7 @@ class VisionModelFactory(BaseModelFactory):
     """
 
     def generator(self) -> BaseChatModel | None:
-        vision_enabled = os.getenv("VISION_ENABLED")
+        vision_enabled = settings.VISION_ENABLED
 
         if vision_enabled is not None and vision_enabled.lower() == "false":
             logger.info("🎨 视觉模型未启用（VISION_ENABLED=false），PDF 走纯文本")

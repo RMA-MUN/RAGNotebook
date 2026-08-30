@@ -1,10 +1,10 @@
 import hashlib
-import os
 from collections.abc import Callable
 from typing import Any
 
 import httpx
 
+from app.core.settings import settings
 from app.rag.agentic_rag.schemas import Evidence
 
 
@@ -20,8 +20,8 @@ class WebSearchClient:
         http_client_factory: HttpClientFactory | None = None,
     ):
         self.enabled = _env_enabled() if enabled is None else enabled
-        self.provider = (provider or os.getenv("WEB_SEARCH_PROVIDER", "")).strip().lower()
-        self.api_key = (api_key or os.getenv("WEB_SEARCH_API_KEY", "")).strip()
+        self.provider = (provider or settings.WEB_SEARCH_PROVIDER).strip().lower()
+        self.api_key = (api_key or settings.WEB_SEARCH_API_KEY).strip()
         self.http_client_factory = http_client_factory or httpx.AsyncClient
 
     async def search(self, query: str, max_results: int = 5) -> list[Evidence]:
@@ -73,7 +73,7 @@ class WebSearchClient:
 
 
 def _env_enabled() -> bool:
-    return os.getenv("WEB_SEARCH_ENABLED", "false").strip().lower() == "true"
+    return settings.WEB_SEARCH_ENABLED
 
 
 def _to_evidence(provider: str, item: dict[str, Any]) -> Evidence:

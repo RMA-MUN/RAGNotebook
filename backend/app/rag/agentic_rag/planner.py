@@ -1,10 +1,10 @@
 import json
-import os
 import re
 from typing import Any
 
 from pydantic import ValidationError
 
+from app.core.settings import settings
 from app.rag.agentic_rag.schemas import RetrievalPlan, RetrievalStep
 
 
@@ -100,9 +100,9 @@ def _create_default_chat_model():
         from app.utils.factory import create_chat_openai
 
         return create_chat_openai(
-            model=os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini"),
-            api_key=os.getenv("OPENAI_API_KEY"),
-            base_url=os.getenv("OPENAI_BASE_URL"),
+            model=settings.OPENAI_MODEL_NAME or "gpt-4o-mini",
+            api_key=settings.OPENAI_API_KEY or None,
+            base_url=settings.OPENAI_BASE_URL or None,
             streaming=False,
             top_p=0.7,
         )

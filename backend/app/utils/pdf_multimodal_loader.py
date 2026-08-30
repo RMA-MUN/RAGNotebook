@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import fitz
 from langchain_core.documents import Document
 
+from app.core.settings import settings
 from app.core.logger_handler import logger
 from app.utils.image_extractor import extract_images_from_pdf
 from app.utils.path_tool import get_abstract_path
@@ -17,12 +18,12 @@ from app.utils.vision_service import VisionService
 # - DEDUP_ENABLED: 是否对视觉相似的页面去重（如 PPT 模板页、重复的页眉页脚）
 # - DEDUP_THRESHOLD: 感知哈希的汉明距离阈值，越小去重越严格
 # - BATCH_LOW_RES: 使用低分辨率渲染页面图片（节省带宽和视觉模型的计算成本）
-_BATCH_SIZE = int(os.getenv("VISION_BATCH_SIZE", "5"))
-_DEDUP_ENABLED = os.getenv("VISION_DEDUP_ENABLED", "true").lower() == "true"
-_DEDUP_THRESHOLD = int(os.getenv("VISION_DEDUP_THRESHOLD", "10"))
-_LOW_RES_BATCH = os.getenv("VISION_BATCH_LOW_RES", "true").lower() == "true"
+_BATCH_SIZE = settings.VISION_BATCH_SIZE
+_DEDUP_ENABLED = settings.VISION_DEDUP_ENABLED
+_DEDUP_THRESHOLD = settings.VISION_DEDUP_THRESHOLD
+_LOW_RES_BATCH = settings.VISION_BATCH_LOW_RES
 # 视觉总开关：显式设为 false 时彻底关闭（PDF 走纯文本，不渲染页面）；未设置或 true 保持旧行为
-_VISION_ENABLED = os.getenv("VISION_ENABLED", "").lower() != "false"
+_VISION_ENABLED = (settings.VISION_ENABLED or "").lower() != "false"
 
 
 @dataclass

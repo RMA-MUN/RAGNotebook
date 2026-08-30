@@ -3,7 +3,6 @@
 统一测试策略（全 Mock，不依赖外部服务）：
 - MySQL      -> 文件型 SQLite（每 session 独立连接，贴近真实 MySQL 连接池）
 - Redis      -> tests/fakes.FakeRedis
-- ChromaDB   -> tests/fakes.FakeChromaStore（真实 NoteService 逻辑照常执行）
 - LLM        -> tests/fakes.make_fake_chat_model（GenericFakeChatModel）
 - 重排序模型 -> tests/fakes.FakeReorderService
 - API 测试   -> httpx ASGITransport 直连 FastAPI 应用，不进入 lifespan（不触发启动连库）
@@ -45,7 +44,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.models.chat_history import Base
 
 from tests.fakes import (
-    FakeChromaStore,
     FakeReorderService,
     FakeVectorStoreService,
     TEST_USER_ID,
@@ -55,7 +53,6 @@ from tests.fakes import (
 
 # 方便各测试文件直接复用（例如替换 VectorStoreService 时）
 __all__ = [
-    "FakeChromaStore",
     "FakeReorderService",
     "FakeVectorStoreService",
     "TEST_USER_ID",
@@ -65,9 +62,9 @@ __all__ = [
 
 
 @pytest.fixture(autouse=True)
-def _force_mysql_graph_store(monkeypatch):
-    """测试一律走 MySQLGraphStore 回落：屏蔽开发 .env 里的 NEO4J_URI，
-    保证 graph 系列测试在 SQLite 会话注入下行为与迁移前一致（Neo4j 集成测试单独 env 门控）。"""
+def _disable_neo4j(monkeypatch):
+    """默认屏蔽开发 .env 里的 NEO4J_URI：测试统一走「Neo4j 未配置 → 功能降级」路径，
+    防止测试误写开发图数据库；Neo4j 集成测试用 neo4j_env fixture 显式指向 NEO4J_TEST_URI。"""
     from app.core.failed_response import settings
 
     monkeypatch.setattr(settings, "NEO4J_URI", "", raising=False)
@@ -189,7 +186,7 @@ async def fake_models(monkeypatch):
 
 @pytest_asyncio.fixture
 async def real_note_service(monkeypatch):
-    """真实 NoteService（向量能力已迁 Neo4j，无需替身 Chroma），并挂到 init_manager。"""
+    """真实 NoteService（向量能力已迁 Neo4j），并挂到 init_manager。"""
     from app.services.note_service import NoteService
 
     service = NoteService()

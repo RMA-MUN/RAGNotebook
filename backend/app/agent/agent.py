@@ -1,12 +1,13 @@
 import asyncio
 import inspect
 import json
-import os
 from collections.abc import AsyncGenerator
 
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
+
+from app.core.settings import settings
 
 from app.agent.agent_tools import (
     create_note_tool,
@@ -51,7 +52,7 @@ class AgentFactory:
         :param default_system_prompt: 默认系统提示词
         """
         self.model = model
-        self.api_key = api_key or os.getenv("CHAT_API_KEY")
+        self.api_key = api_key or settings.CHAT_API_KEY or None
         self.default_tools = default_tools or self._get_default_tools()
         self.default_middleware = default_middleware or self._get_default_middleware()
         self.default_system_prompt = default_system_prompt or self._get_default_system_prompt()
@@ -89,12 +90,12 @@ class AgentFactory:
         """内部方法：创建聊天模型实例（统一 OpenAI 兼容协议）"""
         from app.utils.factory import create_chat_openai
 
-        model = custom_model or os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini")
+        model = custom_model or settings.OPENAI_MODEL_NAME or "gpt-4o-mini"
         logger.info(f"🤖 Agent使用OpenAI兼容模型: {model}")
         return create_chat_openai(
             model=model,
-            api_key=os.getenv("OPENAI_API_KEY"),
-            base_url=os.getenv("OPENAI_BASE_URL"),
+            api_key=settings.OPENAI_API_KEY or None,
+            base_url=settings.OPENAI_BASE_URL or None,
             streaming=True,
             top_p=0.7,
         )

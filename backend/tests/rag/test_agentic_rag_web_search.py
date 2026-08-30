@@ -6,10 +6,13 @@ from app.rag.agentic_rag.web_search import WebSearchClient
 
 @pytest.fixture(autouse=True)
 def _clean_web_search_env(monkeypatch):
-    """屏蔽开发 .env 泄漏进 os.environ 的真实搜索配置（factory 等 import 时 load_dotenv），
+    """屏蔽开发 .env 泄漏进 settings 的真实搜索配置，
     否则 api_key/provider 传 None/"" 的用例会回落到真 key 发起真实网络请求。"""
-    for var in ("WEB_SEARCH_ENABLED", "WEB_SEARCH_PROVIDER", "WEB_SEARCH_API_KEY"):
-        monkeypatch.delenv(var, raising=False)
+    from app.core.settings import settings
+
+    monkeypatch.setattr(settings, "WEB_SEARCH_ENABLED", False, raising=False)
+    monkeypatch.setattr(settings, "WEB_SEARCH_PROVIDER", "", raising=False)
+    monkeypatch.setattr(settings, "WEB_SEARCH_API_KEY", "", raising=False)
 
 
 class FakeAsyncClient:

@@ -1,16 +1,16 @@
 import asyncio
 import json
-import os
 from typing import Any
 
 import redis.asyncio as redis
 from redis.asyncio import ConnectionPool
 
 from app.core.logger_handler import logger
+from app.core.settings import settings
 
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-REDIS_DB = int(os.getenv("REDIS_DB", "3"))
+REDIS_HOST = settings.REDIS_HOST
+REDIS_PORT = settings.REDIS_PORT
+REDIS_DB = settings.REDIS_DB
 
 # 全局连接池
 _pool: ConnectionPool | None = None

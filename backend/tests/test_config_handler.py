@@ -39,8 +39,8 @@ def test_load_config_real_app_config_files_exist():
     from app.utils.path_tool import get_abstract_path
 
     prompt = load_config(get_abstract_path("app/config/prompt.yaml"))
-    chroma = load_config(get_abstract_path("app/config/chroma.yaml"))
+    document = load_config(get_abstract_path("app/config/document.yaml"))
     assert isinstance(prompt, dict) and prompt
-    assert isinstance(chroma, dict) and chroma
+    assert isinstance(document, dict) and document
     # empty file -> None, no exception
     assert load_config(get_abstract_path("app/config/agent.yaml")) is None
