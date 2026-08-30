@@ -10,7 +10,8 @@
 
 原理：
   - 笔记：遍历 MySQL note 表 → 任务 payload {"text": 正文}
-  - 知识库文档：直连 ChromaDB 读该用户切片（保留 page/图片元数据，与应用代码解耦）→ payload {"chunks": [...]}
+  - 知识库文档：读 Neo4j 中该用户的 Doc/Chunk 节点（保留 page/图片元数据）→ payload {"chunks": [...]}；
+    原始上传文件不落盘，Neo4j 是文档切片唯一来源——--wipe 清库后文档侧无法由脚本重建，需重新上传
   - 抽取/建边/Chunk 写入复用 graph_service.process_task 同款管线（LLM 抽取 → Neo4j 实体/关系/
     Chunk/MENTIONS 规则匹配）
 """
@@ -21,7 +22,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import chromadb
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 
@@ -31,7 +31,6 @@ from app.graph.services.graph_service import _enqueue_build_task, content_hash
 from app.models.graph import GraphBuildTask, GraphExtractLog
 from app.models.note import Note
 from app.models.user_model import User
-from app.utils.config import chroma_config
 
 
 async def _ensure_models():
@@ -73,35 +72,34 @@ async def list_notes(user_id: str) -> list[tuple[str, str, str]]:
 
 
 async def list_docs(user_id: str) -> list[tuple[str, str, list[dict]]]:
-    """直连 ChromaDB 读该用户全部切片，按 md5 分组。
+    """读 Neo4j 中该用户的文档节点与 doc Chunk（上传管线/此前回填写入），按 md5 分组。
 
     返回 [(md5, filename, chunks)]，chunks 为 [{"chunk_index", "text", "page", "image_paths"}]。
-    注意：Chroma 不保证切片写入顺序，此处按 page 升序尽量还原阅读顺序。
     """
-    persist_dir = chroma_config["persist_directory"]
-    client = chromadb.PersistentClient(path=str(Path(persist_dir).resolve()))
-    collection = client.get_collection(chroma_config["collection_name"])
-    all_docs = collection.get(include=["documents", "metadatas"], where={"user_id": user_id})
+    from app.graph.storage.neo4j_client import get_neo4j_driver
 
+    driver = get_neo4j_driver()
+    result = await driver.execute_query(
+        "MATCH (d:Doc {user_id: $uid}) "
+        "OPTIONAL MATCH (c:Chunk {kind: 'doc', user_id: $uid}) "
+        "WHERE c.source_id = d.id "
+        "RETURN d.id AS md5, d.filename AS filename, c AS c ORDER BY md5, c.chunk_index",
+        {"uid": user_id},
+    )
     groups: dict[str, dict] = {}
-    for i, content in enumerate(all_docs["documents"] or []):
-        meta = all_docs["metadatas"][i] if i < len(all_docs["metadatas"]) else {}
-        md5 = meta.get("md5")
-        if not md5:
+    for row in result.records:
+        md5 = row["md5"]
+        g = groups.setdefault(md5, {"filename": row["filename"] or md5, "chunks": []})
+        c = row["c"]
+        if c is None:
             continue
-        g = groups.setdefault(md5, {"filename": meta.get("original_filename") or meta.get("filename") or md5,
-                                    "chunks": []})
         g["chunks"].append({
-            "text": content or "",
-            "page": meta.get("page"),
-            "image_paths": meta.get("image_paths") or [],
+            "text": c.get("text") or "",
+            "page": c.get("page"),
+            "image_paths": c.get("image_paths") or [],
         })
-    result = []
-    for md5, g in groups.items():
-        g["chunks"].sort(key=lambda c: (c.get("page") is None, c.get("page") or 0))
-        chunks = [{"chunk_index": i, **c} for i, c in enumerate(g["chunks"])]
-        result.append((md5, g["filename"], chunks))
-    return result
+    return [(md5, g["filename"], [{"chunk_index": i, **c} for i, c in enumerate(g["chunks"])])
+            for md5, g in groups.items()]
 
 
 async def wipe_all(users: list[str]) -> None:

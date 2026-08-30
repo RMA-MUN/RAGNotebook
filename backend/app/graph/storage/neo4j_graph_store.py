@@ -1,12 +1,9 @@
 """Neo4j GraphStore 实现（neo4j 官方 Python 驱动，异步）。
 
-与 MySQLGraphStore 逐方法对齐：
-- 实体 upsert 的名称/别名去重、字段合并语义一致；
-- merge_entities 的关系/关联重定向一致；
-- 画布三查询（note_graph/doc_graph/overview）返回相同 GraphView 形状；
-- 类型表惰性种入（MERGE on name+is_system）。
-
-与 MySQL 的有意差异：
+语义约定：
+- 实体 upsert 按名称/别名去重、字段合并；merge_entities 关系/关联重定向；
+- 画布三查询（note_graph/doc_graph/overview）返回统一的 GraphView 形状；
+- 类型表惰性种入（MERGE on name+is_system）；
 - WIKI 双链只存单向边（a→b），查询用无向匹配，画布不再出现正反两条重复边；
 - 实体-来源关联落为 (Note|Doc)-[:MENTIONS {mention_count, context_json}]->(Entity) 边，
   context 以 JSON 字符串存储（Neo4j 列表属性只能是标量）；
@@ -32,11 +29,13 @@ from app.graph.schemas.graph import (
     TypeIn,
 )
 from app.graph.storage.graph_store import GraphStore
-from app.graph.storage.mysql_graph_store import SEED_TYPE_COLORS
 from app.graph.storage.neo4j_client import get_neo4j_driver
 
 _SYSTEM_TYPES = (("person", "人物"), ("tech", "技术/工具"), ("concept", "概念"),
                  ("org", "组织"), ("place", "地点"), ("project", "项目"), ("event", "事件"))
+
+SEED_TYPE_COLORS = {"person": "#E4572E", "tech": "#1F6C9F", "concept": "#2A9D8F",
+                    "org": "#E9C46A", "place": "#9B5DE5", "project": "#F4A261", "event": "#D90429"}
 
 # Lucene 查询语法保留字符，全文检索前剔除，避免被当作语法解析报错
 _LUCENE_SPECIALS = re.compile(r'[+\-!(){}\[\]^"~*?:\\/]')
@@ -712,8 +711,9 @@ class Neo4jGraphStore(GraphStore):
         if not rrf:
             return []
         top_ids = [cid for cid, _ in sorted(rrf.items(), key=lambda kv: kv[1], reverse=True)[:limit]]
+        # id 跨用户可重复（文档 md5 相同），取节点必须叠加 user_id 过滤防串用户
         node_rows = await self._run(
-            "MATCH (c:Chunk) WHERE c.id IN $ids RETURN c", {"ids": top_ids})
+            "MATCH (c:Chunk) WHERE c.id IN $ids AND c.user_id = $uid RETURN c", {"ids": top_ids, "uid": user_id})
         by_id = {row["c"]["id"]: row["c"] for row in node_rows}
         hits = []
         for cid in top_ids:

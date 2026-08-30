@@ -1,20 +1,16 @@
 """GraphStore 存储层实现包。
 
 service 层一律通过 get_graph_store(session) 获取实现：
-- 配置了 NEO4J_URI → Neo4jGraphStore（自管驱动连接，session 参数被忽略）；
-- 未配置 → MySQLGraphStore（接收外部注入的 AsyncSession；测试走此路径）。
+图谱存储只有 Neo4j 单一实现（自管驱动连接，session 参数被忽略，保留以兼容既有调用方）；
+Neo4j 未配置/不可用时由调用方降级（API 返回 503，主流程跳过图谱步骤）。
 """
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.failed_response import settings
 from app.graph.storage.graph_store import GraphStore
-from app.graph.storage.mysql_graph_store import MySQLGraphStore
 
 
 def get_graph_store(session: AsyncSession | None = None) -> GraphStore:
-    """返回当前配置的 GraphStore 实现（Neo4j 优先，未配置回落 MySQL）。"""
-    if settings.NEO4J_URI:
-        from app.graph.storage.neo4j_graph_store import Neo4jGraphStore
+    """返回 Neo4j 图谱存储实现。"""
+    from app.graph.storage.neo4j_graph_store import Neo4jGraphStore
 
-        return Neo4jGraphStore()
-    return MySQLGraphStore(session)
+    return Neo4jGraphStore()

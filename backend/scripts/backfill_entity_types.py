@@ -83,7 +83,7 @@ async def untyped_entity_sources(user_id: str) -> dict[str, list[tuple[str, str]
 
 
 async def _fetch_doc_content(md5: str) -> str:
-    """按 md5 从 ChromaDB 取该文档全文（与 backfill_graph.list_docs 同参数）。"""
+    """按 md5 从 Neo4j 取该文档全文（与 backfill_graph.list_docs 同参数）。"""
     from app.rag.vector_store import VectorStoreService
     store = VectorStoreService()
     all_docs = await asyncio.to_thread(

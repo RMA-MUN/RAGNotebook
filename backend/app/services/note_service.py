@@ -2,7 +2,7 @@
 笔记服务层 —— 包含 CRUD、异步自动标签等核心业务逻辑。
 
 笔记向量检索已切换 Neo4j（Chunk 种子检索，见 graph_service 抽取管线）；
-Neo4j 不可用/未配置（MySQL 回落）时 search_notes 降级为 MySQL LIKE 匹配。
+Neo4j 不可用/未配置时 search_notes 记日志返回空，不影响笔记主流程。
 """
 import asyncio
 import io
@@ -83,7 +83,7 @@ class NoteService:
         """
         创建笔记：
         1. MySQL 写入笔记（若用户提供了 tags/category 直接写入）
-        2. ChromaDB 写入向量
+        2. 入队图谱构建任务
         3. 立即返回笔记 ID
         4. 若用户未提供 tags/category，后台异步任务自动生成
         """
@@ -236,7 +236,7 @@ class NoteService:
         """
         语义搜索笔记：Neo4j Chunk 种子检索（向量+全文）→ 按命中顺序回填 MySQL 完整数据。
 
-        Neo4j 不可用（MySQL 回落实现无 Chunk 能力）时降级为 MySQL LIKE 匹配。
+        Neo4j 不可用/无命中时不影响主流程（记日志返回空）。
         """
         store = get_graph_store(db)
         note_ids: list[str] = []
@@ -246,8 +246,6 @@ class NoteService:
             for hit in hits:
                 if hit.source_id and hit.source_id not in note_ids:
                     note_ids.append(hit.source_id)
-        except NotImplementedError:
-            return await self._search_notes_like(db, user_id, query, top_k)
         except Exception as e:
             logger.error(f"笔记语义搜索失败: {e}")
             return []
@@ -261,19 +259,6 @@ class NoteService:
         notes_map = {n.id: n for n in result.scalars().all()}
 
         return [self._doc_to_response(notes_map[nid]) for nid in note_ids if nid in notes_map]
-
-    async def _search_notes_like(self, db: AsyncSession, user_id: str, query: str,
-                                 top_k: int) -> list[NoteResponse]:
-        """MySQL LIKE 兜底搜索（Neo4j 回落场景）。"""
-        if not query or not query.strip():
-            return []
-        like = f"%{query.strip()}%"
-        rows = (await db.execute(
-            select(Note).where(Note.user_id == user_id,
-                               (Note.title.like(like)) | (Note.content.like(like)))
-            .order_by(Note.is_pinned.desc(), Note.updated_at.desc())
-            .limit(top_k))).scalars().all()
-        return [self._doc_to_response(n) for n in rows]
 
     async def get_related_notes(
         self,
@@ -297,7 +282,7 @@ class NoteService:
         try:
             embedding = await self._embed_query(note.content)
             hits = await store.search_chunks(user_id, embedding, note.content, None, top_k * 4)
-        except (NotImplementedError, Exception) as e:  # noqa: B014  回落实现/图库故障均静默降级
+        except Exception as e:  # 图库故障静默降级
             logger.error(f"关联推荐检索失败: {e}")
             return []
 
@@ -543,7 +528,7 @@ class NoteService:
         """
         批量删除笔记：
         1. MySQL 批量删除（级联 review_records）
-        2. ChromaDB 逐个清理向量
+        2. 逐个联动清理 Neo4j 图谱数据
         返回实际删除数量。
         """
         if not note_ids:

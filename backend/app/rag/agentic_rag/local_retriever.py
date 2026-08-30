@@ -5,12 +5,13 @@
 - hybrid_search         → search_chunks(kinds=None)（单次调用，RRF 已融合笔记与文档）
 - search_graph          → 实体候选词匹配 → 实体证据 + 命中实体的 chunk 片段补充
 
-工具名保持不变，执行层已从 Chroma/EnsembleRetriever 切换为图存储。
+工具名保持不变，执行层为图存储检索。
 """
 import asyncio
 from collections.abc import Callable
 from typing import Any
 
+from app.core.logger_handler import logger
 from app.db.db_config import AsyncSessionLocal
 from app.graph.schemas.graph import ChunkHit
 from app.graph.storage import get_graph_store
@@ -34,14 +35,18 @@ class LocalRetriever:
         evidences: list[Evidence] = []
 
         for step in steps:
-            if step.tool == "search_notes":
-                evidences.extend(await self._search_chunks(user_id, step, kinds=["note"]))
-            elif step.tool == "search_knowledge_base":
-                evidences.extend(await self._search_chunks(user_id, step, kinds=["doc"]))
-            elif step.tool == "search_graph":
-                evidences.extend(await self._search_graph(user_id, step))
-            elif step.tool == "hybrid_search":
-                evidences.extend(await self._search_chunks(user_id, step, kinds=None))
+            try:
+                if step.tool == "search_notes":
+                    evidences.extend(await self._search_chunks(user_id, step, kinds=["note"]))
+                elif step.tool == "search_knowledge_base":
+                    evidences.extend(await self._search_chunks(user_id, step, kinds=["doc"]))
+                elif step.tool == "search_graph":
+                    evidences.extend(await self._search_graph(user_id, step))
+                elif step.tool == "hybrid_search":
+                    evidences.extend(await self._search_chunks(user_id, step, kinds=None))
+            except Exception as e:
+                # 单步检索失败（含 Neo4j 不可用）不阻塞其余步骤：聊天主流程功能降级
+                logger.warning(f"检索步骤 {step.tool} 失败，已跳过: {e}")
 
         return evidences
 
@@ -51,11 +56,7 @@ class LocalRetriever:
         async with self.session_factory() as db:
             store = get_graph_store(db)
             embedding = await self._query_embedding(step.query)
-            try:
-                hits = await store.search_chunks(user_id, embedding, step.query, kinds, step.top_k)
-            except NotImplementedError:
-                # MySQL 回落实现无 Chunk 检索能力（测试环境）
-                return []
+            hits = await store.search_chunks(user_id, embedding, step.query, kinds, step.top_k)
             return [self._chunk_to_evidence(hit) for hit in hits]
 
     async def _search_graph(self, user_id: str, step: RetrievalStep) -> list[Evidence]:

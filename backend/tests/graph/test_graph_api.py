@@ -1,14 +1,27 @@
+"""图谱 API 集成测试（需要真实 Neo4j）。
+
+    NEO4J_TEST_URI=bolt://localhost:7687 uv run --extra dev pytest tests/graph/test_graph_api.py -v
+
+复用 client fixture（SQLite + 假模型），store 走真实 Neo4j；每个用例结束后由包级
+conftest 的 _cleanup 清理测试子图，会话结束删除测试建出的 Schema 对象。
+"""
+import os
+
 import pytest
 
-from app.models.graph import (
-    GraphEntity,
-    GraphEntityType,
-    GraphRelation,
-)
+pytestmark = pytest.mark.skipif(
+    not os.getenv("NEO4J_TEST_URI"), reason="需要真实 Neo4j（设 NEO4J_TEST_URI 启用）")
+
+
+@pytest.fixture
+def neo4j_env(monkeypatch):
+    from app.core.failed_response import settings
+
+    monkeypatch.setattr(settings, "NEO4J_URI", os.environ["NEO4J_TEST_URI"], raising=False)
 
 
 @pytest.mark.asyncio
-async def test_overview_and_entity_crud(client):
+async def test_overview_and_entity_crud(client, neo4j_env, _cleanup):
     # 建一个实体
     r = await client.post("/api/graph/entities", json={
         "name": "Python", "display_name": "Python", "confidence": 0.9})
@@ -25,7 +38,7 @@ async def test_overview_and_entity_crud(client):
 
 
 @pytest.mark.asyncio
-async def test_merge_entities(client):
+async def test_merge_entities(client, neo4j_env, _cleanup):
     a = (await client.post("/api/graph/entities", json={"name": "A"})).json()["data"]
     b = (await client.post("/api/graph/entities", json={"name": "B"})).json()["data"]
     await client.post("/api/graph/relations", json={
@@ -37,7 +50,7 @@ async def test_merge_entities(client):
 
 
 @pytest.mark.asyncio
-async def test_merge_self_returns_entity_without_deleting(client):
+async def test_merge_self_returns_entity_without_deleting(client, neo4j_env, _cleanup):
     # 自合并守卫：target_id == source_id 不删行，实体保留
     e = (await client.post("/api/graph/entities", json={"name": "Solo"})).json()["data"]
     r = await client.post("/api/graph/entities/merge", json={
@@ -50,7 +63,7 @@ async def test_merge_self_returns_entity_without_deleting(client):
 
 
 @pytest.mark.asyncio
-async def test_search_returns_entity_and_note_groups(client):
+async def test_search_returns_entity_and_note_groups(client, neo4j_env, _cleanup):
     await client.post("/api/graph/entities", json={"name": "FastAPI", "aliases": ["fastapi"]})
     r = await client.get("/api/graph/search", params={"q": "fastapi"})
     assert r.status_code == 200
@@ -58,7 +71,7 @@ async def test_search_returns_entity_and_note_groups(client):
 
 
 @pytest.mark.asyncio
-async def test_types_crud_api(client):
+async def test_types_crud_api(client, neo4j_env, _cleanup):
     r = await client.post("/api/graph/types", json={
         "name": "org", "display_name": "组织", "color": "#00FF00"})
     assert r.status_code == 200
@@ -68,7 +81,7 @@ async def test_types_crud_api(client):
 
 
 @pytest.mark.asyncio
-async def test_put_entity_preserves_unset_fields(client):
+async def test_put_entity_preserves_unset_fields(client, neo4j_env, _cleanup):
     # 建类型 + 带 type_id/aliases/confidence 的实体
     tid = (await client.post("/api/graph/types", json={
         "name": "lang", "display_name": "语言", "color": "#FF0000"})).json()["data"]["id"]
@@ -85,6 +98,6 @@ async def test_put_entity_preserves_unset_fields(client):
 
 
 @pytest.mark.asyncio
-async def test_extract_logs_endpoint(client):
+async def test_extract_logs_endpoint(client, neo4j_env):
     r = await client.get("/api/graph/extract-logs")
     assert r.status_code == 200

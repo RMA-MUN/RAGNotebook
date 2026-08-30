@@ -9,7 +9,7 @@ import json
 import uuid
 from datetime import datetime
 
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,20 +21,23 @@ from app.graph.extraction.link_parser import parse_links
 from app.graph.schemas.graph import EntityIn
 from app.graph.services.event_bus import event_bus
 from app.graph.storage import get_graph_store
-from app.graph.storage.neo4j_graph_store import Neo4jGraphStore
+from app.graph.storage.neo4j_client import GraphUnavailableError
 from app.models.graph import (
     GraphBuildTask,
     GraphDoc,
-    GraphEntity,
-    GraphEntityNote,
     GraphExtractLog,
-    GraphNoteEdge,
-    GraphRelation,
 )
 from app.models.note import Note
 
 # 任务失败重试上限（超过后置 failed，需手动重抽）
 MAX_TASK_ATTEMPTS = 3
+
+
+def _graph_degradation_errors() -> tuple:
+    """图谱降级捕获的异常集合：未配置（GraphUnavailableError）与运行期连接故障（Neo4jError）。"""
+    from neo4j.exceptions import Neo4jError
+
+    return (GraphUnavailableError, Neo4jError)
 
 
 def content_hash(content: str) -> str:
@@ -46,7 +49,7 @@ async def _type_name_to_id(store, user_id: str) -> dict[str, str]:
     """把 LLM 返回的语义类型名（person/tech/concept/…）映射到类型 id。
 
     通过 store.list_types 获取（实现内部惰性种入系统预置类型），
-    Neo4j 与 MySQL 两实现均适用，避免抽取时类型缺失而丢弃 type_id。
+    避免抽取时类型缺失而丢弃 type_id。
     """
     types = await store.list_types(user_id)
     return {t.name: t.id for t in types}
@@ -101,9 +104,8 @@ async def _run_extraction(source_id: str, user_id: str, title: str, body_hash: s
     """抽取管线：LLM 抽取 → upsert 实体/关系 → 先清后插来源关联 → 落日志 → 推送。
 
     source_type="note" 时额外做双链解析与笔记双链边；"doc" 时不做双链（文档不入笔记图）。
-    Neo4j 主路径额外写入 Chunk 节点与 Chunk 级 MENTIONS 边；chunks 为上传管线
-    预切好的切片载荷（含 page/image_paths），未提供时对 body 现切（笔记路径）。
-    MySQL 回落路径（测试）保持原 ORM 写入，不含 Chunk 能力。
+    写入 Chunk 节点与 Chunk 级 MENTIONS 边；chunks 为上传管线预切好的切片载荷
+    （含 page/image_paths），未提供时对 body 现切（笔记路径）。
 
     返回 True 表示任务完成（含"来源已删除/无正文"这类无事可做的正常终态），
     False 表示可重试的失败。
@@ -122,7 +124,6 @@ async def _run_extraction(source_id: str, user_id: str, title: str, body_hash: s
                 body = note.content
                 body_hash = content_hash(body)
             store = get_graph_store(db)
-            neo4j = store if isinstance(store, Neo4jGraphStore) else None
 
             # 1. 双链解析（仅笔记；同步、快）
             links = parse_links(body) if source_type == "note" else []
@@ -175,99 +176,51 @@ async def _run_extraction(source_id: str, user_id: str, title: str, body_hash: s
                  "relation_type": rel.relation_type, "confidence": 0.7}
                 for rel in result.relations
                 if rel.source in name_to_id and rel.target in name_to_id]
-            if neo4j is not None:
-                await neo4j.set_relations_from_source(user_id, source_type, source_id, source_rels)
-            else:
-                # MySQL 回落路径（测试兼容；Task 9 随 Chroma 一并移除）
-                await db.execute(delete(GraphRelation).where(
-                    GraphRelation.user_id == user_id, GraphRelation.source_note_id == source_id,
-                    GraphRelation.source_type == source_type))
-                for rel in source_rels:
-                    db.add(GraphRelation(
-                        id=str(uuid.uuid4()), user_id=user_id, source_id=rel["source_id"],
-                        target_id=rel["target_id"], relation_type=rel["relation_type"],
-                        confidence=rel["confidence"], source_note_id=source_id,
-                        source_type=source_type))
+            await store.set_relations_from_source(user_id, source_type, source_id, source_rels)
 
-            # 4.5 记录本来源此前关联的实体（Neo4j）：写入后据此收缩 source_note_ids 并孤儿清扫，
+            # 4.5 记录本来源此前关联的实体：写入后据此收缩 source_note_ids 并孤儿清扫，
             #     防正文已删除的旧实体继续以图证据身份存在
-            old_entity_ids: list[str] = []
-            if neo4j is not None:
-                old_entity_ids = await neo4j.source_entity_candidates(user_id, source_type, source_id)
+            old_entity_ids = await store.source_entity_candidates(user_id, source_type, source_id)
 
             # 5. 来源级关联：先清后插（幂等覆盖 mentions）
             mention_links = [
                 {"entity_id": name_to_id[ent.name], "mention_count": len(ent.mentions),
                  "context": [{"snippet": m} for m in ent.mentions]}
                 for ent in result.entities if ent.name in name_to_id]
-            if neo4j is not None:
-                await neo4j.ensure_source_node(user_id, source_type, source_id, title)
-                await neo4j.set_source_mentions(user_id, source_type, source_id, mention_links)
-            else:
-                await db.execute(delete(GraphEntityNote).where(
-                    GraphEntityNote.user_id == user_id, GraphEntityNote.note_id == source_id,
-                    GraphEntityNote.source_type == source_type))
-                for link in mention_links:
-                    db.add(GraphEntityNote(
-                        id=str(uuid.uuid4()), user_id=user_id, entity_id=link["entity_id"],
-                        note_id=source_id, source_type=source_type,
-                        mention_count=link["mention_count"], context=link["context"]))
+            await store.ensure_source_node(user_id, source_type, source_id, title)
+            await store.set_source_mentions(user_id, source_type, source_id, mention_links)
 
-            # 5.5 Chunk 写入与 Chunk 级 MENTIONS（仅 Neo4j；规则匹配零 LLM 成本）
-            if neo4j is not None:
-                chunk_payloads = list(chunks) if chunks else [
-                    {"chunk_index": i, "text": text}
-                    for i, text in enumerate(await asyncio.to_thread(build_text_chunks, body or ""))]
-                if chunk_payloads:
-                    texts = [c["text"] for c in chunk_payloads]
-                    embed_model = init_manager.embed_model
-                    if embed_model is not None:
-                        vectors = await asyncio.to_thread(embed_model.embed_documents, texts)
-                        for chunk, vector in zip(chunk_payloads, vectors):
-                            chunk["embedding"] = vector
-                    await neo4j.upsert_chunks(user_id, source_type, source_id, title, chunk_payloads)
-                    matched = match_entities_in_chunks(result.entities, texts)
-                    await neo4j.set_chunk_mentions(user_id, source_type, source_id, [
-                        {"entity_id": name_to_id[name], "chunk_indexes": idxs}
-                        for name, idxs in matched.items() if name in name_to_id])
-                # 引用收缩：本轮抽取未再关联的旧实体摘除本来源，无任何引用残留即级联删除
-                removed = [eid for eid in old_entity_ids if eid not in name_to_id.values()]
-                if removed:
-                    await neo4j.sweep_orphan_entities(user_id, removed, [source_id])
+            # 5.5 Chunk 写入与 Chunk 级 MENTIONS（规则匹配零 LLM 成本）
+            chunk_payloads = list(chunks) if chunks else [
+                {"chunk_index": i, "text": text}
+                for i, text in enumerate(await asyncio.to_thread(build_text_chunks, body or ""))]
+            if chunk_payloads:
+                texts = [c["text"] for c in chunk_payloads]
+                embed_model = init_manager.embed_model
+                if embed_model is not None:
+                    vectors = await asyncio.to_thread(embed_model.embed_documents, texts)
+                    for chunk, vector in zip(chunk_payloads, vectors):
+                        chunk["embedding"] = vector
+                await store.upsert_chunks(user_id, source_type, source_id, title, chunk_payloads)
+                matched = match_entities_in_chunks(result.entities, texts)
+                await store.set_chunk_mentions(user_id, source_type, source_id, [
+                    {"entity_id": name_to_id[name], "chunk_indexes": idxs}
+                    for name, idxs in matched.items() if name in name_to_id])
+            # 引用收缩：本轮抽取未再关联的旧实体摘除本来源，无任何引用残留即级联删除
+            removed = [eid for eid in old_entity_ids if eid not in name_to_id.values()]
+            if removed:
+                await store.sweep_orphan_entities(user_id, removed, [source_id])
 
             # 6. 笔记双链边：先清后插出边（目标笔记需存在；Neo4j 单向存储、查询双向匹配）
             if source_type == "note":
-                if neo4j is not None:
-                    wiki_targets = []
-                    for link in links:
-                        target = (await db.execute(
-                            select(Note).where(Note.user_id == user_id, Note.title == link))).scalars().first()
-                        if target:
-                            wiki_targets.append({"target_note_id": target.id, "target_title": link,
-                                                 "kind": "wiki"})
-                    await neo4j.set_note_wiki_edges(user_id, source_id, wiki_targets)
-                else:
-                    target_ids: set[str] = set()
-                    await db.execute(delete(GraphNoteEdge).where(
-                        GraphNoteEdge.user_id == user_id, GraphNoteEdge.source_note_id == source_id))
-                    for link in links:
-                        target = (await db.execute(
-                            select(Note).where(Note.user_id == user_id, Note.title == link))).scalars().first()
-                        if target:
-                            target_ids.add(target.id)
-                            db.add(GraphNoteEdge(id=str(uuid.uuid4()), user_id=user_id,
-                                                 source_note_id=source_id, target_note_id=target.id, kind="wiki"))
-                            # 双向连通：被引用侧挂"被引用"边
-                            exists = (await db.execute(select(GraphNoteEdge).where(
-                                GraphNoteEdge.user_id == user_id, GraphNoteEdge.source_note_id == target.id,
-                                GraphNoteEdge.target_note_id == source_id))).scalar_one_or_none()
-                            if not exists:
-                                db.add(GraphNoteEdge(id=str(uuid.uuid4()), user_id=user_id,
-                                                     source_note_id=target.id, target_note_id=source_id, kind="wiki"))
-                    # 清理过期反向边：本笔记曾引用、现已移除链接的目标侧残留的"被引用"边
-                    await db.execute(delete(GraphNoteEdge).where(
-                        GraphNoteEdge.user_id == user_id, GraphNoteEdge.target_note_id == source_id,
-                        GraphNoteEdge.source_note_id.notin_(target_ids)))
+                wiki_targets = []
+                for link in links:
+                    target = (await db.execute(
+                        select(Note).where(Note.user_id == user_id, Note.title == link))).scalars().first()
+                    if target:
+                        wiki_targets.append({"target_note_id": target.id, "target_title": link,
+                                             "kind": "wiki"})
+                await store.set_note_wiki_edges(user_id, source_id, wiki_targets)
 
             # 7. 落日志（日志行缺失时自建——抽取期间被清理或从未持久化时不得崩溃）
             log = (await db.execute(select(GraphExtractLog).where(
@@ -479,96 +432,43 @@ async def process_task(task_id: str, run_token: str | None = None) -> bool:
         return True
 
 
-async def _sweep_orphans(db: AsyncSession, user_id: str, candidate_entity_ids: list[str],
-                         removed_source_ids: list[str]) -> None:
-    """来源关联删除后的孤儿清扫：摘除 source_note_ids 中被删来源的引用；
-    实体已无任何来源关联且引用为空 → 孤儿，删除实体及其全部关系。"""
-    removed = set(removed_source_ids)
-    if not removed:
-        return
-    for eid in set(candidate_entity_ids):
-        entity = (await db.execute(select(GraphEntity).where(
-            GraphEntity.user_id == user_id, GraphEntity.id == eid))).scalar_one_or_none()
-        if entity is None:
-            continue
-        remaining = [x for x in (entity.source_note_ids or []) if x not in removed]
-        entity.source_note_ids = remaining
-        has_link = (await db.execute(select(GraphEntityNote.id).where(
-            GraphEntityNote.user_id == user_id, GraphEntityNote.entity_id == eid))).first()
-        if has_link is None and not remaining:
-            await db.execute(delete(GraphRelation).where(
-                GraphRelation.user_id == user_id,
-                or_(GraphRelation.source_id == eid, GraphRelation.target_id == eid)))
-            await db.delete(entity)
-
-
 async def cleanup_note_graph(db: AsyncSession, user_id: str, note_id: str) -> None:
     """笔记删除联动：清理该笔记的双链边、实体关联、Chunk、抽取日志、溯源关系，
-    并清扫因该笔记而成为孤儿的实体（事务内调用）。"""
+    并清扫因该笔记而成为孤儿的实体（事务内调用）。
+
+    Neo4j 不可用时跳过图谱清理（功能降级），MySQL 侧抽取日志仍删除。
+    """
     store = get_graph_store(db)
-    if isinstance(store, Neo4jGraphStore):
+    try:
         candidates = await store.clear_source_data(user_id, "note", note_id)
         await store.sweep_orphan_entities(user_id, candidates, [note_id])
-        await db.execute(delete(GraphExtractLog).where(
-            GraphExtractLog.user_id == user_id, GraphExtractLog.note_id == note_id))
-        return
-
-    # MySQL 回落路径（测试兼容；Task 9 随 Chroma 一并移除）
-    candidate_ids = (await db.execute(
-        select(GraphEntityNote.entity_id).where(
-            GraphEntityNote.user_id == user_id, GraphEntityNote.note_id == note_id))).scalars().all()
-    await db.execute(delete(GraphNoteEdge).where(
-        GraphNoteEdge.user_id == user_id,
-        (GraphNoteEdge.source_note_id == note_id) | (GraphNoteEdge.target_note_id == note_id)))
-    await db.execute(delete(GraphEntityNote).where(
-        GraphEntityNote.user_id == user_id, GraphEntityNote.note_id == note_id))
+    except _graph_degradation_errors() as e:
+        logger.warning(f"Neo4j 不可用，跳过笔记图谱清理 note_id={note_id}: {e}")
     await db.execute(delete(GraphExtractLog).where(
         GraphExtractLog.user_id == user_id, GraphExtractLog.note_id == note_id))
-    # 该笔记抽取时创建的关系（按溯源列）
-    await db.execute(delete(GraphRelation).where(
-        GraphRelation.user_id == user_id, GraphRelation.source_note_id == note_id))
-    await _sweep_orphans(db, user_id, candidate_ids, [note_id])
 
 
 async def cleanup_doc_graph(user_id: str, doc_id: str) -> None:
-    """知识库文档删除联动：清理该文档的节点元数据（MySQL 注册行 + Neo4j 图节点）、
-    实体关联、Chunk、抽取日志、溯源关系，并清扫因该文档而成为孤儿的实体
-    （独立会话，异常不外抛）。
+    """知识库文档删除联动：清理该文档的图节点（Neo4j）与注册行/抽取日志（MySQL）、
+    实体关联、Chunk、溯源关系，并清扫因该文档而成为孤儿的实体（独立会话，异常不外抛）。
 
     与 cleanup_note_graph 不同，文档删除走知识库服务（无 DB 会话），故自开 AsyncSessionLocal 会话。
+    Neo4j 不可用时跳过图谱清理（功能降级），MySQL 侧注册行/抽取日志仍删除。
     """
     try:
         async with AsyncSessionLocal() as db:
             store = get_graph_store(db)
-            if isinstance(store, Neo4jGraphStore):
+            try:
                 candidates = await store.clear_source_data(user_id, "doc", doc_id)
                 await store.sweep_orphan_entities(user_id, candidates, [doc_id])
-                # MySQL 侧仅维护注册行与抽取日志
-                await db.execute(delete(GraphDoc).where(
-                    GraphDoc.user_id == user_id, GraphDoc.id == doc_id))
-                await db.execute(delete(GraphExtractLog).where(
-                    GraphExtractLog.user_id == user_id, GraphExtractLog.note_id == doc_id,
-                    GraphExtractLog.source_type == "doc"))
-                await db.commit()
-                return
-
-            # MySQL 回落路径（测试兼容；Task 9 随 Chroma 一并移除）
-            candidate_ids = (await db.execute(
-                select(GraphEntityNote.entity_id).where(
-                    GraphEntityNote.user_id == user_id, GraphEntityNote.note_id == doc_id,
-                    GraphEntityNote.source_type == "doc"))).scalars().all()
+            except _graph_degradation_errors() as e:
+                logger.warning(f"Neo4j 不可用，跳过文档图谱清理 doc_id={doc_id}: {e}")
+            # MySQL 侧维护注册行与抽取日志
             await db.execute(delete(GraphDoc).where(
                 GraphDoc.user_id == user_id, GraphDoc.id == doc_id))
-            await db.execute(delete(GraphEntityNote).where(
-                GraphEntityNote.user_id == user_id, GraphEntityNote.note_id == doc_id,
-                GraphEntityNote.source_type == "doc"))
             await db.execute(delete(GraphExtractLog).where(
                 GraphExtractLog.user_id == user_id, GraphExtractLog.note_id == doc_id,
                 GraphExtractLog.source_type == "doc"))
-            await db.execute(delete(GraphRelation).where(
-                GraphRelation.user_id == user_id, GraphRelation.source_note_id == doc_id,
-                GraphRelation.source_type == "doc"))
-            await _sweep_orphans(db, user_id, candidate_ids, [doc_id])
             await db.commit()
     except Exception as e:
         logger.error(f"清理文档图谱失败 user_id={user_id} doc_id={doc_id}: {e}")
@@ -587,33 +487,20 @@ async def cleanup_doc_graph_by_filename(user_id: str, filename: str) -> None:
 
 
 async def cleanup_all_docs_graph(user_id: str) -> None:
-    """清空用户全部文档的图谱数据（清空知识库时调用，独立会话，异常不外抛）。"""
+    """清空用户全部文档的图谱数据（清空知识库时调用，独立会话，异常不外抛）。
+
+    Neo4j 不可用时跳过图谱清理（功能降级），MySQL 侧注册行/抽取日志仍删除。
+    """
     try:
         async with AsyncSessionLocal() as db:
             store = get_graph_store(db)
-            if isinstance(store, Neo4jGraphStore):
+            try:
                 await store.clear_all_docs(user_id)
-                await db.execute(delete(GraphDoc).where(GraphDoc.user_id == user_id))
-                await db.execute(delete(GraphExtractLog).where(
-                    GraphExtractLog.user_id == user_id, GraphExtractLog.source_type == "doc"))
-                await db.commit()
-                return
-
-            # MySQL 回落路径（测试兼容；Task 9 随 Chroma 一并移除）
-            candidate_ids = (await db.execute(
-                select(GraphEntityNote.entity_id).where(
-                    GraphEntityNote.user_id == user_id, GraphEntityNote.source_type == "doc"))).scalars().all()
-            removed_doc_ids = (await db.execute(
-                select(GraphEntityNote.note_id).where(
-                    GraphEntityNote.user_id == user_id, GraphEntityNote.source_type == "doc").distinct())).scalars().all()
+            except _graph_degradation_errors() as e:
+                logger.warning(f"Neo4j 不可用，跳过用户文档图谱清理 user_id={user_id}: {e}")
             await db.execute(delete(GraphDoc).where(GraphDoc.user_id == user_id))
-            await db.execute(delete(GraphEntityNote).where(
-                GraphEntityNote.user_id == user_id, GraphEntityNote.source_type == "doc"))
             await db.execute(delete(GraphExtractLog).where(
                 GraphExtractLog.user_id == user_id, GraphExtractLog.source_type == "doc"))
-            await db.execute(delete(GraphRelation).where(
-                GraphRelation.user_id == user_id, GraphRelation.source_type == "doc"))
-            await _sweep_orphans(db, user_id, candidate_ids, removed_doc_ids)
             await db.commit()
     except Exception as e:
         logger.error(f"清空用户文档图谱失败 user_id={user_id}: {e}")

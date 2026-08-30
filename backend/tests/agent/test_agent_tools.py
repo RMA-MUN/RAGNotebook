@@ -3,7 +3,7 @@
 策略：
 - 需要 DB 的工具：`patch_session_factory(monkeypatch, session_factory)` 把工具内
   `AsyncSessionLocal` 指向 SQLite；大部分用例 monkeypatch 具体 service 方法，
-  少数用例用 `real_note_service`（真实 NoteService + FakeChromaStore + SQLite）做集成验证。
+  少数用例用 `real_note_service`（真实 NoteService + SQLite）做集成验证。
 - 用户上下文：通过 `user_ctx` / `no_user_ctx` fixture 设置并复位 ContextVar。
 """
 import asyncio
@@ -171,7 +171,16 @@ async def test_search_notes_tool_error(monkeypatch, user_ctx, patched_db):
 
 
 async def test_search_notes_tool_real_service(monkeypatch, user_ctx, patched_db, real_note_service):
-    """真实 NoteService + FakeChromaStore + SQLite 的集成路径。"""
+    """真实 NoteService + 图存储假 Chunk 检索 + SQLite 的集成路径。"""
+    from app.graph.schemas.graph import ChunkHit
+
+    class _FakeStore:
+        async def search_chunks(self, user_id, query_embedding, text_query, kinds, limit):
+            return [ChunkHit(id="note:n1:0", kind="note", source_id="n1",
+                             source_name="集成测试笔记", chunk_index=0, text="这是一篇用于搜索的真实笔记内容",
+                             score=0.9, metadata={})]
+
+    monkeypatch.setattr("app.services.note_service.get_graph_store", lambda db=None: _FakeStore())
     content = "这是一篇用于搜索的真实笔记内容" * 3
     async with patched_db() as db:
         db.add(Note(id="n1", user_id=USER_ID, title="集成测试笔记", content=content, tags=["测试"], category="study"))
@@ -381,7 +390,7 @@ async def test_create_note_tool_error(monkeypatch, user_ctx, patched_db):
 
 
 async def test_create_note_tool_real(monkeypatch, user_ctx, patched_db, real_note_service):
-    """真实 NoteService：SQLite 落库 + FakeChromaStore 向量 + 假模型后台自动标签。"""
+    """真实 NoteService：SQLite 落库 + 假模型后台自动标签。"""
     install_init_manager_fakes(monkeypatch, chat_model=make_fake_chat_model())
 
     out = await create_note_tool.ainvoke({"title": "真实创建的笔记", "content": "正文内容"})
@@ -440,7 +449,7 @@ async def test_get_related_notes_tool_error(monkeypatch, user_ctx, patched_db):
 
 
 async def test_get_related_notes_tool_real(monkeypatch, user_ctx, patched_db, real_note_service):
-    """真实 NoteService + FakeChromaStore（笔记侧）+ FakeVectorStoreService（知识库侧）。"""
+    """真实 NoteService（笔记侧）+ FakeVectorStoreService（知识库侧）。"""
     from tests.conftest import install_fake_vector_store
 
     install_fake_vector_store(monkeypatch)

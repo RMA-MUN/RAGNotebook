@@ -43,7 +43,7 @@ async def create_note(
 ):
     """
     创建笔记：
-    1. MySQL 写入 + ChromaDB 向量化
+    1. MySQL 写入 + 入队图谱构建任务
     2. 立即返回笔记（tags/category 初始为空）
     3. 后台异步生成标签和回顾记录
     """
@@ -75,7 +75,7 @@ async def search_notes(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    全文语义搜索：走 ChromaDB notes_collection 向量检索，
+    全文语义搜索：走 Neo4j Chunk 种子检索（向量+全文），
     返回当前用户的语义相似笔记。
     """
     notes = await init_manager.note_service.search_notes(db, user_id, q)
@@ -232,7 +232,7 @@ async def update_note(
     _: None = Depends(rate_limit(limit=10, window=60)),
 ):
     """
-    更新笔记：修改 title/content，content 变更时同步更新 ChromaDB 向量。
+    更新笔记：修改 title/content，content 变更时重新入队图谱构建任务。
     """
     note = await init_manager.note_service.update_note(db, note_id, user_id, payload)
     if not note:
@@ -265,7 +265,7 @@ async def delete_note(
     _: None = Depends(rate_limit(limit=10, window=60)),
 ):
     """
-    删除笔记：联删 MySQL 记录、ChromaDB 向量、以及级联的 review_records。
+    删除笔记：联删 MySQL 记录、Neo4j 图谱数据、以及级联的 review_records。
     """
     deleted = await init_manager.note_service.delete_note(db, note_id, user_id)
     if not deleted:

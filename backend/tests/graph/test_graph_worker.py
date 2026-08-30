@@ -1,5 +1,9 @@
-"""图谱构建 worker 测试：入队幂等、认领互斥、失败重试、强制重抽。"""
+"""图谱构建 worker 测试：入队幂等、认领互斥、失败重试、强制重抽。
+
+跑真实抽取管线的用例需要真实 Neo4j（NEO4J_TEST_URI 门控），其余仅依赖任务表（SQLite）。
+"""
 import json
+import os
 
 import pytest
 from sqlalchemy import select
@@ -17,6 +21,17 @@ from tests.fakes import make_fake_chat_model
 def patched(session_factory, monkeypatch):
     monkeypatch.setattr("app.graph.services.graph_service.AsyncSessionLocal", session_factory)
     return session_factory
+
+
+_neo4j_required = pytest.mark.skipif(
+    not os.getenv("NEO4J_TEST_URI"), reason="需要真实 Neo4j（设 NEO4J_TEST_URI 启用）")
+
+
+@pytest.fixture
+def neo4j_env(monkeypatch):
+    from app.core.failed_response import settings
+
+    monkeypatch.setattr(settings, "NEO4J_URI", os.environ["NEO4J_TEST_URI"], raising=False)
 
 
 @pytest.mark.asyncio
@@ -100,7 +115,9 @@ async def test_process_task_retry_then_failed(db_session, patched, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_process_task_force_bypasses_hash_check(db_session, patched, monkeypatch):
+@_neo4j_required
+async def test_process_task_force_bypasses_hash_check(db_session, patched, monkeypatch,
+                                                      neo4j_env, _cleanup):
     from app.core.background_init import init_manager
     monkeypatch.setattr(init_manager, "chat_model",
                         make_fake_chat_model(['{"entities": [{"name": "Python", "mentions": ["Python"]}], "relations": []}']))
@@ -122,7 +139,9 @@ async def test_process_task_force_bypasses_hash_check(db_session, patched, monke
 
 
 @pytest.mark.asyncio
-async def test_tick_drains_queue_in_order(db_session, patched, monkeypatch):
+@_neo4j_required
+async def test_tick_drains_queue_in_order(db_session, patched, monkeypatch,
+                                          neo4j_env, _cleanup):
     from app.core.background_init import init_manager
     monkeypatch.setattr(init_manager, "chat_model",
                         make_fake_chat_model(['{"entities": [], "relations": []}']))

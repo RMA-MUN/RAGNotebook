@@ -1,4 +1,4 @@
-"""笔记 API 集成测试（真实 NoteService + SQLite + FakeChromaStore + 假 LLM）。"""
+"""笔记 API 集成测试（真实 NoteService + SQLite + 假 LLM）。"""
 import asyncio
 import json
 import zipfile

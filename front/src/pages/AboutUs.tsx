@@ -16,7 +16,7 @@ export default function AboutUs() {
         <div>
           <h3 className="text-sm font-medium text-[var(--color-text)] mb-3">{t('about.techStack')}</h3>
           <div className="flex flex-wrap gap-2">
-            {['React', 'FastAPI', 'LangChain', 'MySQL', 'Redis', 'ChromaDB'].map((tech) => (
+            {['React', 'FastAPI', 'LangChain', 'MySQL', 'Redis', 'Neo4j'].map((tech) => (
               <span key={tech} className="px-2.5 py-1 text-xs rounded-full bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
                 {tech}
               </span>
@@ -27,7 +27,7 @@ export default function AboutUs() {
         <div>
           <h3 className="text-sm font-medium text-[var(--color-text)] mb-3">{t('about.features')}</h3>
           <ul className="space-y-2">
-            {['aiChat', 'noteTaking', 'knowledgeBase', 'review'].map((key) => (
+            {['aiChat', 'noteTaking', 'knowledgeBase', 'knowledgeGraph', 'review'].map((key) => (
               <li key={key} className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
                 <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)]" />
                 {t(`about.featureList.${key}`)}
@@ -37,7 +37,7 @@ export default function AboutUs() {
         </div>
 
         <a
-          href="https://github.com/RMA-MUN/LangChain-RAG-FastAPI-Service"
+          href="https://github.com/RMA-MUN/RAGNotebook"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 text-sm text-[var(--color-accent)] hover:underline"

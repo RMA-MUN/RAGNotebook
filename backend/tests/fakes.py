@@ -1,6 +1,6 @@
 """共享测试替身（in-memory fakes），供整个测试套件使用。
 
-统一策略：MySQL / Redis / ChromaDB / LLM / 重排序模型全部用内存替身替换，
+统一策略：MySQL / Redis / LLM / 重排序模型全部用内存替身替换，
 测试不依赖任何外部服务，可在任意环境直接运行。
 """
 import asyncio
@@ -81,91 +81,21 @@ async def install_fake_redis(monkeypatch, redis: FakeRedis | None = None):
     return redis
 
 
-def _match_filter(metadata: dict, flt) -> bool:
-    """校验 document.metadata 是否命中 Chroma where 过滤条件。"""
-    if flt is None:
-        return True
-    if isinstance(flt, dict):
-        if "$and" in flt:
-            return all(_match_filter(metadata, sub) for sub in flt["$and"])
-        if "$or" in flt:
-            return any(_match_filter(metadata, sub) for sub in flt["$or"])
-        return all(metadata.get(k) == v for k, v in flt.items())
-    return True
-
-
-class FakeChromaStore:
-    """Chroma 内存替身：覆盖 NoteService / VectorStoreService 用到的子集。"""
-
-    def __init__(self):
-        self._docs: dict[str, Document] = {}
-
-    def add_documents(self, documents, ids=None):
-        added_ids = []
-        for i, doc in enumerate(documents):
-            doc_id = ids[i] if ids and i < len(ids) else str(uuidlib.uuid4())
-            self._docs[doc_id] = doc
-            added_ids.append(doc_id)
-        return added_ids
-
-    def delete(self, where=None):
-        ids = [i for i, d in self._docs.items() if _match_filter(d.metadata, where)]
-        for i in ids:
-            del self._docs[i]
-
-    def _filtered(self, flt):
-        return [d for d in self._docs.values() if _match_filter(d.metadata, flt)]
-
-    def similarity_search(self, query, k=4, filter=None, **kwargs):
-        return self._filtered(filter)[:k]
-
-    def similarity_search_with_score(self, query, k=4, filter=None, **kwargs):
-        return [(d, 0.5) for d in self._filtered(filter)[:k]]
-
-    def get(self, include=None, where=None):
-        pairs = [(i, d) for i, d in self._docs.items() if _match_filter(d.metadata, where)]
-        return {
-            "ids": [i for i, _ in pairs],
-            "documents": [d.page_content for _, d in pairs],
-            "metadatas": [d.metadata for _, d in pairs],
-        }
-
-
-class FakeHybridRetriever:
-    """HybridRetriever 内存替身：ainvoke 返回预设文档列表。"""
-
-    def __init__(self, documents: list[Document] | None = None):
-        self.documents = documents or []
-
-    async def ainvoke(self, query, **kwargs):
-        return self.documents
-
-
 class FakeVectorStoreService:
-    """VectorStoreService 内存替身（避免触发真实 ChromaDB 初始化）。
+    """VectorStoreService 内存替身（知识库文档服务）。
 
     route_score 控制路由层是否触发 RAG 前置管线（>0.5 触发）。
     """
 
     def __init__(self, route_score: float = 0.0, documents: list[Document] | None = None):
         self.route_score = route_score
-        self.vectors_store = FakeChromaStore()
         self._hybrid_documents = documents or []
         self.md5_store = None
 
     async def compute_route_score(self, query: str, user_id: str) -> float:
         return self.route_score
 
-    async def get_dynamic_weights(self, query: str = None):
-        return (0.5, 0.5)
-
-    async def get_retriever(self, query: str = None, user_id: str = None):
-        return FakeHybridRetriever(self._hybrid_documents)
-
-    async def get_bm25_retriever(self, user_id: str = None):
-        return FakeHybridRetriever(self._hybrid_documents)
-
-    async def _get_all_documents(self):
+    def get_all_documents(self):
         return list(self._hybrid_documents)
 
 

@@ -83,6 +83,7 @@ const zhCN = {
     cleanConfirm: '确定要清空所有文档吗？',
     empty: '还没有上传文档',
     chunks: '文档片段',
+    parsing: '解析中…',
     detail: '文档详情',
     page: '页',
   },
@@ -131,13 +132,14 @@ const zhCN = {
   },
   about: {
     title: '关于我们',
-    description: '云笺集是一个智能笔记与知识管理平台，结合 AI 大模型能力，帮助你更好地记录、整理和回顾知识。',
+    description: '云笺集是一个智能笔记与知识管理平台，结合 AI 大模型与知识图谱能力，帮助你更好地记录、整理和回顾知识。',
     techStack: '技术栈',
     features: '功能特性',
     featureList: {
       aiChat: 'AI 智能对话',
       noteTaking: '笔记管理',
       knowledgeBase: '知识库管理',
+      knowledgeGraph: '知识图谱',
       review: '间隔回顾',
     },
     github: 'GitHub 仓库',

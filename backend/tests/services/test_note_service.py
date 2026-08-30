@@ -282,18 +282,6 @@ async def test_search_notes_returns_mysql_backfill_in_hit_order(real_note_servic
     assert [r.id for r in results] == [n2.id, n1.id]  # 幽灵笔记不在 MySQL 中 → 跳过
 
 
-async def test_search_notes_falls_back_to_like_without_chunk_support(real_note_service, db_session, monkeypatch):
-    """MySQL 回落实现（无 Chunk 能力）→ LIKE 兜底仍可搜索。"""
-    svc = real_note_service
-    n1 = await _seed_note(db_session, USER, title="语义笔记", content="语义内容")
-
-    fake = _FakeChunkStore(chunk_error=NotImplementedError("no chunk"))
-    monkeypatch.setattr("app.services.note_service.get_graph_store", lambda db=None: fake)
-
-    results = await svc.search_notes(db_session, USER, "语义", top_k=10)
-    assert [r.id for r in results] == [n1.id]
-
-
 async def test_search_notes_returns_empty_when_store_raises(real_note_service, db_session, monkeypatch):
     svc = real_note_service
     await _seed_note(db_session, USER, title="存在", content="内容")

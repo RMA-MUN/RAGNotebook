@@ -83,6 +83,7 @@ const enUS = {
     cleanConfirm: 'Are you sure you want to delete all documents?',
     empty: 'No documents uploaded yet',
     chunks: 'Document Chunks',
+    parsing: 'Parsing…',
     detail: 'Document Details',
     page: 'Page',
   },
@@ -131,13 +132,14 @@ const enUS = {
   },
   about: {
     title: 'About',
-    description: '云笺集 is an intelligent note-taking and knowledge management platform that leverages AI capabilities to help you better record, organize, and review knowledge.',
+    description: '云笺集 is an intelligent note-taking and knowledge management platform that leverages AI and knowledge graph capabilities to help you better record, organize, and review knowledge.',
     techStack: 'Tech Stack',
     features: 'Features',
     featureList: {
       aiChat: 'AI Chat',
       noteTaking: 'Note Taking',
       knowledgeBase: 'Knowledge Base',
+      knowledgeGraph: 'Knowledge Graph',
       review: 'Spaced Repetition',
     },
     github: 'GitHub Repository',

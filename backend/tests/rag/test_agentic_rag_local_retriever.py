@@ -208,8 +208,9 @@ async def test_web_search_step_is_skipped_locally(patch_store, no_embed):
 
 
 @pytest.mark.asyncio
-async def test_mysql_fallback_store_without_chunk_support_returns_empty(patch_store, no_embed):
-    store = FakeStore(chunk_error=NotImplementedError("当前 GraphStore 实现不支持 Chunk 检索"))
+async def test_store_failure_degrades_step_to_empty(patch_store, no_embed):
+    """图存储检索失败（如 Neo4j 不可用）→ 该步降级为空证据，不阻塞其余步骤。"""
+    store = FakeStore(chunk_error=RuntimeError("Neo4j 不可用"))
     patch_store(store)
     retriever = LocalRetriever(session_factory=FakeSession)
 

@@ -1,19 +1,22 @@
 """图谱 API 路由。"""
 import asyncio
+import functools
 import json
 
 from fastapi import Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.routing import APIRouter
 
+from app.core.logger_handler import logger
 from app.graph.services.event_bus import event_bus
+from app.graph.storage.neo4j_client import GraphUnavailableError
 from app.utils.auth_utils import get_current_user_id
 
 graph_router = APIRouter(prefix="/api/graph", tags=["graph"])
 
 
 from fastapi import Depends, Query
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.success_response import success_response
@@ -21,11 +24,30 @@ from app.db.db_config import get_db
 from app.graph.schemas.graph import EntityIn, MergeRequest, RelationIn, TypeIn
 from app.graph.services.graph_service import manual_re_extract
 from app.graph.storage import get_graph_store
-from app.models.graph import GraphEntity, GraphEntityNote
 from app.models.note import Note
 
 
+def _graph_gate(fn):
+    """图谱端点统一降级：Neo4j 未配置或连接不可用时返回 503，不影响笔记/聊天/知识库主流程。"""
+    @functools.wraps(fn)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await fn(*args, **kwargs)
+        except GraphUnavailableError as e:
+            logger.warning(f"图谱服务不可用（未配置）: {e}")
+            raise HTTPException(status_code=503, detail="图谱服务不可用：未配置 Neo4j") from e
+        except Exception as e:
+            from neo4j.exceptions import Neo4jError
+
+            if isinstance(e, Neo4jError):
+                logger.error(f"图谱服务不可用（Neo4j 故障）: {e}", exc_info=True)
+                raise HTTPException(status_code=503, detail="图谱服务不可用，请稍后重试") from e
+            raise
+    return wrapper
+
+
 @graph_router.get("/overview")
+@_graph_gate
 async def overview(user_id: str = Depends(get_current_user_id),
                    db: AsyncSession = Depends(get_db),
                    types: str | None = Query(None),
@@ -37,6 +59,7 @@ async def overview(user_id: str = Depends(get_current_user_id),
 
 
 @graph_router.get("/entity/{entity_id}")
+@_graph_gate
 async def get_entity(entity_id: str, user_id: str = Depends(get_current_user_id),
                      db: AsyncSession = Depends(get_db)):
     store = get_graph_store(db)
@@ -47,6 +70,7 @@ async def get_entity(entity_id: str, user_id: str = Depends(get_current_user_id)
 
 
 @graph_router.get("/entity/{entity_id}/neighbors")
+@_graph_gate
 async def neighbors(entity_id: str, depth: int = Query(1, ge=1, le=3),
                     user_id: str = Depends(get_current_user_id),
                     db: AsyncSession = Depends(get_db)):
@@ -55,6 +79,7 @@ async def neighbors(entity_id: str, depth: int = Query(1, ge=1, le=3),
 
 
 @graph_router.get("/entity/{entity_id}/notes")
+@_graph_gate
 async def entity_notes(entity_id: str, user_id: str = Depends(get_current_user_id),
                        db: AsyncSession = Depends(get_db)):
     links = await get_graph_store(db).get_entity_notes(user_id, entity_id)
@@ -62,6 +87,7 @@ async def entity_notes(entity_id: str, user_id: str = Depends(get_current_user_i
 
 
 @graph_router.get("/notes/{note_id}/related")
+@_graph_gate
 async def note_related(note_id: str, user_id: str = Depends(get_current_user_id),
                        db: AsyncSession = Depends(get_db)):
     view = await get_graph_store(db).get_note_graph(user_id, note_id)
@@ -69,6 +95,7 @@ async def note_related(note_id: str, user_id: str = Depends(get_current_user_id)
 
 
 @graph_router.get("/docs/{doc_id}/related")
+@_graph_gate
 async def doc_related(doc_id: str, user_id: str = Depends(get_current_user_id),
                       db: AsyncSession = Depends(get_db)):
     view = await get_graph_store(db).get_doc_graph(user_id, doc_id)
@@ -76,14 +103,12 @@ async def doc_related(doc_id: str, user_id: str = Depends(get_current_user_id),
 
 
 @graph_router.get("/search")
+@_graph_gate
 async def search(q: str = Query(..., min_length=1),
                  user_id: str = Depends(get_current_user_id),
                  db: AsyncSession = Depends(get_db)):
     like = f"%{q}%"
-    entities = (await db.execute(
-        select(GraphEntity).where(GraphEntity.user_id == user_id,
-                                  or_(GraphEntity.name.like(like),
-                                      GraphEntity.display_name.like(like))).limit(10))).scalars().all()
+    entities = await get_graph_store(db).search_entities(user_id, q, 10)
     notes = (await db.execute(
         select(Note).where(Note.user_id == user_id, Note.title.like(like)).limit(10))).scalars().all()
     return success_response(data={
@@ -109,6 +134,7 @@ async def extract_logs(note_id: str | None = Query(None),
 
 
 @graph_router.post("/entities")
+@_graph_gate
 async def create_entity(payload: EntityIn, user_id: str = Depends(get_current_user_id),
                         db: AsyncSession = Depends(get_db)):
     e = await get_graph_store(db).upsert_entity(user_id, payload)
@@ -117,6 +143,7 @@ async def create_entity(payload: EntityIn, user_id: str = Depends(get_current_us
 
 
 @graph_router.put("/entities/{entity_id}")
+@_graph_gate
 async def update_entity(entity_id: str, payload: EntityIn,
                         user_id: str = Depends(get_current_user_id),
                         db: AsyncSession = Depends(get_db)):
@@ -145,6 +172,7 @@ async def update_entity(entity_id: str, payload: EntityIn,
 
 
 @graph_router.delete("/entities/{entity_id}")
+@_graph_gate
 async def delete_entity(entity_id: str, user_id: str = Depends(get_current_user_id),
                         db: AsyncSession = Depends(get_db)):
     await get_graph_store(db).delete_entity(user_id, entity_id)
@@ -153,6 +181,7 @@ async def delete_entity(entity_id: str, user_id: str = Depends(get_current_user_
 
 
 @graph_router.post("/entities/merge")
+@_graph_gate
 async def merge_entities(payload: MergeRequest, user_id: str = Depends(get_current_user_id),
                          db: AsyncSession = Depends(get_db)):
     # 自合并守卫：target_id == source_id 时直接返回，避免 merge_entities 删行后误删实体
@@ -165,6 +194,7 @@ async def merge_entities(payload: MergeRequest, user_id: str = Depends(get_curre
 
 
 @graph_router.get("/types")
+@_graph_gate
 async def list_types(user_id: str = Depends(get_current_user_id),
                      db: AsyncSession = Depends(get_db)):
     types = await get_graph_store(db).list_types(user_id)
@@ -172,6 +202,7 @@ async def list_types(user_id: str = Depends(get_current_user_id),
 
 
 @graph_router.post("/types")
+@_graph_gate
 async def create_type(payload: TypeIn, user_id: str = Depends(get_current_user_id),
                       db: AsyncSession = Depends(get_db)):
     t = await get_graph_store(db).upsert_type(user_id, payload)
@@ -180,6 +211,7 @@ async def create_type(payload: TypeIn, user_id: str = Depends(get_current_user_i
 
 
 @graph_router.put("/types/{type_id}")
+@_graph_gate
 async def update_type(type_id: str, payload: TypeIn,
                       user_id: str = Depends(get_current_user_id),
                       db: AsyncSession = Depends(get_db)):
@@ -189,6 +221,7 @@ async def update_type(type_id: str, payload: TypeIn,
 
 
 @graph_router.delete("/types/{type_id}")
+@_graph_gate
 async def delete_type(type_id: str, user_id: str = Depends(get_current_user_id),
                       db: AsyncSession = Depends(get_db)):
     await get_graph_store(db).delete_type(user_id, type_id)
@@ -197,6 +230,7 @@ async def delete_type(type_id: str, user_id: str = Depends(get_current_user_id),
 
 
 @graph_router.post("/relations")
+@_graph_gate
 async def create_relation(payload: RelationIn, user_id: str = Depends(get_current_user_id),
                           db: AsyncSession = Depends(get_db)):
     try:
@@ -209,6 +243,7 @@ async def create_relation(payload: RelationIn, user_id: str = Depends(get_curren
 
 
 @graph_router.delete("/relations/{relation_id}")
+@_graph_gate
 async def delete_relation(relation_id: str, user_id: str = Depends(get_current_user_id),
                           db: AsyncSession = Depends(get_db)):
     await get_graph_store(db).delete_relation(user_id, relation_id)

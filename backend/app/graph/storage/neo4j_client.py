@@ -23,13 +23,17 @@ _FULLTEXT_ANALYZERS = ("cjk", "standard")
 _PROBE_TEXT = "Neo4j 向量索引维度探测 probe"
 
 
+class GraphUnavailableError(RuntimeError):
+    """Neo4j 未配置或驱动不可用：图谱功能统一降级信号（API 层转 503，主流程跳过图谱步骤）。"""
+
+
 def neo4j_configured() -> bool:
-    """是否配置了 Neo4j（未配置时图谱存储回落 MySQL）。"""
+    """是否配置了 Neo4j（未配置时图谱功能降级：API 返回 503，主流程跳过图谱步骤）。"""
     return bool(settings.NEO4J_URI)
 
 
 def get_neo4j_driver():
-    """返回 AsyncDriver 单例；未配置 NEO4J_URI 时抛 RuntimeError。
+    """返回 AsyncDriver 单例；未配置 NEO4J_URI 时抛 GraphUnavailableError。
 
     AsyncDriver 的连接池绑定创建时的事件循环；检测到循环切换（测试环境每个用例
     一个新 loop）时丢弃旧实例重建，避免 "Future attached to a different loop"。
@@ -49,7 +53,7 @@ def get_neo4j_driver():
         with _driver_lock:
             if _driver is None:
                 if not neo4j_configured():
-                    raise RuntimeError("NEO4J_URI 未配置，无法创建 Neo4j 驱动")
+                    raise GraphUnavailableError("NEO4J_URI 未配置，无法创建 Neo4j 驱动")
                 from neo4j import AsyncGraphDatabase
 
                 _driver = AsyncGraphDatabase.driver(

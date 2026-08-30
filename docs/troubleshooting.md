@@ -7,9 +7,9 @@
 **问题**：`Invalid API Key` 或 `API Key expired`
 
 **解决方法**：
-- 检查 `.env` 文件中的 `DASHSCOPE_API_KEY` 是否正确
+- 检查 `.env` 文件中的 `OPENAI_API_KEY` 是否正确
 - 确保 API Key 没有过期或权限不足
-- 访问阿里云 DashScope 控制台检查 API Key 状态
+- 到对应 LLM 服务商控制台检查 API Key 状态
 
 ### 2. 数据库连接失败
 
@@ -21,14 +21,15 @@
 - 验证数据库用户权限
 - 检查网络连接和防火墙设置
 
-### 3. 向量数据库问题
+### 3. Neo4j 图谱服务不可用
 
-**问题**：`Permission denied` 或 `Directory not found`
+**问题**：图谱页面提示「图谱服务不可用」（HTTP 503），或日志出现 `Neo.ClientError`
 
 **解决方法**：
-- 检查 `data/chromadb` 目录是否存在且有写入权限
-- 确保文件权限正确
-- 创建缺失的目录：`mkdir -p backend/data/chromadb`
+- 检查 Neo4j 服务是否在运行：`net start neo4j`（Windows 服务）
+- 确认 `.env` 中 `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` 正确
+- 重启后端，观察启动日志中的「Neo4j 图 Schema 就绪」是否出现
+- Neo4j 不可用时笔记/聊天/知识库主流程不受影响，仅图谱功能降级
 
 ### 4. 前端访问后端 API 失败
 
@@ -40,36 +41,23 @@
 - 验证网络连接和防火墙设置
 - 检查 API 端点是否正确
 
-### 5. ModelScope 模型加载失败
+### 5. 云端重排序失败
 
-**问题**：`RuntimeError: 重排序模型加载失败: [Errno 2] No such file or directory`
-
-**解决方法**：
-
-- 检查 `.env` 文件中的 `RERANKER_MODEL_PATH` 是否正确
-- 确保模型文件完整下载
-- 检查文件权限
-- 尝试重新下载模型：删除模型目录后重启服务
-
-### 6. CUDA 内存不足
-
-**问题**：`CUDA out of memory`
+**问题**：重排序结果一直按原顺序返回（similarity 全为 0）
 
 **解决方法**：
-- 降低 `max_length` 参数（默认为512）
-- 减小 `batch_size`（当前设置为1）
-- 使用 CPU 模式：在 `reorder_service.py` 中将 `device` 强制设置为 `"cpu"`
-- 关闭其他占用 GPU 内存的程序
+- 检查 `.env` 中 `RERANKER_API_BASE_URL` / `RERANKER_API_KEY` / `RERANKER_MODEL` 是否配置正确
+- 确认 rerank 服务账户额度未用尽
+- 重排序失败时自动按原顺序降级，不阻塞对话主流程
 
-### 7. 依赖安装失败
+### 6. 依赖环境问题
 
-**问题**：安装 `sentence-transformers` 或 `torch` 失败
+**问题**：导入报错或包版本不一致
 
 **解决方法**：
-- 更新 pip：`pip install --upgrade pip`
-- 使用镜像源：`pip install sentence-transformers torch -i https://pypi.tuna.tsinghua.edu.cn/simple`
-- 检查网络连接
-- 手动下载预编译包安装
+- 后端使用 uv 管理依赖：`uv sync --extra dev` 按锁文件还原环境
+- 前端：`npm install`
+- 不要在服务运行中执行 `uv sync`（Windows 下可能留下半卸载的包）
 
 ### 8. 端口被占用
 
@@ -86,7 +74,7 @@
 
 **解决方法**：
 - 检查文件大小是否超过限制（单个文件20MB，多个文件总计200MB）
-- 确保文件类型为 PDF 或 TXT
+- 确保文件类型为 TXT / PDF / MD / PPTX / DOCX
 - 检查文件权限
 
 ### 10. 会话历史丢失
@@ -107,11 +95,17 @@
 
 ### 常见错误模式
 
-#### 模型相关错误
+#### 重排序降级
 ```
-RuntimeError: 重排序模型加载失败
+【重排序服务】重排序失败: ...
 ```
-→ 检查模型路径和文件完整性
+→ 检查 RERANKER_* 配置；失败自动按原顺序降级，不阻塞对话
+
+#### 图谱服务不可用
+```
+HTTP 503: 图谱服务不可用
+```
+→ 检查 Neo4j 服务状态与 NEO4J_URI 配置
 
 #### 数据库错误
 ```
@@ -129,13 +123,12 @@ HTTPException: 401 Unauthorized
 
 ### 响应缓慢
 - 检查数据库查询性能
-- 验证向量数据库索引是否正确
-- 监控 GPU/CPU 使用率
+- 确认 Neo4j 向量/全文索引已建立（后端启动时 ensure_graph_schema 幂等创建）
+- 监控 CPU/内存使用率
 
 ### 内存占用过高
-- 检查模型加载方式
-- 优化批次大小
-- 考虑使用更小的模型
+- 检查 LLM 上下文长度配置
+- 优化文档切片批次大小
 
 ## 调试技巧
 
@@ -148,10 +141,10 @@ HTTPException: 401 Unauthorized
 ### 检查环境变量
 ```bash
 # Windows
-echo %DASHSCOPE_API_KEY%
+echo %OPENAI_API_KEY%
 
 # Linux/Mac
-echo $DASHSCOPE_API_KEY
+echo $OPENAI_API_KEY
 ```
 
 ## 联系支持
