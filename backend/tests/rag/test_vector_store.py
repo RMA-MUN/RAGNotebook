@@ -36,6 +36,19 @@ def service_factory(tmp_path, monkeypatch):
     monkeypatch.setattr(vs_module, "delete_image_directory", lambda u, m: True)
     monkeypatch.setattr(vs_module, "delete_user_all_images", lambda u: True)
 
+    class EmptySession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            pass
+
+        async def execute(self, _stmt):
+            return SimpleNamespace(all=lambda: [])
+
+    # get_user_documents lazily imports this factory; keep all tests off real MySQL.
+    monkeypatch.setattr("app.db.db_config.AsyncSessionLocal", EmptySession)
+
     def _make(driver_records=None):
         service = object.__new__(VectorStoreService)
         service.md5_store = MD5Store()
@@ -75,18 +88,6 @@ class TestGetUserDocuments:
         service, driver, _ = service_factory([
             _rec(id="m1", filename="a.pdf", user_id="u1", chunk_count=1, first_text="x"),
         ])
-
-        class EmptySession:
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *_):
-                pass
-
-            async def execute(self, _stmt):
-                return SimpleNamespace(all=lambda: [])
-
-        monkeypatch.setattr("app.db.db_config.AsyncSessionLocal", EmptySession)
         result = await service.get_user_documents(None)
         assert len(result) == 1
         assert driver.queries[0]["params"]["uid"] is None
