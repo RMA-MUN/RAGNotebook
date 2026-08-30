@@ -1,8 +1,11 @@
 main_prompt: app/prompt/main_prompt.txt
-rag_summary_prompt: app/prompt/rag_summarize.txt
 report_prompt: app/prompt/report_prompt.txt
 reorder_prompt: app/prompt/reorder_prompt.txt
 auto_tag_prompt: app/prompt/auto_tag_prompt.txt
 review_question_prompt: app/prompt/review_question_prompt.txt
 autocomplete_prompt: app/prompt/autocomplete_prompt.txt
 write_assistant_prompt: app/prompt/write_assistant_prompt.txt
+agentic_rag_planner_prompt: app/prompt/agentic_rag_planner.txt
+agentic_rag_answerability_prompt: app/prompt/agentic_rag_answerability.txt
+entity_extraction_prompt: app/prompt/entity_extraction_prompt.txt
+query_entity_extraction_prompt: app/prompt/query_entity_extraction.txt

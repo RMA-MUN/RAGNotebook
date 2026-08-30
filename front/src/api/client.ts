@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const JWT_KEY = 'jwt_token'
+export const JWT_KEY = 'jwt_token'
 
 const client = axios.create({
   baseURL: '',

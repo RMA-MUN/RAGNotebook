@@ -9,7 +9,6 @@ from app.utils.prompt_loader import load_prompt
 def test_config_has_known_prompt_keys():
     assert isinstance(prompt_config, dict)
     assert "main_prompt" in prompt_config
-    assert "rag_summary_prompt" in prompt_config
     assert "report_prompt" in prompt_config
     assert "reorder_prompt" in prompt_config
 

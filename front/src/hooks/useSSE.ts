@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback } from 'react'
 import type { SSEMessage, KnowledgeSSEMessage } from '../types/api'
+import { JWT_KEY } from '../api/client'
 
 type SSECallback = {
   onThinking?: (stage: string, content?: string, details?: Record<string, unknown>) => void
@@ -21,7 +22,7 @@ export function useSSE() {
       abortRef.current = new AbortController()
 
       try {
-        const token = localStorage.getItem('jwt_token')
+        const token = localStorage.getItem(JWT_KEY)
         const isFormData = body instanceof FormData
 
         const response = await fetch(url, {
@@ -52,10 +53,9 @@ export function useSSE() {
         const decoder = new TextDecoder()
         let buffer = ''
 
-        // Response buffer: accumulate chunks and flush in batches
+        // Forward model tokens immediately; batching makes the UI look fake-streamed.
         const responseBuffer: string[] = []
         let lastSessionId: string | undefined
-        const RESPONSE_FLUSH_THRESHOLD = 3
 
         const flushResponse = () => {
           if (responseBuffer.length === 0) return
@@ -95,10 +95,7 @@ export function useSSE() {
                     break
                   case 'response':
                     if (msg.session_id) lastSessionId = msg.session_id
-                    responseBuffer.push(msg.content || '')
-                    if (responseBuffer.length >= RESPONSE_FLUSH_THRESHOLD) {
-                      flushResponse()
-                    }
+                    callbacks.onResponse?.(msg.content || '', lastSessionId)
                     break
                   case 'done':
                     flushResponse()

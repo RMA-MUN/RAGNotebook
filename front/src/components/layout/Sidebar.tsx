@@ -6,6 +6,7 @@ import {
   History,
   GraduationCap,
   Library,
+  Network,
   Settings,
   User,
   Info,
@@ -21,6 +22,7 @@ const navItems = [
   { path: '/sessions', icon: History, labelKey: 'nav.sessions' },
   { path: '/review', icon: GraduationCap, labelKey: 'nav.review' },
   { path: '/knowledge', icon: Library, labelKey: 'nav.knowledge' },
+  { path: '/graph', icon: Network, labelKey: 'nav.graph' },
 ]
 
 const bottomItems = [

@@ -18,6 +18,7 @@ from app.router.note_router import note_router
 from app.router.note_template_router import note_template_router
 from app.router.review_router import review_router
 from app.router.user import file_router, user_router
+from app.graph.routers.graph_router import graph_router
 from app.services.database_session_manager import init_database_session_manager
 
 # 加载环境变量
@@ -48,6 +49,7 @@ app.include_router(file_router)
 app.include_router(note_router)
 app.include_router(note_template_router)
 app.include_router(review_router)
+app.include_router(graph_router)
 
 
 
@@ -77,6 +79,10 @@ async def root():
 async def say_hello(name: str):
     return {"message": f"Hello {name}"}
 
+@app.get('/health')
+async def health_check():
+    return {"message": "The service is healthy"}
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -98,7 +104,7 @@ async def startup_event():
 
     # 检查并重排序模型（在后台异步加载）
     await init_manager.start()
-    logger.info("部分资源正在初始化（模型加载、ChromaDB初始化等将在后台继续加载）")
+    logger.info("部分资源正在初始化")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -106,6 +112,12 @@ async def shutdown_event():
     # 关闭 Redis 连接
     await close_redis()
     logger.info("Redis连接已关闭")
+
+    # 停止图谱构建 worker 并关闭 Neo4j 驱动（未配置时为空操作）
+    await init_manager.stop_graph_worker()
+    from app.graph.storage.neo4j_client import close_neo4j_driver
+    await close_neo4j_driver()
+    logger.info("Neo4j驱动已关闭")
 
     # 关闭 SQLAlchemy 引擎（释放 aiomysql 连接池，避免 GC 时事件循环已关闭）
     from app.db.db_config import async_engine

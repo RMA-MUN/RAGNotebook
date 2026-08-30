@@ -1,84 +1,30 @@
+"""知识库文档服务（文档列表/详情/切片/MD5/上传管线）。
+
+- chunk/向量统一存 Neo4j（(:Chunk) 节点，由图谱构建 worker 写入，见 graph_service）
+- 本服务保留：文档列表/详情/切片查询（读 Neo4j）、md5 记录（上传去重）、文档删除联动
+- 文档加载与切片（DocumentProcessor）保留：上传管线用它产出任务载荷
+"""
 import asyncio
-import os
-import shutil
 import threading
 
-from langchain_chroma import Chroma
 from langchain_core.documents import Document
-from langchain_core.embeddings import Embeddings
 
 from app.core.logger_handler import logger
-from app.utils.config import chroma_config
 from app.utils.image_extractor import delete_image_directory, delete_user_all_images
-from app.utils.path_tool import get_abstract_path
 
 from .document_handler import DocumentProcessor
 from .md5_manager import MD5Store
-from .retrievers.hybrid_retriever import HybridRetriever
-
-
-def _clear_chroma_cache():
-    """
-    清除 ChromaDB SharedSystemClient 内部单例缓存，避免 KeyError。
-    ChromaDB 在 0.5.x+ 引入了 SharedSystemClient，它内部维护了一个全局 _instance 字典。
-    当同一个进程反复创建/删除 Chroma 实例时，会抛出 KeyError（因为缓存中的 client 已被销毁）。
-    在初始化前主动清除缓存，可以避免此问题。
-    """
-    try:
-        from chromadb.api.shared_system_client import SharedSystemClient
-        SharedSystemClient.clear_system_cache()
-    except Exception:
-        pass
-
-
-def _reset_chroma_db(persist_dir: str):
-    """删除 Chroma 数据库目录（文件系统），同时清除内存中的缓存，达到完全重置的效果"""
-    _clear_chroma_cache()
-    if os.path.exists(persist_dir):
-        shutil.rmtree(persist_dir)
-        logger.info(f"已删除 Chroma 数据库目录并重置缓存: {persist_dir}")
-
-
-class _LazyEmbedding(Embeddings):
-    """延迟加载的嵌入模型包装器
-
-    VectorStoreService 是单例，在后台初始化完成前就可能被创建。
-    直接用 init_manager.embed_model 传入 Chroma 会得到 None，
-    等 Chroma 真正调 embed_documents 时就会崩溃。
-    这个包装器把模型解析推迟到 embed 调用时，确保模型已就绪。
-    """
-
-    def _get_model(self):
-        from app.core.background_init import init_manager
-        model = init_manager.embed_model
-        if model is None:
-            raise RuntimeError("嵌入模型尚未初始化完成，请稍后重试")
-        return model
-
-    def embed_documents(self, texts):
-        return self._get_model().embed_documents(texts)
-
-    def embed_query(self, text):
-        return self._get_model().embed_query(text)
 
 
 class VectorStoreService:
-    """
-    向量数据库服务（单例，线程安全初始化，自动恢复 ChromaDB 缓存冲突）。
-
-    使用双重检查锁定（Double-Checked Locking）实现线程安全的单例模式。
-    之所以需要单例，是因为 ChromaDB 客户端维护了内部的连接池和缓存，
-    多个实例会导致资源冲突和不可预期的 KeyError。
-    """
+    """知识库文档服务（单例，线程安全初始化）。"""
     _instance = None
     _initialized = False
     _init_lock = threading.Lock()
 
     def __new__(cls):
-        # 第一重检查（无锁，性能优先）
         if cls._instance is None:
             with cls._init_lock:
-                # 第二重检查（加锁后，确保线程安全）
                 if cls._instance is None:
                     cls._instance = super().__new__(cls)
         return cls._instance
@@ -91,69 +37,283 @@ class VectorStoreService:
             if VectorStoreService._initialized:
                 return
 
-            persist_dir = get_abstract_path(chroma_config['persist_directory'])
-            # 在创建 Chroma 实例前清除缓存，避免残留的单例 client 导致 KeyError
-            _clear_chroma_cache()
-
-            try:
-                self._init_chroma(persist_dir)
-            except Exception as e:
-                # Chroma 初始化失败时（如数据库文件损坏），自动删除并重建，
-                # 实现优雅的自我修复，避免服务完全不可用
-                logger.error(f"Chroma 初始化失败，即将重置数据库: {e}")
-                _reset_chroma_db(persist_dir)
-                self._init_chroma(persist_dir)
-
+            self.md5_store = MD5Store()
+            self.document_processor = DocumentProcessor(self.md5_store)
             VectorStoreService._initialized = True
 
-    def _init_chroma(self, persist_dir: str):
-        self.vectors_store = Chroma(
-            collection_name=chroma_config['collection_name'],
-            embedding_function=self._get_embed_model(),
-            persist_directory=persist_dir,
-        )
-        self.md5_store = MD5Store()
-        self.hybrid_retriever = HybridRetriever(self.vectors_store)
-        self.document_processor = DocumentProcessor(self.vectors_store, self.md5_store, self._get_embed_model())
+    # ---- 文档列表/详情/切片（读 Neo4j） ----
+    @staticmethod
+    def _neo4j_driver():
+        # 独立访问点：测试可替换
+        from app.graph.storage.neo4j_client import get_neo4j_driver
+
+        return get_neo4j_driver()
+
+    @classmethod
+    async def _query_neo4j(cls, query: str, params: dict | None = None):
+        """执行 Neo4j 查询并取回 records（本服务读文档数据的统一入口）。"""
+        driver = cls._neo4j_driver()
+        result = await driver.execute_query(query, params or {})
+        return list(result.records)
 
     @staticmethod
-    def _get_embed_model():
-        """获取嵌入模型（延迟加载包装器，模型在首次调用时解析）"""
-        return _LazyEmbedding()
+    def _chunk_image_urls(md5: str, image_paths) -> list[str]:
+        """chunk 图片相对路径 → 前端可访问的 /knowledge/image URL 列表。"""
+        if isinstance(image_paths, list) and image_paths:
+            return [f"/knowledge/image/{md5}/{img}" for img in image_paths]
+        return []
 
-    async def compute_route_score(self, query: str, user_id: str) -> float:
-        """快速计算查询与用户知识库的相关度（<10ms）
+    async def get_user_documents(self, user_id: str = None):
+        """获取用户的知识库文档列表（MySQL graph_docs 注册行 ∪ Neo4j Doc/Chunk 聚合）。
 
-        用 ChromaDB 做 Top-1 检索，返回 L2 距离转换后的相似度分数。
-        分数越高表示与用户知识库越相关，用于路由层判断是否需要 RAG 前置管线。
+        graph_docs 在上传入队时即登记，是文档存在性的即时基准——新上传的文档无需等待
+        图谱抽取完成即可出现在列表中；chunk 数与预览来自 Neo4j，抽取未完成时为 0。
+        created_at 优先取注册行的真实上传时间。
         """
+        # 1. MySQL 注册行（上传即写入）
+        registered: dict[str, dict] = {}
         try:
-            results = await asyncio.to_thread(
-                self.vectors_store.similarity_search_with_score,
-                query,
-                k=1,
-                filter={"user_id": user_id}
+            from sqlalchemy import select
+
+            from app.db.db_config import AsyncSessionLocal
+            from app.models.graph import GraphDoc
+
+            async with AsyncSessionLocal() as db:
+                stmt = select(GraphDoc.id, GraphDoc.filename, GraphDoc.created_at)
+                if user_id is not None:
+                    stmt = stmt.where(GraphDoc.user_id == user_id)
+                rows = (await db.execute(stmt.order_by(GraphDoc.created_at))).all()
+            for rid, filename, created_at in rows:
+                registered[rid] = {"filename": filename, "created_at": created_at}
+        except Exception as e:
+            logger.error(f"【知识库】读取文档注册行失败: {e}")
+
+        # 2. Neo4j Doc/Chunk 聚合（抽取完成后才有；失败不阻塞注册行展示）
+        try:
+            records = await self._query_neo4j(
+                "MATCH (d:Doc) WHERE $uid IS NULL OR d.user_id = $uid "
+                "OPTIONAL MATCH (c:Chunk {kind: 'doc'}) "
+                "WHERE c.source_id = d.id AND c.user_id = d.user_id "
+                "WITH d, count(c) AS chunk_count, head(collect(c.text)) AS first_text "
+                "RETURN d.id AS id, d.filename AS filename, d.user_id AS user_id, "
+                "chunk_count, first_text",
+                {"uid": user_id},
             )
-            if not results:
-                return 0.0
-            distance = results[0][1]
-            return 1 / (1 + distance)
-        except Exception:
-            return 0.0
+        except Exception as e:
+            logger.error(f"【知识库】获取用户文档列表失败: {e}")
+            records = []
 
-    async def get_bm25_retriever(self, user_id: str = None):
-        return await self.hybrid_retriever.get_bm25_retriever(user_id)
+        preview_length = 100
 
-    async def _get_all_documents(self) -> list[Document]:
-        return await self.hybrid_retriever._get_all_documents()
+        def _entry(doc_id: str, filename: str, user, chunk_count: int, preview: str, created_at) -> dict:
+            return {
+                "id": doc_id,
+                "filename": filename,
+                "original_filename": filename,
+                "user_id": user,
+                "chunk_count": chunk_count,
+                "preview": (preview or "")[:preview_length] + ("..." if len(preview or "") > preview_length else ""),
+                "created_at": created_at.isoformat() if created_at else None,
+            }
 
-    async def get_retriever(self, query: str = None, user_id: str = None):
-        return await self.hybrid_retriever.get_retriever(query, user_id)
+        docs_info: list[dict] = []
+        seen_ids: set[str] = set()
+        for row in records:
+            doc_id = row.get("id")
+            seen_ids.add(doc_id)
+            reg = registered.get(doc_id, {})
+            docs_info.append(_entry(
+                doc_id, reg.get("filename") or row.get("filename") or "unknown",
+                row.get("user_id"), row.get("chunk_count") or 0,
+                row.get("first_text") or "", reg.get("created_at")))
+        # 注册了但尚未抽取完成的文档（Neo4j 还没有 Doc 节点）
+        for rid, meta in registered.items():
+            if rid in seen_ids:
+                continue
+            docs_info.append(_entry(rid, meta["filename"], user_id, 0, "", meta["created_at"]))
 
-    @staticmethod
-    async def get_dynamic_weights(query: str = None):
-        return await HybridRetriever.get_dynamic_weights(query)
+        docs_info.sort(key=lambda d: (d["created_at"] is None, d["created_at"] or ""))
+        logger.info(f"【知识库】获取用户 {user_id} 的知识库文档，共 {len(docs_info)} 个文件")
+        return docs_info
 
+    async def get_document_detail(self, user_id: str, filename: str):
+        """获取文档详情：完整内容、图片列表与切片明细（Neo4j）。"""
+        try:
+            records = await self._query_neo4j(
+                "MATCH (d:Doc) WHERE d.user_id = $uid AND d.filename = $filename "
+                "OPTIONAL MATCH (c:Chunk {kind: 'doc'}) "
+                "WHERE c.source_id = d.id AND c.user_id = d.user_id "
+                "RETURN d, c ORDER BY c.chunk_index",
+                {"uid": user_id, "filename": filename},
+            )
+        except Exception as e:
+            logger.error(f"【知识库】获取文档详情失败 {filename}: {e}")
+            raise
+
+        if not records:
+            return None
+
+        doc_node = records[0]["d"]
+        doc_md5 = doc_node["id"]
+        chunks = []
+        all_images: set[str] = set()
+        full_content: list[str] = []
+        for index, row in enumerate(records):
+            chunk = row["c"]
+            if chunk is None:
+                continue
+            text = chunk.get("text") or ""
+            full_content.append(text)
+            chunk_images = self._chunk_image_urls(doc_md5, chunk.get("image_paths"))
+            all_images.update(chunk_images)
+            chunks.append({
+                "chunk_id": chunk["id"],
+                "index": index,
+                "content": text,
+                "page": chunk.get("page"),
+                "images": chunk_images,
+            })
+
+        return {
+            "id": doc_md5,
+            "filename": filename,
+            "user_id": doc_node.get("user_id"),
+            "chunk_count": len(chunks),
+            "content": "\n".join(full_content),
+            "images": sorted(all_images),
+            "md5": doc_md5,
+            "created_at": None,
+            "chunks": chunks,
+        }
+
+    async def get_document_chunks(self, user_id: str, filename: str):
+        """获取文档的所有切片信息（Neo4j）。"""
+        try:
+            records = await self._query_neo4j(
+                "MATCH (d:Doc) WHERE d.user_id = $uid AND d.filename = $filename "
+                "OPTIONAL MATCH (c:Chunk {kind: 'doc'}) "
+                "WHERE c.source_id = d.id AND c.user_id = d.user_id "
+                "RETURN d, c ORDER BY c.chunk_index",
+                {"uid": user_id, "filename": filename},
+            )
+        except Exception as e:
+            logger.error(f"【知识库】获取文档切片失败 {filename}: {e}")
+            raise
+
+        chunks = []
+        for index, row in enumerate(records):
+            chunk = row["c"]
+            if chunk is None:
+                continue
+            doc_md5 = row["d"]["id"]
+            chunks.append({
+                "chunk_id": chunk["id"],
+                "index": index,
+                "content": chunk.get("text") or "",
+                "metadata": {"md5": doc_md5, "page": chunk.get("page"),
+                             "user_id": row["d"].get("user_id")},
+                "images": self._chunk_image_urls(doc_md5, chunk.get("image_paths")),
+            })
+
+        return {
+            "filename": filename,
+            "total_chunks": len(chunks),
+            "chunks": chunks,
+        }
+
+    # ---- 删除（md5 记录 + 图片 + Neo4j 图谱联动） ----
+    async def delete_user_documents(self, user_id: str):
+        """删除指定用户的所有文档（包括MD5记录）"""
+        try:
+            await self.delete_user_md5(user_id, delete_documents=True)
+        except Exception as e:
+            logger.error(f"【知识库】删除用户 {user_id} 的文档时出错: {e}")
+            raise
+
+    async def delete_user_md5(self, user_id: str, delete_documents: bool = True):
+        """删除指定用户的MD5记录（delete_documents 时联动清理 Neo4j 文档图谱）。"""
+        try:
+            if delete_documents:
+                logger.info(f"【知识库】删除用户 {user_id} 的所有文档")
+                await self.md5_store.delete_user_md5(user_id)
+                # 同步清理该用户在磁盘上存储的所有 PDF 提取图片
+                delete_user_all_images(user_id)
+                # 图谱联动：清空该用户的文档节点/Chunk/关联/抽取日志（失败不影响删除主流程）
+                try:
+                    from app.graph.services.graph_service import cleanup_all_docs_graph
+                    await cleanup_all_docs_graph(user_id)
+                except Exception as e:
+                    logger.error(f"【图谱】清空用户 {user_id} 文档图谱数据失败: {e}")
+        except Exception as e:
+            logger.error(f"【知识库】删除用户 {user_id} 的MD5记录时出错: {e}")
+
+    async def delete_by_filename(self, user_id: str, filename: str, delete_documents: bool = True):
+        """通过文件名删除MD5记录及其对应的知识库内容（Neo4j 图谱联动）。"""
+        try:
+            md5_to_delete = await self.md5_store.delete_by_filename(user_id, filename)
+            if md5_to_delete is None:
+                logger.warning(f"【知识库】文件 {filename} 不存在于用户 {user_id} 的MD5记录中")
+                # 兜底：md5 记录缺失（历史残留/记录文件丢失）时仍按文件名清理图谱，防残留
+                if delete_documents:
+                    try:
+                        from app.graph.services.graph_service import cleanup_doc_graph_by_filename
+                        await cleanup_doc_graph_by_filename(user_id, filename)
+                    except Exception as e:
+                        logger.error(f"【图谱】按文件名清理文档图谱失败 {filename}: {e}")
+                return False
+
+            logger.info(f"【知识库】已删除用户 {user_id} 的文件 {filename} 的MD5记录")
+
+            if delete_documents:
+                # 删除该文档对应的 PDF 提取图片目录
+                delete_image_directory(user_id, md5_to_delete)
+                # 图谱联动：清理该文档的节点/Chunk/关联/抽取日志（失败不影响删除主流程）
+                try:
+                    from app.graph.services.graph_service import cleanup_doc_graph
+                    await cleanup_doc_graph(user_id, md5_to_delete)
+                except Exception as e:
+                    logger.error(f"【图谱】清理文档 {filename} 图谱数据失败: {e}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"【知识库】删除用户 {user_id} 的文件 {filename} 时出错: {e}")
+            return False
+
+    async def delete_single_md5(self, user_id: str, md5_to_delete: str, delete_documents: bool = True):
+        """删除单个MD5记录及其对应的知识库内容（Neo4j 图谱联动）。"""
+        try:
+            success = await self.md5_store.delete_single_md5(user_id, md5_to_delete)
+            if not success:
+                logger.warning(f"【知识库】MD5记录 {md5_to_delete} 不存在")
+                # 兜底：md5 记录缺失但图谱可能仍有该文档 → 仍清理，防残留
+                if delete_documents:
+                    try:
+                        from app.graph.services.graph_service import cleanup_doc_graph
+                        await cleanup_doc_graph(user_id, md5_to_delete)
+                    except Exception as e:
+                        logger.error(f"【图谱】清理文档 {md5_to_delete} 图谱数据失败: {e}")
+                return False
+
+            logger.info(f"【知识库】已删除用户 {user_id} 的MD5记录: {md5_to_delete}")
+
+            if delete_documents:
+                # 清理磁盘上该用户的 PDF 提取图片
+                delete_image_directory(user_id, md5_to_delete)
+                # 图谱联动：清理该文档的节点/Chunk/关联/抽取日志（失败不影响删除主流程）
+                try:
+                    from app.graph.services.graph_service import cleanup_doc_graph
+                    await cleanup_doc_graph(user_id, md5_to_delete)
+                except Exception as e:
+                    logger.error(f"【图谱】清理文档 {md5_to_delete} 图谱数据失败: {e}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"【知识库】删除用户 {user_id} 的MD5记录 {md5_to_delete} 时出错: {e}")
+            return False
+
+    # ---- MD5 记录（上传去重） ----
     async def check_md5_hex(self, md5_for_check: str, user_id: str = None) -> bool:
         return await self.md5_store.check_md5_hex(md5_for_check, user_id)
 
@@ -163,327 +323,25 @@ class VectorStoreService:
     def save_md5_hex_sync(self, md5_hex: str, filename: str = None, original_filename: str = None, user_id: str = None):
         self.md5_store.save_md5_hex_sync(md5_hex, filename, original_filename, user_id)
 
-    async def delete_user_documents(self, user_id: str):
-        """
-        删除指定用户的所有文档（包括MD5记录）
-        :param user_id: 用户ID
-        """
-        try:
-            await self.delete_user_md5(user_id, delete_documents=True)
-        except Exception as e:
-            logger.error(f"【向量数据库】删除用户 {user_id} 的文档时出错: {e}")
-            raise
-
-    async def delete_user_md5(self, user_id: str, delete_documents: bool = True):
-        """
-        删除指定用户的MD5记录
-        :param user_id: 用户ID
-        :param delete_documents: 是否同时删除向量数据库中的文档（默认True）
-        """
-        try:
-            if delete_documents:
-                await asyncio.to_thread(
-                    self.vectors_store.delete,
-                    where={"user_id": user_id}
-                )
-                logger.info(f"【向量数据库】已删除用户 {user_id} 的所有文档")
-
-            await self.md5_store.delete_user_md5(user_id)
-            # 同步清理该用户在磁盘上存储的所有 PDF 提取图片
-            # 删除文档时必须连带删除对应的图片资源，否则会留下无法被引用的"脏"文件
-            delete_user_all_images(user_id)
-        except Exception as e:
-            logger.error(f"【向量数据库】删除用户 {user_id} 的MD5记录时出错: {e}")
-
-    async def delete_by_filename(self, user_id: str, filename: str, delete_documents: bool = True):
-        """
-        通过文件名删除MD5记录及其对应的知识库内容
-        :param user_id: 用户ID
-        :param filename: 要删除的文件名
-        :param delete_documents: 是否同时删除向量数据库中的对应文档（默认True）
-        :return: 是否成功删除
-        """
-        try:
-            md5_to_delete = await self.md5_store.delete_by_filename(user_id, filename)
-            if md5_to_delete is None:
-                logger.warning(f"【向量数据库】文件 {filename} 不存在于用户 {user_id} 的MD5记录中")
-                return False
-
-            logger.info(f"【向量数据库】已删除用户 {user_id} 的文件 {filename} 的MD5记录")
-
-            if delete_documents:
-                where_clause = {"$and": [{"user_id": user_id}, {"md5": md5_to_delete}]}
-                await asyncio.to_thread(
-                    self.vectors_store.delete,
-                    where=where_clause
-                )
-                logger.info(f"【向量数据库】已删除用户 {user_id} 中文件 {filename} 对应的文档")
-
-            # 删除该文档对应的 PDF 提取图片目录
-            delete_image_directory(user_id, md5_to_delete)
-
-            return True
-
-        except Exception as e:
-            logger.error(f"【向量数据库】删除用户 {user_id} 的文件 {filename} 时出错: {e}")
-            return False
-
-    async def delete_single_md5(self, user_id: str, md5_to_delete: str, delete_documents: bool = True):
-        """
-        删除单个MD5记录及其对应的知识库内容
-        :param user_id: 用户ID
-        :param md5_to_delete: 要删除的MD5值
-        :param delete_documents: 是否同时删除向量数据库中的对应文档（默认True）
-        :return: 是否成功删除
-        """
-        try:
-            success = await self.md5_store.delete_single_md5(user_id, md5_to_delete)
-            if not success:
-                logger.warning(f"【向量数据库】MD5记录 {md5_to_delete} 不存在")
-                return False
-
-            logger.info(f"【向量数据库】已删除用户 {user_id} 的MD5记录: {md5_to_delete}")
-
-            if delete_documents:
-                where_clause = {"$and": [{"user_id": user_id}, {"md5": md5_to_delete}]}
-                await asyncio.to_thread(
-                    self.vectors_store.delete,
-                    where=where_clause
-                )
-                logger.info(f"【向量数据库】已删除用户 {user_id} 中MD5为 {md5_to_delete} 的文档")
-
-            # 清理磁盘上该用户的 PDF 提取图片
-            delete_image_directory(user_id, md5_to_delete)
-
-            return True
-
-        except Exception as e:
-            logger.error(f"【向量数据库】删除用户 {user_id} 的MD5记录 {md5_to_delete} 时出错: {e}")
-            return False
-
     async def get_md5_info(self, user_id: str, md5_value: str):
-        """
-        获取MD5对应的文档信息
-        :param user_id: 用户ID
-        :param md5_value: MD5值
-        :return: MD5信息字典，不存在返回None
-        """
+        """获取MD5对应的文档信息，不存在返回None。"""
         try:
             return await self.md5_store.get_md5_info(user_id, md5_value)
         except Exception as e:
-            logger.error(f"【向量数据库】获取MD5信息 {md5_value} 时出错: {e}")
+            logger.error(f"【知识库】获取MD5信息 {md5_value} 时出错: {e}")
             return None
 
     async def get_all_md5_records(self, user_id: str):
-        """
-        获取用户的所有MD5记录
-        :param user_id: 用户ID
-        :return: MD5记录列表
-        """
+        """获取用户的所有MD5记录。"""
         try:
             records = await self.md5_store.get_all_md5_records(user_id)
-            logger.info(f"【向量数据库】获取用户 {user_id} 的MD5记录，共 {len(records)} 条")
+            logger.info(f"【知识库】获取用户 {user_id} 的MD5记录，共 {len(records)} 条")
             return records
         except Exception as e:
-            logger.error(f"【向量数据库】获取用户 {user_id} 的MD5记录时出错: {e}")
+            logger.error(f"【知识库】获取用户 {user_id} 的MD5记录时出错: {e}")
             return []
 
-    async def get_user_documents(self, user_id: str = None):
-        """
-        获取用户的知识库文档列表
-        :param user_id: 用户ID，如果为None则获取所有文档
-        :return: 文档信息列表，包含文件名、文档数量、预览等信息
-        """
-        try:
-            where_clause = {"user_id": user_id} if user_id else None
-            all_docs = await asyncio.to_thread(
-                self.vectors_store.get,
-                include=['documents', 'metadatas'],
-                where=where_clause
-            )
-
-            docs_info = {}
-
-            for i, doc_id in enumerate(all_docs['ids']):
-                metadata = all_docs['metadatas'][i] if i < len(all_docs['metadatas']) else {}
-                content = all_docs['documents'][i] if i < len(all_docs['documents']) else ""
-
-                # 优先使用 metadata 中保存的 original_filename（用户上传时的原始文件名）
-                # 因为 source 可能存的是临时文件的完整路径（如 C:\Users\...\tmp123.pdf），
-                # 而 original_filename 才是用户看到的文件名
-                source = metadata.get('source', metadata.get('filename', 'unknown'))
-                if isinstance(source, str) and '\\' in source:
-                    source = os.path.basename(source)
-                filename = metadata.get('original_filename', source)
-
-                original_filename = metadata.get('original_filename', filename)
-                if filename not in docs_info:
-                    docs_info[filename] = {
-                        'id': doc_id,
-                        'filename': filename,
-                        'original_filename': original_filename,
-                        'user_id': metadata.get('user_id'),
-                        'chunk_count': 0,
-                        'preview': "",
-                        'created_at': metadata.get('created_at')
-                    }
-
-                docs_info[filename]['chunk_count'] += 1
-
-                if not docs_info[filename]['preview'] and content:
-                    preview_length = 100
-                    docs_info[filename]['preview'] = content[:preview_length] + ("..." if len(content) > preview_length else "")
-
-            result = list(docs_info.values())
-            logger.info(f"【向量数据库】获取用户 {user_id} 的知识库文档，共 {len(result)} 个文件")
-            return result
-
-        except Exception as e:
-            logger.error(f"【向量数据库】获取用户 {user_id} 的知识库文档时出错: {e}")
-            raise
-
-    async def get_document_detail(self, user_id: str, filename: str):
-        """
-        获取文档的详细内容
-        :param user_id: 用户ID
-        :param filename: 文件名
-        :return: 文档详情信息，包含完整内容、图片列表和每段文本与图片的对应关系
-        """
-        try:
-            where_clause = {"user_id": user_id}
-            all_docs = await asyncio.to_thread(
-                self.vectors_store.get,
-                include=['documents', 'metadatas'],
-                where=where_clause
-            )
-
-            doc_info = None
-            full_content = []
-            chunk_count = 0
-            all_images = set()
-            doc_md5 = None
-            chunks = []
-
-            for i, doc_id in enumerate(all_docs['ids']):
-                metadata = all_docs['metadatas'][i] if i < len(all_docs['metadatas']) else {}
-                content = all_docs['documents'][i] if i < len(all_docs['documents']) else ""
-
-                source = metadata.get('source', metadata.get('filename', ''))
-                if isinstance(source, str):
-                    source_name = os.path.basename(source)
-                else:
-                    source_name = str(source)
-                original_filename = metadata.get('original_filename', '')
-
-                # 同时匹配 source 和 original_filename，兼容不同切片方式写入的 metadata
-                if source_name == filename or original_filename == filename:
-                    if not doc_info:
-                        doc_info = {
-                            'id': doc_id,
-                            'filename': filename,
-                            'user_id': metadata.get('user_id'),
-                            'chunk_count': 0,
-                            'content': "",
-                            'images': [],
-                            'md5': metadata.get('md5'),
-                            'created_at': metadata.get('created_at')
-                        }
-                        doc_md5 = metadata.get('md5')
-                    chunk_count += 1
-                    full_content.append(content)
-
-                    # 从 metadata 中取出该 chunk 关联的图片文件名列表，
-                    # 拼接成可供前端直接请求的 URL 路径（由 knowledge_router 中的图片路由处理）
-                    image_paths = metadata.get('image_paths', [])
-                    chunk_images = []
-                    if isinstance(image_paths, list):
-                        for img_name in image_paths:
-                            img_url = f"/knowledge/image/{doc_md5}/{img_name}"
-                            all_images.add(img_url)
-                            chunk_images.append(img_url)
-
-                    chunks.append({
-                        'chunk_id': doc_id,
-                        'index': len(chunks),
-                        'content': content,
-                        'page': metadata.get('page'),
-                        'images': chunk_images,
-                    })
-
-            if doc_info:
-                doc_info['chunk_count'] = chunk_count
-                doc_info['content'] = '\n'.join(full_content)
-                doc_info['images'] = sorted(all_images)
-                doc_info['chunks'] = chunks
-
-            logger.info(f"【向量数据库】获取文档详情: {filename}，chunk数量: {chunk_count}，图片数量: {len(all_images)}")
-            return doc_info
-
-        except Exception as e:
-            logger.error(f"【向量数据库】获取文档详情 {filename} 时出错: {e}")
-            raise
-
-    async def get_document_chunks(self, user_id: str, filename: str):
-        """
-        获取文档的所有切片信息
-        :param user_id: 用户ID
-        :param filename: 文件名
-        :return: 切片列表信息，包含图片列表
-        """
-        try:
-            where_clause = {"user_id": user_id}
-            all_docs = await asyncio.to_thread(
-                self.vectors_store.get,
-                include=['documents', 'metadatas'],
-                where=where_clause
-            )
-
-            chunks = []
-            chunk_index = 0
-
-            for i, doc_id in enumerate(all_docs['ids']):
-                metadata = all_docs['metadatas'][i] if i < len(all_docs['metadatas']) else {}
-                content = all_docs['documents'][i] if i < len(all_docs['documents']) else ""
-
-                source = metadata.get('source', metadata.get('filename', ''))
-                if isinstance(source, str):
-                    source_name = os.path.basename(source)
-                else:
-                    source_name = str(source)
-                original_filename = metadata.get('original_filename', '')
-
-                if source_name == filename or original_filename == filename:
-                    doc_md5 = metadata.get('md5', '')
-                    # 解析图片路径：从 metadata 中拿到图片文件名列表，拼接为前端可用的API URL
-                    image_paths = metadata.get('image_paths', [])
-                    if isinstance(image_paths, list):
-                        images = [f"/knowledge/image/{doc_md5}/{img}" for img in image_paths]
-                    else:
-                        images = []
-
-                    chunks.append({
-                        'chunk_id': doc_id,
-                        'index': chunk_index,
-                        'content': content,
-                        'metadata': metadata,
-                        'images': images,
-                    })
-                    chunk_index += 1
-
-            result = {
-                'filename': filename,
-                'total_chunks': len(chunks),
-                'chunks': chunks
-            }
-
-            logger.info(f"【向量数据库】获取文档切片: {filename}，共 {len(chunks)} 个切片")
-            return result
-
-        except Exception as e:
-            logger.error(f"【向量数据库】获取文档切片 {filename} 时出错: {e}")
-            raise
-
-    # 以下方法将参数透传给 DocumentProcessor，使其能获取 md5 和 user_id 用于多模态PDF加载
+    # ---- 文档加载与切片（上传管线） ----
     async def get_file_document(self, read_path: str, md5: str = None, user_id: str = None) -> list[Document]:
         return await self.document_processor.get_file_document(read_path, md5, user_id)
 
@@ -494,18 +352,14 @@ class VectorStoreService:
         return self.document_processor.split_documents_sync(documents)
 
     async def get_document(self, files: list = None, user_id: str = None, progress_callback=None):
+        """上传管线：加载 → 切片 → 保存 md5 → 入队图谱构建任务（chunk/向量由 worker 写 Neo4j）。"""
         await self.document_processor.get_document(files, user_id, progress_callback)
 
 
 if __name__ == '__main__':
     async def main():
         store = VectorStoreService()
-        await store.get_document()
-
-        retriever = await store.get_retriever()
-        results = await retriever.ainvoke('扫地')
-        logger.debug(f"检索结果数量: {len(results)}")
-        for result in results:
-            logger.debug(f"检索结果: {result}")
+        docs = await store.get_user_documents()
+        logger.debug(f"知识库文档数量: {len(docs)}")
 
     asyncio.run(main())

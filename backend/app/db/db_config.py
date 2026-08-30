@@ -1,20 +1,15 @@
-import os
-
-from dotenv import load_dotenv
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.logger_handler import logger
+from app.core.settings import settings
 from app.models.chat_history import Base
-
-# 加载环境变量
-load_dotenv()
 
 # 数据库URL
 ASYNC_DATABSE_URL = (
-    f"mysql+aiomysql://{os.getenv('MYSQL_USER', 'root')}:{os.getenv('MYSQL_PASSWORD', '')}"
-    f"@{os.getenv('MYSQL_HOST', 'localhost')}:{os.getenv('MYSQL_PORT', '3306')}"
-    f"/{os.getenv('MYSQL_DATABASE', 'chat_history')}?charset=utf8mb4"
+    f"mysql+aiomysql://{settings.MYSQL_USER}:{settings.MYSQL_PASSWORD}"
+    f"@{settings.MYSQL_HOST}:{settings.MYSQL_PORT}"
+    f"/{settings.MYSQL_DATABASE}?charset=utf8mb4"
 )
 
 # 创建异步引擎
@@ -77,7 +72,7 @@ async def _migrate_columns(conn):
 # 初始化数据库，创建所有表
 async def init_db():
     # 确保所有 Model 已导入，注册到 Base.metadata
-    from app.models import chat_history, note, note_template, review_record, user_model  # noqa: F401
+    from app.models import chat_history, graph, note, note_template, review_record, user_model  # noqa: F401
 
     async with async_engine.begin() as conn:
         # 先删除旧表，然后创建新表

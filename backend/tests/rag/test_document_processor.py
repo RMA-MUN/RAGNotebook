@@ -4,11 +4,10 @@ from langchain_core.documents import Document
 
 import app.rag.document_handler.processor as proc_module
 from app.rag.document_handler.processor import DocumentProcessor
-from tests.fakes import FakeChromaStore
 
 
 def _processor():
-    return DocumentProcessor(FakeChromaStore(), md5_store=object())
+    return DocumentProcessor(md5_store=object())
 
 
 async def _async_loader(path, *args, **kwargs):
@@ -109,7 +108,7 @@ class TestSplitDocumentsSync:
         doc = Document(page_content="段落内容。" * 500, metadata={"source": "a.txt"})
         chunks = processor.split_documents_sync([doc])
         assert len(chunks) > 1
-        # chunk_size 来自 chroma_config（1000）
+        # chunk_size 来自 document_config（1000）
         assert all(len(c.page_content) <= 1000 for c in chunks)
         # 元数据被保留到每个 chunk
         assert all(c.metadata["source"] == "a.txt" for c in chunks)

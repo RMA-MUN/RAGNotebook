@@ -43,6 +43,9 @@ def test_get_data_path_is_under_root_and_exists():
     assert os.path.isabs(data)
     assert data == get_abstract_path("data")
     assert os.path.normpath(data).startswith(os.path.normpath(get_project_root()))
+    # data/ is a gitignored runtime dir: it does not exist on a fresh checkout
+    # (CI), so create it here instead of asserting an environmental accident.
+    os.makedirs(data, exist_ok=True)
     assert os.path.isdir(data)
 
 
@@ -51,4 +54,4 @@ def test_get_config_path_contains_yaml_files():
     assert os.path.isabs(cfg)
     assert cfg == get_abstract_path("app/config")
     assert os.path.isfile(os.path.join(cfg, "prompt.yaml"))
-    assert os.path.isfile(os.path.join(cfg, "chroma.yaml"))
+    assert os.path.isfile(os.path.join(cfg, "document.yaml"))

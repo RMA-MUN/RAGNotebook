@@ -5,6 +5,7 @@ import { Send, Sparkles, Bot, User, ChevronDown, ChevronRight, Loader2 } from 'l
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeRaw from 'rehype-raw'
+import remarkGfm from 'remark-gfm'
 import { useSSE } from '../hooks/useSSE'
 import { sessionsApi } from '../api/sessions'
 import { useThemeStore } from '../stores/useThemeStore'
@@ -14,6 +15,12 @@ interface Message {
   content: string
   thinking?: string
   steps?: string[]
+}
+
+interface ThinkingStep {
+  stage: string
+  content: string
+  details?: Record<string, unknown>
 }
 
 const quickQuestions = [
@@ -31,12 +38,14 @@ export default function AIChat() {
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
   const [currentThinking, setCurrentThinking] = useState('')
-  const [currentSteps, setCurrentSteps] = useState<string[]>([])
+  const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([])
   const [showThinking, setShowThinking] = useState(true)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef('')
   const rafRef = useRef<number | null>(null)
+  const pendingThinkingRef = useRef<ThinkingStep[]>([])
+  const thinkingTimerRef = useRef<number | null>(null)
 
   const flushContent = useCallback(() => {
     setMessages((prev) => {
@@ -57,6 +66,11 @@ export default function AIChat() {
         cancelAnimationFrame(rafRef.current)
         rafRef.current = null
       }
+      if (thinkingTimerRef.current !== null) {
+        clearTimeout(thinkingTimerRef.current)
+        thinkingTimerRef.current = null
+      }
+      pendingThinkingRef.current = []
     }
   }, [])
 
@@ -95,26 +109,52 @@ export default function AIChat() {
     setMessages((prev) => [...prev, userMsg])
     setInput('')
     setCurrentThinking('')
-    setCurrentSteps([])
+    setThinkingSteps([])
     setShowThinking(true)
 
     contentRef.current = ''
-    const steps: string[] = []
     let hasResponseStarted = false
 
     await start(
       '/chat/agent/query/stream',
       { query, session_id: sessionId },
       {
-        onThinking: (stage, content) => {
-          if (!steps.includes(stage)) steps.push(stage)
-          setCurrentSteps([...steps])
-          setCurrentThinking(prev => prev ? `${prev}\n${content}` : (content || ''))
+        onThinking: (stage, content, details) => {
+          const step: ThinkingStep = { stage, content: content || '', details }
+          const isPlaceholder = Boolean(details?.placeholder)
+          if (isPlaceholder) {
+            // 占位事件立即落地，让「正在规划」折叠框第一时间出现
+            setThinkingSteps((prev) => [...prev, step])
+            return
+          }
+          // 真实步骤加入待渲染队列，按 150ms 间隔逐个 flush，形成依次推进的节奏；
+          // 若上一步是占位（同 stage），则替换而非新增，避免叠两条。
+          pendingThinkingRef.current.push(step)
+          setCurrentThinking((prev) => prev ? `${prev}\n${content}` : (content || ''))
+          if (thinkingTimerRef.current !== null) return
+          const flushOne = () => {
+            const next = pendingThinkingRef.current.shift()
+            if (!next) {
+              thinkingTimerRef.current = null
+              return
+            }
+            setThinkingSteps((prev) => {
+              const lastIdx = prev.length - 1
+              const last = prev[lastIdx]
+              if (last && last.stage === next.stage && last.details?.placeholder) {
+                const replaced = [...prev]
+                replaced[lastIdx] = next
+                return replaced
+              }
+              return [...prev, next]
+            })
+            thinkingTimerRef.current = window.setTimeout(flushOne, 150)
+          }
+          thinkingTimerRef.current = window.setTimeout(flushOne, 150)
         },
         onResponse: (content, sessionId) => {
           if (!hasResponseStarted) {
             hasResponseStarted = true
-            setShowThinking(false)
           }
           if (sessionId) {
             sessionStorage.setItem('lastSessionId', sessionId)
@@ -156,6 +196,41 @@ export default function AIChat() {
 
   const isLoading = loadingHistory || loading
   const hasStreamingAssistant = loading && messages.length > 0 && messages[messages.length - 1].role === 'assistant'
+
+  const thinkingPanel = thinkingSteps.length > 0 ? (
+    <div className="bg-[var(--color-card)] rounded-lg border border-[var(--color-border)] overflow-hidden">
+      <button
+        onClick={() => setShowThinking(!showThinking)}
+        className="flex items-center justify-between gap-2 px-4 py-2.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] w-full text-left"
+      >
+        <span className="flex items-center gap-2">
+          {showThinking ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          {t('chat.thinkingSteps')} ({thinkingSteps.length})
+        </span>
+        {loading && <Loader2 size={13} className="animate-spin" />}
+      </button>
+      {showThinking && (
+        <div className="px-4 pb-3 space-y-2">
+          {thinkingSteps.map((step, index) => (
+            <details key={`${step.stage}-${index}`} open={index === thinkingSteps.length - 1} className="rounded-md bg-[var(--color-bg-secondary)] border border-[var(--color-border)]">
+              <summary className="cursor-pointer list-none px-3 py-2 text-xs text-[var(--color-text)] flex items-center justify-between gap-3">
+                <span className="font-medium">{index + 1}. {step.stage}</span>
+                <span className="text-[var(--color-text-tertiary)]">{step.details?.source ? String(step.details.source) : ''}</span>
+              </summary>
+              <div className="px-3 pb-3 space-y-2 text-xs text-[var(--color-text-secondary)]">
+                <p className="leading-relaxed whitespace-pre-wrap">{step.content}</p>
+                {step.details && Object.keys(step.details).length > 0 && (
+                  <pre className="overflow-x-auto rounded bg-[var(--color-bg)] p-2 leading-relaxed whitespace-pre-wrap break-words">
+                    {JSON.stringify(step.details, null, 2)}
+                  </pre>
+                )}
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : null
 
   return (
     <div className="h-full flex flex-col">
@@ -219,26 +294,13 @@ export default function AIChat() {
                   </div>
                 ) : (
                   <>
-                    {i === messages.length - 1 && currentSteps.length > 0 && (
+                    {i === messages.length - 1 && thinkingPanel && (
                       <div className="mb-3">
-                        <div className="bg-[var(--color-card)] rounded-lg border border-[var(--color-border)] overflow-hidden">
-                          <button
-                            onClick={() => setShowThinking(!showThinking)}
-                            className="flex items-center gap-2 px-4 py-2.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] w-full text-left"
-                          >
-                            {showThinking ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                            {t('chat.thinkingSteps')}
-                          </button>
-                          {showThinking && currentThinking && (
-                            <div className="px-4 pb-3">
-                              <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-line">{currentThinking}</p>
-                            </div>
-                          )}
-                        </div>
+                        {thinkingPanel}
                       </div>
                     )}
                     <div className={`prose prose-sm max-w-none markdown-body${theme === 'dark' ? ' prose-invert' : ''}`}>
-                      <ReactMarkdown rehypePlugins={[rehypeHighlight, rehypeRaw]}>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight, rehypeRaw]}>
                         {msg.content}
                       </ReactMarkdown>
                     </div>
@@ -266,22 +328,7 @@ export default function AIChat() {
                 <Bot size={16} className="text-[var(--color-accent)]" />
               </div>
               <div className="space-y-2 flex-1">
-                {currentSteps.length > 0 && (
-                  <div className="bg-[var(--color-card)] rounded-lg border border-[var(--color-border)] overflow-hidden">
-                    <button
-                      onClick={() => setShowThinking(!showThinking)}
-                      className="flex items-center gap-2 px-4 py-2.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] w-full text-left"
-                    >
-                      {showThinking ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      {t('chat.thinkingSteps')}
-                    </button>
-                    {showThinking && currentThinking && (
-                      <div className="px-4 pb-3">
-                        <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-line">{currentThinking}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
+                {thinkingPanel}
                 <div className="flex gap-1">
                   <span className="w-2 h-2 rounded-full bg-[var(--color-accent)] animate-bounce" style={{ animationDelay: '0ms' }} />
                   <span className="w-2 h-2 rounded-full bg-[var(--color-accent)] animate-bounce" style={{ animationDelay: '150ms' }} />

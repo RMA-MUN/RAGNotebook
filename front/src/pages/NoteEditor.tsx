@@ -9,6 +9,7 @@ import RelatedFragments from '../components/note/RelatedFragments'
 import OutlinePanel from '../components/note/OutlinePanel'
 import { notesApi } from '../api/notes'
 import { noteTemplatesApi } from '../api/noteTemplates'
+import { graphApi } from '../api/graph'
 import type { Note, NoteTemplate } from '../types/api'
 import ConfirmDialog from '../components/common/ConfirmDialog'
 
@@ -47,6 +48,19 @@ function draftField<T>(id: string | undefined, key: keyof Draft, fallback: T): T
   }
 }
 
+function loadTemplateOrder(): string[] {
+  try {
+    const raw = localStorage.getItem('template_order')
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+function saveTemplateOrder(ids: string[]) {
+  localStorage.setItem('template_order', JSON.stringify(ids))
+}
+
 export default function NoteEditor() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -55,13 +69,13 @@ export default function NoteEditor() {
   const [content, setContent] = useState(() => draftField<string>(id, 'content', ''))
   const [category, setCategory] = useState(() => draftField<string>(id, 'category', ''))
   const [tags, setTags] = useState<string[]>(() => draftField<string[]>(id, 'tags', []))
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(() => Boolean(id) && id !== 'new')
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'unsaved' | 'saved'>('unsaved')
   const [showDelete, setShowDelete] = useState(false)
   const [showRelated, setShowRelated] = useState(false)
   const [showOutline, setShowOutline] = useState(false)
-  const [showTemplatePicker, setShowTemplatePicker] = useState(false)
+  const [showTemplatePicker, setShowTemplatePicker] = useState(() => !id || id === 'new')
   const [showTemplateManager, setShowTemplateManager] = useState(false)
   const [templateName, setTemplateName] = useState('')
   const [editingTemplate, setEditingTemplate] = useState<NoteTemplate | null>(null)
@@ -77,24 +91,8 @@ export default function NoteEditor() {
   const dragItem = useRef<number | null>(null)
   const isNew = !id || id === 'new'
 
-  const loadTemplateOrder = (): string[] => {
-    try {
-      const raw = localStorage.getItem('template_order')
-      return raw ? JSON.parse(raw) : []
-    } catch {
-      return []
-    }
-  }
-  const saveTemplateOrder = (ids: string[]) => {
-    localStorage.setItem('template_order', JSON.stringify(ids))
-  }
-
   useEffect(() => {
-    if (isNew) {
-      setShowTemplatePicker(true)
-      return
-    }
-    setLoading(true)
+    if (isNew) return
     notesApi.get(id).then((res) => {
       const note = res.data as Note
       setTitle(note.title)
@@ -189,7 +187,7 @@ export default function NoteEditor() {
     }
   }
 
-  const refreshTemplates = () => {
+  const refreshTemplates = useCallback(() => {
     noteTemplatesApi.list().then((res) => {
       const list = (res.data as NoteTemplate[]) || []
       setTemplates(list)
@@ -203,7 +201,7 @@ export default function NoteEditor() {
         setTemplateItems(list)
       }
     }).catch(() => {})
-  }
+  }, [])
 
   const startEditTemplate = (tpl: NoteTemplate) => {
     setEditingTemplate(tpl)
@@ -292,13 +290,16 @@ export default function NoteEditor() {
   }
 
   const handleSaveRef = useRef(handleSave)
-  handleSaveRef.current = handleSave
+
+  useEffect(() => {
+    handleSaveRef.current = handleSave
+  })
 
   useEffect(() => {
     if (showTemplatePicker) {
       refreshTemplates()
     }
-  }, [showTemplatePicker])
+  }, [showTemplatePicker, refreshTemplates])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -650,6 +651,17 @@ export default function NoteEditor() {
                 try {
                   const res = await notesApi.autocomplete(context)
                   return (res.data as { completion?: string })?.completion || null
+                } catch {
+                  return null
+                }
+              }}
+              onWikiSuggest={async (keyword) => {
+                try {
+                  const res = await graphApi.search(keyword)
+                  return {
+                    entities: (res?.entities ?? []).map((e) => e.name),
+                    notes: (res?.notes ?? []).map((n) => n.title),
+                  }
                 } catch {
                   return null
                 }

@@ -1,0 +1,7 @@
+data_path: data
+md5_hex_store: data/md5_hex_store/md5_hex_store.txt
+allow_knowledge_file_types: ["txt", "pdf", "md", "pptx", "docx"]
+
+chunk_size: 1000
+chunk_overlap: 20
+separators : ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]

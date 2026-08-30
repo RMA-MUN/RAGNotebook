@@ -3,7 +3,7 @@
 策略：
 - 需要 DB 的工具：`patch_session_factory(monkeypatch, session_factory)` 把工具内
   `AsyncSessionLocal` 指向 SQLite；大部分用例 monkeypatch 具体 service 方法，
-  少数用例用 `real_note_service`（真实 NoteService + FakeChromaStore + SQLite）做集成验证。
+  少数用例用 `real_note_service`（真实 NoteService + SQLite）做集成验证。
 - 用户上下文：通过 `user_ctx` / `no_user_ctx` fixture 设置并复位 ContextVar。
 """
 import asyncio
@@ -11,8 +11,8 @@ import re
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
 import pytest_asyncio
-from langchain_core.documents import Document
 from sqlalchemy import select
 
 from app.agent import agent_tools as tools
@@ -45,16 +45,16 @@ USER_ID = "u1"
 # ---------------------------------------------------------------------------
 # 本地 fixtures
 # ---------------------------------------------------------------------------
-@pytest_asyncio.fixture
-async def user_ctx():
+@pytest.fixture
+def user_ctx():
     """设置当前用户为 USER_ID，测试结束后复位 ContextVar。"""
     token = current_user_id_var.set(USER_ID)
     yield USER_ID
     current_user_id_var.reset(token)
 
 
-@pytest_asyncio.fixture
-async def no_user_ctx():
+@pytest.fixture
+def no_user_ctx():
     """显式清空用户上下文（覆盖其他测试可能残留的值）。"""
     token = current_user_id_var.set(None)
     yield
@@ -171,18 +171,20 @@ async def test_search_notes_tool_error(monkeypatch, user_ctx, patched_db):
 
 
 async def test_search_notes_tool_real_service(monkeypatch, user_ctx, patched_db, real_note_service):
-    """真实 NoteService + FakeChromaStore + SQLite 的集成路径。"""
+    """真实 NoteService + 图存储假 Chunk 检索 + SQLite 的集成路径。"""
+    from app.graph.schemas.graph import ChunkHit
+
+    class _FakeStore:
+        async def search_chunks(self, user_id, query_embedding, text_query, kinds, limit):
+            return [ChunkHit(id="note:n1:0", kind="note", source_id="n1",
+                             source_name="集成测试笔记", chunk_index=0, text="这是一篇用于搜索的真实笔记内容",
+                             score=0.9, metadata={})]
+
+    monkeypatch.setattr("app.services.note_service.get_graph_store", lambda db=None: _FakeStore())
     content = "这是一篇用于搜索的真实笔记内容" * 3
     async with patched_db() as db:
         db.add(Note(id="n1", user_id=USER_ID, title="集成测试笔记", content=content, tags=["测试"], category="study"))
         await db.commit()
-    real_note_service.notes_store.add_documents(
-        [Document(page_content=content, metadata={
-            "user_id": USER_ID, "note_id": "n1", "doc_type": "note", "title": "集成测试笔记",
-        })],
-        ids=["n1"],
-    )
-
     out = await search_notes_tool.ainvoke({"query": "搜索", "top_k": 5})
     assert "找到 1 篇相关笔记" in out
     assert "**集成测试笔记**" in out
@@ -388,7 +390,7 @@ async def test_create_note_tool_error(monkeypatch, user_ctx, patched_db):
 
 
 async def test_create_note_tool_real(monkeypatch, user_ctx, patched_db, real_note_service):
-    """真实 NoteService：SQLite 落库 + FakeChromaStore 向量 + 假模型后台自动标签。"""
+    """真实 NoteService：SQLite 落库 + 假模型后台自动标签。"""
     install_init_manager_fakes(monkeypatch, chat_model=make_fake_chat_model())
 
     out = await create_note_tool.ainvoke({"title": "真实创建的笔记", "content": "正文内容"})
@@ -447,7 +449,7 @@ async def test_get_related_notes_tool_error(monkeypatch, user_ctx, patched_db):
 
 
 async def test_get_related_notes_tool_real(monkeypatch, user_ctx, patched_db, real_note_service):
-    """真实 NoteService + FakeChromaStore（笔记侧）+ FakeVectorStoreService（知识库侧）。"""
+    """真实 NoteService（笔记侧）+ FakeVectorStoreService（知识库侧）。"""
     from tests.conftest import install_fake_vector_store
 
     install_fake_vector_store(monkeypatch)
@@ -459,11 +461,15 @@ async def test_get_related_notes_tool_real(monkeypatch, user_ctx, patched_db, re
         db.add(Note(id="n2", user_id=USER_ID, title="相似笔记", content=content2))
         await db.commit()
 
-    store = real_note_service.notes_store
-    store.add_documents([
-        Document(page_content=content1, metadata={"user_id": USER_ID, "note_id": "n1", "doc_type": "note", "title": "锚点笔记"}),
-        Document(page_content=content2, metadata={"user_id": USER_ID, "note_id": "n2", "doc_type": "note", "title": "相似笔记"}),
-    ], ids=["n1", "n2"])
+    from app.graph.schemas.graph import ChunkHit
+
+    class _FakeStore:
+        async def search_chunks(self, user_id, query_embedding, text_query, kinds, limit):
+            return [ChunkHit(id="note:n2:0", kind="note", source_id="n2",
+                             source_name="相似笔记", chunk_index=0, text=content2,
+                             score=0.5, metadata={})]
+
+    monkeypatch.setattr("app.services.note_service.get_graph_store", lambda db=None: _FakeStore())
 
     out = await get_related_notes_tool.ainvoke({"note_id": "n1", "top_k": 3})
     assert "🔗 关联推荐（共 1 项）" in out

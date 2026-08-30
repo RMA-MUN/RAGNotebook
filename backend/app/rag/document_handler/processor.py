@@ -1,13 +1,17 @@
+"""文档处理器：多格式加载 + 切片（多模态 PDF 保留页码/图片元数据）。
+
+上传管线入口 get_document：加载 → 切片 → 记录 md5（去重）→ 携带预切切片入队图谱构建
+任务（chunk/向量由 worker 落 Neo4j，本模块不再直连向量库）。
+"""
 import asyncio
 import os
 import tempfile
 
-from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
 from app.core.logger_handler import logger
 from app.rag.text_spliter import AsyncTextSplitter
-from app.utils.config import chroma_config
+from app.utils.config import document_config
 from app.utils.file_handler import (
     get_file_md5_hex,
     listdir_allowed_type,
@@ -26,15 +30,14 @@ from app.utils.pdf_multimodal_loader import pdf_multimodal_loader, pdf_multimoda
 
 
 class DocumentProcessor:
-    """文档处理器"""
+    """文档处理器：加载与切片（chunk/向量写入由图谱构建 worker 落 Neo4j）"""
 
-    def __init__(self, vectors_store: Chroma, md5_store, embed_model=None):
-        self.vectors_store = vectors_store
+    def __init__(self, md5_store, embed_model=None):
         self.md5_store = md5_store
         self.spliter = AsyncTextSplitter(
-            chunk_size=chroma_config['chunk_size'],
-            chunk_overlap=chroma_config['chunk_overlap'],
-            separators=chroma_config['separators'],
+            chunk_size=document_config['chunk_size'],
+            chunk_overlap=document_config['chunk_overlap'],
+            separators=document_config['separators'],
             embedding_model=embed_model
         )
 
@@ -102,8 +105,8 @@ class DocumentProcessor:
                 file_names[temp_file_path.name] = file.filename
         else:
             allowed_file_path: tuple[str] = await listdir_allowed_type(
-                chroma_config['data_path'],
-                tuple(chroma_config['allow_knowledge_file_types'])
+                document_config['data_path'],
+                tuple(document_config['allow_knowledge_file_types'])
             )
             file_paths = list(allowed_file_path)
 
@@ -161,6 +164,9 @@ class DocumentProcessor:
                     })
                 logger.info(f"【向量数据库】开始切分文档: {filename}")
 
+                # 记录切分前的全文，供知识库文档入图谱抽取使用
+                full_text = "\n".join(d.page_content for d in document)
+
                 document: list[Document] = await self.spliter.split_documents(document)
                 if not document:
                     if progress_callback:
@@ -194,10 +200,23 @@ class DocumentProcessor:
                     doc.metadata['original_filename'] = filename
                     doc.metadata['md5'] = md5_hex
 
-                await asyncio.to_thread(self.vectors_store.add_documents, document)
-
                 original_filename = file_names.get(file_path, filename) if files else filename
                 await self.md5_store.save_md5_hex(md5_hex, filename, original_filename, user_id)
+
+                # 知识库文档入图谱：入库成功后入队构建任务（携带预切切片，保留页码/图片元数据；
+                # 懒加载避免循环依赖；失败不影响上传主流程）
+                try:
+                    from app.graph.services.graph_service import maybe_schedule_doc_extraction
+                    graph_chunks = [
+                        {"chunk_index": i, "text": doc.page_content,
+                         "page": doc.metadata.get("page"),
+                         "image_paths": doc.metadata.get("image_paths") or []}
+                        for i, doc in enumerate(document)]
+                    asyncio.create_task(
+                        maybe_schedule_doc_extraction(user_id, md5_hex, filename, full_text,
+                                                      chunks=graph_chunks))
+                except Exception as e:
+                    logger.error(f"触发文档图谱抽取失败 filename={filename}: {e}")
 
                 if progress_callback:
                     await progress_callback({

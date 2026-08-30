@@ -43,16 +43,17 @@ function getSavedOrder(): string[] {
 function buildCategoryList(customCategories: string[]) {
   const list = PREDEFINED_CATEGORIES.slice()
   for (const cat of customCategories) {
-    if (!PREDEFINED_VALUES.has(cat)) {
-      list.push({ label: cat, value: cat })
+    // 空分类（category 为空的笔记会被收集成 ''）与预定义「全部」的 value='' 撞重复 key，跳过
+    if (!cat || PREDEFINED_VALUES.has(cat)) {
+      continue
     }
+    list.push({ label: cat, value: cat })
   }
 
   const order = getSavedOrder()
   if (order.length === 0) return list
 
   const orderIndex = new Map(order.map((v, i) => [v, i]))
-  const allValues = new Set(list.map((c) => c.value))
 
   return list.sort((a, b) => {
     if (a.value === '') return -1
@@ -79,7 +80,7 @@ export default function NoteList() {
 
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const longPressTimer = useRef<ReturnType<typeof setTimeout>>()
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const pressStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const enteredViaLongPress = useRef(false)
   const pointerMoved = useRef(false)

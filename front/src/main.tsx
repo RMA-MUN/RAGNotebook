@@ -8,7 +8,8 @@ import App from './App'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
+    {/* 提前启用 v7 行为：消除两条 Future Flag 弃用告警，为升级 react-router v7 铺路 */}
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <App />
       <Toaster position="top-center" richColors />
     </BrowserRouter>

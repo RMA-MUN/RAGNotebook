@@ -248,7 +248,9 @@ export default function KnowledgeBase() {
                   <div className="min-w-0">
                     <p className="text-sm text-[var(--color-text)] truncate">{doc.filename}</p>
                     <p className="text-xs text-[var(--color-text-tertiary)]">
-                      {doc.chunk_count} chunks | {formatDate(doc.created_at)}
+                      {doc.chunk_count > 0
+                        ? `${doc.chunk_count} chunks | ${formatDate(doc.created_at)}`
+                        : t('knowledge.parsing')}
                     </p>
                   </div>
                 </div>

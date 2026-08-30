@@ -8,11 +8,6 @@ class QueryRequest(BaseModel):
     query: str
 
 
-class RAGRequest(BaseModel):
-    """RAG检索请求模型"""
-    query: str
-
-
 class SessionResponse(BaseModel):
     """会话响应模型"""
     session_id: str
@@ -32,11 +27,6 @@ class AgentResponse(BaseModel):
     response: str
     session_id: str
     steps: list[AgentStep] | None = None
-
-
-class RAGResponse(BaseModel):
-    """RAG检索响应模型"""
-    response: str
 
 
 class ReorderRequest(BaseModel):

@@ -5,26 +5,11 @@ import traceback
 from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic_settings import BaseSettings
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette import status
 
-
-class Settings(BaseSettings):
-    """项目配置类，自动从环境变量读取"""
-    # 环境标识：dev(开发) / test(测试) / prod(生产)
-    ENV: str = "dev"
-    # DEBUG模式：开发环境默认True，生产环境强制False
-    DEBUG_MODE: bool = True
-    # 日志级别
-    LOG_LEVEL: str = "INFO"
-
-    class Config:
-        env_file = ".env"
-        extra = "allow"
-
-
-settings = Settings()
+# 项目配置唯一读取点在 app/core/settings.py，此处 re-export 兼容既有导入路径
+from app.core.settings import Settings, settings
 
 # 生产环境强制关闭 DEBUG_MODE，双保险防止泄露
 DEBUG_MODE = settings.DEBUG_MODE if settings.ENV != "prod" else False

@@ -6,6 +6,7 @@ because they construct real model clients.
 """
 import pytest
 
+from app.core.settings import settings
 from app.utils.factory import (
     EmbedModelFactory,
     RerankerModelFactory,
@@ -32,8 +33,10 @@ ALL_KEYS = [
 
 
 def _clear_env(monkeypatch):
-    for key in ALL_KEYS:
-        monkeypatch.delenv(key, raising=False)
+    """把 settings 中会影响解析的配置属性清空（配置源已收敛到 Settings，
+    测试直接 patch 属性而非环境变量）。"""
+    for key in [*ALL_KEYS, "CHAT_API_KEY"]:
+        monkeypatch.setattr(settings, key, None, raising=False)
 
 
 # ---------------------------------------------------------------------------
@@ -53,15 +56,15 @@ def test_resolve_model_falls_back_to_default(monkeypatch):
 
 def test_resolve_uses_capability_model_env(monkeypatch):
     _clear_env(monkeypatch)
-    monkeypatch.setenv("SOME_MODEL", "capability-model")
+    monkeypatch.setattr(settings, "SOME_MODEL", "capability-model", raising=False)
     cfg = _resolve_openai_config("SOME_MODEL", default_model="default-model")
     assert cfg["model"] == "capability-model"
 
 
 def test_resolve_fallback_disabled_never_falls_back(monkeypatch):
     _clear_env(monkeypatch)
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://openai.example")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://openai.example")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-openai")
     cfg = _resolve_openai_config(
         "EMBED_MODEL_NAME",
         "EMBED_BASE_URL",
@@ -83,9 +86,9 @@ def test_chat_config_defaults(monkeypatch):
 
 def test_chat_config_uses_openai_env(monkeypatch):
     _clear_env(monkeypatch)
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.example.com/v1")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-chat")
-    monkeypatch.setenv("OPENAI_MODEL_NAME", "deepseek-chat")
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://api.example.com/v1")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-chat")
+    monkeypatch.setattr(settings, "OPENAI_MODEL_NAME", "deepseek-chat")
     cfg = resolve_chat_config()
     assert cfg == {
         "model": "deepseek-chat",
@@ -99,8 +102,8 @@ def test_chat_config_uses_openai_env(monkeypatch):
 # ---------------------------------------------------------------------------
 def test_vision_config_default_model(monkeypatch):
     _clear_env(monkeypatch)
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://openai.example")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://openai.example")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-openai")
     cfg = resolve_vision_config()
     # atomic fallback: both unset -> whole OPENAI_* pair used, model default qwen-vl-max
     assert cfg == {
@@ -112,9 +115,9 @@ def test_vision_config_default_model(monkeypatch):
 
 def test_vision_config_atomic_fallback_no_partial_mixing(monkeypatch):
     _clear_env(monkeypatch)
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://openai.example")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
-    monkeypatch.setenv("VISION_BASE_URL", "https://vision.example")
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://openai.example")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setattr(settings, "VISION_BASE_URL", "https://vision.example")
     cfg = resolve_vision_config()
     # 原子回落:只有 base_url 而没有 api_key -> 绝不混搭 OPENAI_API_KEY
     assert cfg["base_url"] == "https://vision.example"
@@ -124,11 +127,11 @@ def test_vision_config_atomic_fallback_no_partial_mixing(monkeypatch):
 
 def test_vision_config_full_own_credentials(monkeypatch):
     _clear_env(monkeypatch)
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://openai.example")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
-    monkeypatch.setenv("VISION_BASE_URL", "https://vision.example")
-    monkeypatch.setenv("VISION_API_KEY", "sk-vision")
-    monkeypatch.setenv("VISION_MODEL_NAME", "qwen-vl-plus")
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://openai.example")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setattr(settings, "VISION_BASE_URL", "https://vision.example")
+    monkeypatch.setattr(settings, "VISION_API_KEY", "sk-vision")
+    monkeypatch.setattr(settings, "VISION_MODEL_NAME", "qwen-vl-plus")
     cfg = resolve_vision_config()
     assert cfg == {
         "model": "qwen-vl-plus",
@@ -139,9 +142,9 @@ def test_vision_config_full_own_credentials(monkeypatch):
 
 def test_vision_config_key_only_no_fallback(monkeypatch):
     _clear_env(monkeypatch)
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://openai.example")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
-    monkeypatch.setenv("VISION_API_KEY", "sk-vision")
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://openai.example")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setattr(settings, "VISION_API_KEY", "sk-vision")
     cfg = resolve_vision_config()
     assert cfg["api_key"] == "sk-vision"
     assert cfg["base_url"] is None  # 不回落到 OPENAI_BASE_URL
@@ -161,8 +164,8 @@ def test_embed_config_default_model(monkeypatch):
 
 def test_embed_config_atomic_fallback(monkeypatch):
     _clear_env(monkeypatch)
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://openai.example")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://openai.example")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-openai")
     cfg = resolve_embed_config()
     assert cfg == {
         "model": "text-embedding-v3",
@@ -173,8 +176,8 @@ def test_embed_config_atomic_fallback(monkeypatch):
 
 def test_embed_config_no_partial_mixing(monkeypatch):
     _clear_env(monkeypatch)
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
-    monkeypatch.setenv("EMBED_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setattr(settings, "EMBED_BASE_URL", "http://localhost:11434/v1")
     cfg = resolve_embed_config()
     assert cfg["base_url"] == "http://localhost:11434/v1"
     assert cfg["api_key"] is None
@@ -182,10 +185,10 @@ def test_embed_config_no_partial_mixing(monkeypatch):
 
 def test_embed_config_full_own_credentials(monkeypatch):
     _clear_env(monkeypatch)
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
-    monkeypatch.setenv("EMBED_BASE_URL", "http://localhost:11434/v1")
-    monkeypatch.setenv("EMBED_API_KEY", "ollama")
-    monkeypatch.setenv("EMBED_MODEL_NAME", "bge-m3")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setattr(settings, "EMBED_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.setattr(settings, "EMBED_API_KEY", "ollama")
+    monkeypatch.setattr(settings, "EMBED_MODEL_NAME", "bge-m3")
     cfg = resolve_embed_config()
     assert cfg == {
         "model": "bge-m3",
@@ -199,13 +202,13 @@ def test_embed_config_full_own_credentials(monkeypatch):
 # ---------------------------------------------------------------------------
 def test_vision_factory_disabled_returns_none(monkeypatch):
     _clear_env(monkeypatch)
-    monkeypatch.setenv("VISION_ENABLED", "false")
+    monkeypatch.setattr(settings, "VISION_ENABLED", "false")
     assert VisionModelFactory().generator() is None
 
 
 def test_vision_factory_fail_soft_without_config(monkeypatch):
     _clear_env(monkeypatch)
-    monkeypatch.setenv("VISION_ENABLED", "true")
+    monkeypatch.setattr(settings, "VISION_ENABLED", "true")
     assert VisionModelFactory().generator() is None
 
 
@@ -224,9 +227,9 @@ def test_reranker_factory_always_returns_none():
 def test_embed_factory_sends_raw_strings_for_dashscope(monkeypatch):
     """DashScope 兼容模式不支持 token 数组输入，必须发送原始字符串数组"""
     _clear_env(monkeypatch)
-    monkeypatch.setenv("EMBED_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-    monkeypatch.setenv("EMBED_API_KEY", "sk-embed")
-    monkeypatch.setenv("EMBED_MODEL_NAME", "text-embedding-v3")
+    monkeypatch.setattr(settings, "EMBED_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    monkeypatch.setattr(settings, "EMBED_API_KEY", "sk-embed")
+    monkeypatch.setattr(settings, "EMBED_MODEL_NAME", "text-embedding-v3")
     embed = EmbedModelFactory().generator()
     assert embed.model == "text-embedding-v3"
     assert embed.check_embedding_ctx_length is False

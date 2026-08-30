@@ -3,7 +3,6 @@
 统一测试策略（全 Mock，不依赖外部服务）：
 - MySQL      -> 文件型 SQLite（每 session 独立连接，贴近真实 MySQL 连接池）
 - Redis      -> tests/fakes.FakeRedis
-- ChromaDB   -> tests/fakes.FakeChromaStore（真实 NoteService 逻辑照常执行）
 - LLM        -> tests/fakes.make_fake_chat_model（GenericFakeChatModel）
 - 重排序模型 -> tests/fakes.FakeReorderService
 - API 测试   -> httpx ASGITransport 直连 FastAPI 应用，不进入 lifespan（不触发启动连库）
@@ -13,6 +12,7 @@
 """
 import os
 import sys
+import types
 from pathlib import Path
 
 # ---- 环境变量：必须在任何 app.* import 之前设置 ----
@@ -21,6 +21,19 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ["RATE_LIMIT_ENABLED"] = "false"
 # 避免测试触发真实视觉模型/重排序模型的初始化
 os.environ.setdefault("VISION_ENABLED", "false")
+
+# python-magic 的 loader 在 win32 上只从 CWD/PATH 查找 libmagic.dll，
+# 而 DLL 实际位于 site-packages/magic/libmagic/，导致 import magic 直接失败。
+# 统一注册 MIME 嗅探替身，保证依赖它的测试模块可单独收集（原 hack 在 test_chat_api 内，顺序敏感）。
+if "magic" not in sys.modules:
+    class _FakeMagic:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def from_buffer(self, content):
+            return "text/plain"
+
+    sys.modules["magic"] = types.SimpleNamespace(Magic=_FakeMagic)
 
 import pytest
 import pytest_asyncio
@@ -31,7 +44,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.models.chat_history import Base
 
 from tests.fakes import (
-    FakeChromaStore,
     FakeReorderService,
     FakeVectorStoreService,
     TEST_USER_ID,
@@ -41,13 +53,21 @@ from tests.fakes import (
 
 # 方便各测试文件直接复用（例如替换 VectorStoreService 时）
 __all__ = [
-    "FakeChromaStore",
     "FakeReorderService",
     "FakeVectorStoreService",
     "TEST_USER_ID",
     "install_fake_redis",
     "make_fake_chat_model",
 ]
+
+
+@pytest.fixture(autouse=True)
+def _disable_neo4j(monkeypatch):
+    """默认屏蔽开发 .env 里的 NEO4J_URI：测试统一走「Neo4j 未配置 → 功能降级」路径，
+    防止测试误写开发图数据库；Neo4j 集成测试用 neo4j_env fixture 显式指向 NEO4J_TEST_URI。"""
+    from app.core.failed_response import settings
+
+    monkeypatch.setattr(settings, "NEO4J_URI", "", raising=False)
 
 # backend 目录加入 sys.path，保证 `from app...` 可导入（tests/__init__.py 已存在，通常已生效）
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -68,7 +88,7 @@ async def db_engine(tmp_path):
     改用文件库 + 默认连接池后，每个 session 有独立连接，写操作可被其他连接看到（与生产一致）。
     """
     # 确保所有 Model 在 create_all 之前已注册到 Base.metadata
-    from app.models import chat_history, note, note_template, review_record, user_model  # noqa: F401
+    from app.models import chat_history, graph, note, note_template, review_record, user_model  # noqa: F401
 
     db_file = tmp_path / "test.db"
     engine = create_async_engine(
@@ -166,13 +186,10 @@ async def fake_models(monkeypatch):
 
 @pytest_asyncio.fixture
 async def real_note_service(monkeypatch):
-    """真实 NoteService + FakeChromaStore（向量层替身），并挂到 init_manager。"""
-    import app.services.note_service as note_service_module
+    """真实 NoteService（向量能力已迁 Neo4j），并挂到 init_manager。"""
     from app.services.note_service import NoteService
 
-    monkeypatch.setattr(note_service_module, "Chroma", lambda **kwargs: FakeChromaStore())
-
-    service = NoteService(embed_model=None)
+    service = NoteService()
     install_init_manager_fakes(monkeypatch, note_service=service)
     return service
 
@@ -238,7 +255,7 @@ def auth_headers():
 async def raw_client(session_factory, monkeypatch):
     """不带认证 overrides 的客户端：用来验证真实 security / get_current_user_id 行为。
 
-    - 无 Authorization 头 → HTTPBearer 403
+    - 无 Authorization 头 → HTTPBearer 401（FastAPI 0.123+ 无凭据即 401）
     - 非法 Token → 401（get_current_user_id 内部逻辑）
     - 黑名单 Token → 401
     """

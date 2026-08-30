@@ -12,18 +12,18 @@ from langchain_core.documents import Document
 
 import app.rag.text_spliter as text_spliter_mod
 from app.rag.text_spliter import AsyncTextSplitter
-from app.utils.config import chroma_config
+from app.utils.config import document_config
 
 
 # ---------------------------------------------------------------------------
 # construction
 # ---------------------------------------------------------------------------
-def test_default_constructor_reads_chroma_config():
+def test_default_constructor_reads_document_config():
     splitter = AsyncTextSplitter()
     assert splitter.chunk_size == 1000
     assert splitter.chunk_overlap == 200
-    # default separators come from chroma.yaml (fall back to langchain default)
-    expected = chroma_config.get("separators")
+    # default separators come from document.yaml (fall back to langchain default)
+    expected = document_config.get("separators")
     assert splitter.separators == (expected or ["\n\n", "\n", " ", ""])
     assert splitter.embedding_model is None
 

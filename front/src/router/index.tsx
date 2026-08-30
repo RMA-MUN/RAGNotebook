@@ -15,6 +15,7 @@ const DailyReview = lazy(() => import('../pages/DailyReview'))
 const Profile = lazy(() => import('../pages/Profile'))
 const Settings = lazy(() => import('../pages/Settings'))
 const AboutUs = lazy(() => import('../pages/AboutUs'))
+const GraphPage = lazy(() => import('../pages/GraphPage'))
 
 const LazyLoad = ({ children }: { children: React.ReactNode }) => (
   <Suspense fallback={<LoadingSkeleton />}>{children}</Suspense>
@@ -47,6 +48,7 @@ const routes: RouteObject[] = [
       { path: 'profile', element: <LazyLoad><Profile /></LazyLoad> },
       { path: 'settings', element: <LazyLoad><Settings /></LazyLoad> },
       { path: 'about', element: <LazyLoad><AboutUs /></LazyLoad> },
+      { path: 'graph', element: <LazyLoad><GraphPage /></LazyLoad> },
     ],
   },
 ]
