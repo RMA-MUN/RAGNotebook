@@ -1,4 +1,4 @@
-"""知识库文档服务（原 Chroma 向量库服务，已切换 Neo4j）。
+"""知识库文档服务（文档列表/详情/切片/MD5/上传管线）。
 
 - chunk/向量统一存 Neo4j（(:Chunk) 节点，由图谱构建 worker 写入，见 graph_service）
 - 本服务保留：文档列表/详情/切片查询（读 Neo4j）、md5 记录（上传去重）、文档删除联动
@@ -64,7 +64,31 @@ class VectorStoreService:
         return []
 
     async def get_user_documents(self, user_id: str = None):
-        """获取用户的知识库文档列表（Neo4j Doc/Chunk 节点聚合）。"""
+        """获取用户的知识库文档列表（MySQL graph_docs 注册行 ∪ Neo4j Doc/Chunk 聚合）。
+
+        graph_docs 在上传入队时即登记，是文档存在性的即时基准——新上传的文档无需等待
+        图谱抽取完成即可出现在列表中；chunk 数与预览来自 Neo4j，抽取未完成时为 0。
+        created_at 优先取注册行的真实上传时间。
+        """
+        # 1. MySQL 注册行（上传即写入）
+        registered: dict[str, dict] = {}
+        try:
+            from sqlalchemy import select
+
+            from app.db.db_config import AsyncSessionLocal
+            from app.models.graph import GraphDoc
+
+            async with AsyncSessionLocal() as db:
+                stmt = select(GraphDoc.id, GraphDoc.filename, GraphDoc.created_at)
+                if user_id is not None:
+                    stmt = stmt.where(GraphDoc.user_id == user_id)
+                rows = (await db.execute(stmt.order_by(GraphDoc.created_at))).all()
+            for rid, filename, created_at in rows:
+                registered[rid] = {"filename": filename, "created_at": created_at}
+        except Exception as e:
+            logger.error(f"【知识库】读取文档注册行失败: {e}")
+
+        # 2. Neo4j Doc/Chunk 聚合（抽取完成后才有；失败不阻塞注册行展示）
         try:
             records = await self._query_neo4j(
                 "MATCH (d:Doc) WHERE $uid IS NULL OR d.user_id = $uid "
@@ -72,27 +96,43 @@ class VectorStoreService:
                 "WHERE c.source_id = d.id AND c.user_id = d.user_id "
                 "WITH d, count(c) AS chunk_count, head(collect(c.text)) AS first_text "
                 "RETURN d.id AS id, d.filename AS filename, d.user_id AS user_id, "
-                "chunk_count, first_text ORDER BY d.created_at",
+                "chunk_count, first_text",
                 {"uid": user_id},
             )
         except Exception as e:
             logger.error(f"【知识库】获取用户文档列表失败: {e}")
-            return []
+            records = []
 
-        docs_info = []
-        for row in records:
-            filename = row.get("filename") or "unknown"
-            preview = row.get("first_text") or ""
-            preview_length = 100
-            docs_info.append({
-                "id": row.get("id"),
+        preview_length = 100
+
+        def _entry(doc_id: str, filename: str, user, chunk_count: int, preview: str, created_at) -> dict:
+            return {
+                "id": doc_id,
                 "filename": filename,
                 "original_filename": filename,
-                "user_id": row.get("user_id"),
-                "chunk_count": row.get("chunk_count") or 0,
-                "preview": preview[:preview_length] + ("..." if len(preview) > preview_length else ""),
-                "created_at": None,
-            })
+                "user_id": user,
+                "chunk_count": chunk_count,
+                "preview": (preview or "")[:preview_length] + ("..." if len(preview or "") > preview_length else ""),
+                "created_at": created_at.isoformat() if created_at else None,
+            }
+
+        docs_info: list[dict] = []
+        seen_ids: set[str] = set()
+        for row in records:
+            doc_id = row.get("id")
+            seen_ids.add(doc_id)
+            reg = registered.get(doc_id, {})
+            docs_info.append(_entry(
+                doc_id, reg.get("filename") or row.get("filename") or "unknown",
+                row.get("user_id"), row.get("chunk_count") or 0,
+                row.get("first_text") or "", reg.get("created_at")))
+        # 注册了但尚未抽取完成的文档（Neo4j 还没有 Doc 节点）
+        for rid, meta in registered.items():
+            if rid in seen_ids:
+                continue
+            docs_info.append(_entry(rid, meta["filename"], user_id, 0, "", meta["created_at"]))
+
+        docs_info.sort(key=lambda d: (d["created_at"] is None, d["created_at"] or ""))
         logger.info(f"【知识库】获取用户 {user_id} 的知识库文档，共 {len(docs_info)} 个文件")
         return docs_info
 

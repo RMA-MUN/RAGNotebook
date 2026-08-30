@@ -5,7 +5,7 @@ from typing import Any
 from langchain.embeddings.base import Embeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from app.utils.config import chroma_config
+from app.utils.config import document_config
 
 
 class AsyncTextSplitter:
@@ -34,7 +34,7 @@ class AsyncTextSplitter:
             embedding_model: 嵌入模型，用于计算语义相似度
         """
         # 默认分割符，按优先级排序
-        default_separators = chroma_config['separators']
+        default_separators = document_config['separators']
 
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap

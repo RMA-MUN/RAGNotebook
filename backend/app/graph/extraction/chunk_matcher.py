@@ -5,19 +5,19 @@
 """
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from app.utils.config import chroma_config
+from app.utils.config import document_config
 
 _splitter: RecursiveCharacterTextSplitter | None = None
 
 
 def _get_splitter() -> RecursiveCharacterTextSplitter:
-    """惰性单例：切分参数与向量库入 Chroma 时保持同一套配置，两边 chunk 对得齐。"""
+    """惰性单例：切分参数统一读 document.yaml，笔记与文档共用同一套切分配置。"""
     global _splitter
     if _splitter is None:
         _splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chroma_config["chunk_size"],
-            chunk_overlap=chroma_config["chunk_overlap"],
-            separators=chroma_config["separators"],
+            chunk_size=document_config["chunk_size"],
+            chunk_overlap=document_config["chunk_overlap"],
+            separators=document_config["separators"],
         )
     return _splitter
 

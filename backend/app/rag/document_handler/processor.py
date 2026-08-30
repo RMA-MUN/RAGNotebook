@@ -11,7 +11,7 @@ from langchain_core.documents import Document
 
 from app.core.logger_handler import logger
 from app.rag.text_spliter import AsyncTextSplitter
-from app.utils.config import chroma_config
+from app.utils.config import document_config
 from app.utils.file_handler import (
     get_file_md5_hex,
     listdir_allowed_type,
@@ -35,9 +35,9 @@ class DocumentProcessor:
     def __init__(self, md5_store, embed_model=None):
         self.md5_store = md5_store
         self.spliter = AsyncTextSplitter(
-            chunk_size=chroma_config['chunk_size'],
-            chunk_overlap=chroma_config['chunk_overlap'],
-            separators=chroma_config['separators'],
+            chunk_size=document_config['chunk_size'],
+            chunk_overlap=document_config['chunk_overlap'],
+            separators=document_config['separators'],
             embedding_model=embed_model
         )
 
@@ -105,8 +105,8 @@ class DocumentProcessor:
                 file_names[temp_file_path.name] = file.filename
         else:
             allowed_file_path: tuple[str] = await listdir_allowed_type(
-                chroma_config['data_path'],
-                tuple(chroma_config['allow_knowledge_file_types'])
+                document_config['data_path'],
+                tuple(document_config['allow_knowledge_file_types'])
             )
             file_paths = list(allowed_file_path)
 

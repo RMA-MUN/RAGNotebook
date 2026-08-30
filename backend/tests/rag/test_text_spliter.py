@@ -3,7 +3,7 @@ import pytest
 from langchain_core.documents import Document
 
 from app.rag.text_spliter import AsyncTextSplitter
-from app.utils.config import chroma_config
+from app.utils.config import document_config
 
 
 class FakeEmbedder:
@@ -20,11 +20,11 @@ class FakeEmbedder:
 
 
 class TestConstructor:
-    def test_defaults_from_chroma_config(self):
+    def test_defaults_from_document_config(self):
         splitter = AsyncTextSplitter()
-        assert splitter.chunk_size == 1000  # 构造函数签名默认值，同时与 chroma_config 一致
-        assert splitter.chunk_overlap == 200  # 构造函数签名默认值（chroma.yaml 中为 20，仅作配置）
-        assert splitter.separators == chroma_config["separators"]
+        assert splitter.chunk_size == 1000  # 构造函数签名默认值，同时与 document_config 一致
+        assert splitter.chunk_overlap == 200  # 构造函数签名默认值（document.yaml 中为 20，仅作配置）
+        assert splitter.separators == document_config["separators"]
         assert splitter.embedding_model is None
 
     def test_custom_params(self):

@@ -108,7 +108,7 @@ class TestSplitDocumentsSync:
         doc = Document(page_content="段落内容。" * 500, metadata={"source": "a.txt"})
         chunks = processor.split_documents_sync([doc])
         assert len(chunks) > 1
-        # chunk_size 来自 chroma_config（1000）
+        # chunk_size 来自 document_config（1000）
         assert all(len(c.page_content) <= 1000 for c in chunks)
         # 元数据被保留到每个 chunk
         assert all(c.metadata["source"] == "a.txt" for c in chunks)
