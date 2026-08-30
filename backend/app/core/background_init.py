@@ -1,6 +1,6 @@
-"""应用后台初始化：AI 模型 → Neo4j Schema/图谱 worker → NoteService → 知识库 → 重排序。
+"""应用后台初始化：AI 模型 → Neo4j Schema/图谱 worker → NoteService → 知识库 → 云端重排序。
 
-初始化顺序即依赖顺序；Neo4j 相关步骤失败仅告警不阻塞启动（存储回落 MySQL）。
+初始化顺序即依赖顺序；Neo4j 相关步骤失败仅告警不阻塞启动（图谱功能降级）。
 """
 import asyncio
 import time
@@ -58,13 +58,13 @@ class _BackgroundInitManager:
             # 1.6 图谱构建 worker（任务表持久化，重启自动恢复消费）
             self._start_graph_worker()
 
-            # 2. ChromaDB（NoteService，依赖 embed_model）
+            # 2. NoteService（业务单例，不依赖外部向量库）
             await self._init_note_service()
 
             # 2.5 预热向量库服务（线程内初始化，避免上传时切片线程与事件循环线程在 _init_lock 上互相阻塞）
             await self._init_vector_store()
 
-            # 3. 重排序模型（引入 torch、sentence_transformers 等重型框架）
+            # 3. 云端重排序服务（轻量 HTTP 客户端，无本地模型）
             await self._init_reranker()
 
             elapsed = time.time() - self._start_time
@@ -99,7 +99,7 @@ class _BackgroundInitManager:
         from app.graph.storage.neo4j_client import ensure_graph_schema, neo4j_configured
 
         if not neo4j_configured():
-            logger.warning("⚠️ NEO4J_URI 未配置，图谱存储回落 MySQL")
+            logger.warning("⚠️ NEO4J_URI 未配置，图谱功能降级（API 返回 503）")
             return
         try:
             await ensure_graph_schema(self.embed_model)
@@ -141,18 +141,15 @@ class _BackgroundInitManager:
         self.note_service_ready.set()
 
     async def _init_vector_store(self):
-        """预热 VectorStoreService 单例（Chroma 初始化较慢，提前在线程内完成，避免运行时锁竞争阻塞事件循环）"""
+        """预热 VectorStoreService 单例（提前在线程内完成，避免运行时锁竞争阻塞事件循环）"""
         from app.rag.vector_store import VectorStoreService
 
         await asyncio.to_thread(lambda: VectorStoreService())
-        logger.info("✅ VectorStoreService（ChromaDB）预热完成")
+        logger.info("✅ VectorStoreService 预热完成")
 
     async def _init_reranker(self):
-        """检查并初始化重排序模型（触发 torch 等重型框架加载）"""
-        from app.rag.reorder_service import ReorderService, check_and_download_reranker_model
-
-        await asyncio.to_thread(check_and_download_reranker_model)
-        logger.info("✅ 重排序模型检查完成")
+        """初始化云端重排序服务（读 RERANKER_* 配置；无本地模型加载，未配置时调用方降级）"""
+        from app.rag.reorder_service import ReorderService
 
         self.reorder_service = ReorderService()
         logger.info("✅ ReorderService 初始化完成")
