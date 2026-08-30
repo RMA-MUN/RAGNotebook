@@ -75,6 +75,18 @@ class TestGetUserDocuments:
         service, driver, _ = service_factory([
             _rec(id="m1", filename="a.pdf", user_id="u1", chunk_count=1, first_text="x"),
         ])
+
+        class EmptySession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                pass
+
+            async def execute(self, _stmt):
+                return SimpleNamespace(all=lambda: [])
+
+        monkeypatch.setattr("app.db.db_config.AsyncSessionLocal", EmptySession)
         result = await service.get_user_documents(None)
         assert len(result) == 1
         assert driver.queries[0]["params"]["uid"] is None
