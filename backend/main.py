@@ -12,6 +12,7 @@ from app.core.logger_handler import logger
 from app.db.db_config import init_db, seed_test_user
 from app.db.redis_config import close_redis, connect_redis
 from app.router.chat import chat_router
+from app.router.config import config_router
 from app.router.health import health_router
 from app.router.knowledge_router import knowledge_router
 from app.router.note_router import note_router
@@ -50,6 +51,7 @@ app.include_router(note_router)
 app.include_router(note_template_router)
 app.include_router(review_router)
 app.include_router(graph_router)
+app.include_router(config_router)
 
 
 

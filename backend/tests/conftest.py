@@ -136,6 +136,7 @@ def patch_session_factory(monkeypatch, factory):
     targets = {
         "app.db.db_config": "AsyncSessionLocal",
         "app.router.user": "AsyncSessionLocal",
+        "app.router.config": "AsyncSessionLocal",
         "app.services.database_session_manager": "AsyncSessionLocal",
         "app.agent.agent_tools": "AsyncSessionLocal",
         "app.utils.auth_utils": "AsyncSessionLocal",
@@ -239,7 +240,7 @@ async def client(session_factory, monkeypatch, fake_models):
     # 3. Redis
     await install_fake_redis(monkeypatch)
 
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://testserver") as c:
         yield c
 
