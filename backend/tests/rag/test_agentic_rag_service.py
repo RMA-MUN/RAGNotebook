@@ -9,6 +9,22 @@ from app.rag.agentic_rag.schemas import (
 from app.rag.agentic_rag.service import AgenticRagService
 
 
+@pytest.fixture(autouse=True)
+def _force_user_config_fallback(monkeypatch):
+    """Task5 接线后 run() 会解析每用户模型；本套件主用注入假件测编排，
+    故默认让 per-user 解析失败（回落注入假件）保持用例确定性；per-user 专项用例自行覆盖。"""
+    import app.rag.agentic_rag.service as svc
+
+    async def _fail_chat(user_id, streaming=True):
+        raise RuntimeError("unit test: no user chat config")
+
+    async def _fail_embed(user_id):
+        raise ValueError("unit test: no embed config")
+
+    monkeypatch.setattr(svc, "create_chat_model_for_user", _fail_chat)
+    monkeypatch.setattr(svc, "create_embed_model_for_user", _fail_embed)
+
+
 class FakePlanner:
     def __init__(self, plan):
         self.plan_result = plan
@@ -212,3 +228,80 @@ async def test_run_emits_thinking_events_for_orchestration_stages():
     assert retrieval_event["details"]["results"][0]["preview"] == "Local fact"
     web_event = next(event for event in events if event["stage"] == "web_search")
     assert web_event["details"]["results"][0]["preview"] == "Web fact"
+
+
+@pytest.mark.asyncio
+async def test_run_builds_per_user_components(monkeypatch):
+    """每用户配置可解析时，run() 用 per-user chat/embed 构建 planner/evaluator/retriever，
+    并注入 per-user 实体抽取器；per-user 不可用（autouse）时才回落注入假件。"""
+    import app.rag.agentic_rag.service as svc
+
+    class RecordingPlanner:
+        def __init__(self, chat_model=None):
+            self.chat_model = chat_model
+            self.queries = []
+
+        async def plan(self, query):
+            self.queries.append(query)
+            return _plan(need_retrieval=True)
+
+    class RecordingEvaluator:
+        def __init__(self, chat_model=None):
+            self.chat_model = chat_model
+
+        async def evaluate(self, query, evidences):
+            return _answerability(answerable=True)
+
+    built = {}
+
+    class RecordingRetriever:
+        def __init__(self, note_service=None, session_factory=None,
+                     query_entity_extractor=None, embed_model=None):
+            self.note_service = note_service
+            self.session_factory = session_factory
+            self.query_entity_extractor = query_entity_extractor
+            self.embed_model = embed_model
+            built["retriever"] = self
+
+        async def search(self, user_id, steps):
+            built["searched"] = (user_id, list(steps))
+            return []
+
+    class FakeLocalRetriever:
+        note_service = "note-svc"
+        session_factory = "session-factory"
+
+        async def search(self, user_id, steps):
+            return []
+
+    user_chat = object()
+    user_embed = object()
+
+    async def fake_chat(user_id, streaming=True):
+        return user_chat
+
+    async def fake_embed(user_id):
+        return user_embed
+
+    monkeypatch.setattr(svc, "create_chat_model_for_user", fake_chat)
+    monkeypatch.setattr(svc, "create_embed_model_for_user", fake_embed)
+    monkeypatch.setattr(svc, "AgenticRagPlanner", RecordingPlanner)
+    monkeypatch.setattr(svc, "AnswerabilityEvaluator", RecordingEvaluator)
+    monkeypatch.setattr(svc, "LocalRetriever", RecordingRetriever)
+
+    service = AgenticRagService(
+        planner=object(),
+        local_retriever=FakeLocalRetriever(),
+        evaluator=object(),
+        web_search_client=FakeWebSearchClient(),
+    )
+    result = await service.run("query", user_id="user-1")
+
+    assert built["searched"][0] == "user-1"
+    assert [step.tool for step in built["searched"][1]] == ["hybrid_search"]
+    assert built["retriever"].embed_model is user_embed
+    assert built["retriever"].query_entity_extractor.chat_model is user_chat
+    assert result.context == ""
+    assert result.evidences == []
+    assert result.answerability.answerable is True
+
