@@ -139,6 +139,7 @@ def patch_session_factory(monkeypatch, factory):
         "app.services.database_session_manager": "AsyncSessionLocal",
         "app.agent.agent_tools": "AsyncSessionLocal",
         "app.utils.auth_utils": "AsyncSessionLocal",
+        "app.utils.user_config": "AsyncSessionLocal",
     }
     for module_name, attr_name in targets.items():
         monkeypatch.setattr(importlib.import_module(module_name), attr_name, factory)
