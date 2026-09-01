@@ -28,6 +28,7 @@ from app.models.graph import (
     GraphExtractLog,
 )
 from app.models.note import Note
+from app.utils.user_config import create_chat_model_for_user, create_embed_model_for_user
 
 # 任务失败重试上限（超过后置 failed，需手动重抽）
 MAX_TASK_ATTEMPTS = 3
@@ -133,6 +134,13 @@ async def _run_extraction(source_id: str, user_id: str, title: str, body_hash: s
             chat_model = init_manager.chat_model
             if chat_model is None:
                 raise RuntimeError("chat_model 未初始化")
+            try:
+                user_chat_model = await create_chat_model_for_user(user_id)
+                if user_chat_model is not None:
+                    chat_model = user_chat_model
+            except Exception:
+                logger.warning("per-user chat model resolution failed, using global for user_id=%s",
+                               user_id, exc_info=True)
             result = await extract_entities(title, body, chat_model)
 
             # 2.5 来源存在性复检：LLM 抽取期间来源可能已被删除（清理先于抽取完成），
@@ -197,6 +205,13 @@ async def _run_extraction(source_id: str, user_id: str, title: str, body_hash: s
             if chunk_payloads:
                 texts = [c["text"] for c in chunk_payloads]
                 embed_model = init_manager.embed_model
+                try:
+                    user_embed_model = await create_embed_model_for_user(user_id)
+                    if user_embed_model is not None:
+                        embed_model = user_embed_model
+                except Exception:
+                    logger.warning("per-user embed resolution failed, using global for user_id=%s",
+                                   user_id, exc_info=True)
                 if embed_model is not None:
                     vectors = await asyncio.to_thread(embed_model.embed_documents, texts)
                     for chunk, vector in zip(chunk_payloads, vectors):

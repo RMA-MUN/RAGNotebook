@@ -138,3 +138,129 @@ async def test_run_extraction_doc_aborts_when_source_deleted_mid_flight(db_sessi
     log = (await db_session.execute(select(GraphExtractLog).where(
         GraphExtractLog.note_id == "md51"))).scalars().all()
     assert log == []
+
+
+class _RecorderStore:
+    """截获 upsert_chunks 的最小 GraphStore 替身，避免 Nea4j 依赖。"""
+
+    def __init__(self):
+        self.upserted = None
+
+    async def list_types(self, user_id):
+        return []
+
+    async def set_relations_from_source(self, user_id, source_type, source_id, rels):
+        return None
+
+    async def source_entity_candidates(self, user_id, source_type, source_id):
+        return []
+
+    async def ensure_source_node(self, user_id, source_type, source_id, title):
+        return None
+
+    async def set_source_mentions(self, user_id, source_type, source_id, links):
+        return None
+
+    async def upsert_chunks(self, user_id, source_type, source_id, title, chunk_payloads):
+        self.upserted = chunk_payloads
+
+    async def set_chunk_mentions(self, user_id, source_type, source_id, chunk_indexes):
+        return None
+
+    async def sweep_orphan_entities(self, user_id, entity_ids, keep_sources):
+        return None
+
+
+class _EmbedRecorder:
+    def __init__(self, vectors=None):
+        self.calls = 0
+        self.last_texts = None
+        self._vectors = vectors or [[0.1, 0.2]]
+
+    def embed_documents(self, texts):
+        self.calls += 1
+        self.last_texts = texts
+        return [self._vectors[0] for _ in texts]
+
+
+@pytest.mark.asyncio
+async def test_run_extraction_uses_per_user_embed_model(db_session, session_factory, monkeypatch):
+    """per-user embed 解析成功时覆盖全局模型（文档带预切 chunks 的写入管线）。"""
+    from app.core.background_init import init_manager
+    from app.graph.schemas.graph import ExtractResult
+
+    monkeypatch.setattr("app.graph.services.graph_service.AsyncSessionLocal", session_factory)
+    db_session.add(GraphDoc(id="md51", user_id="u1", filename="报告.pdf"))
+    await db_session.commit()
+
+    store = _RecorderStore()
+    monkeypatch.setattr("app.graph.services.graph_service.get_graph_store", lambda db: store)
+
+    per_user = _EmbedRecorder()
+
+    class _GlobalPoison:
+        def embed_documents(self, texts):
+            raise AssertionError("per-user embed 解析成功时不应使用全局 embed 模型")
+
+    monkeypatch.setattr(init_manager, "embed_model", _GlobalPoison())
+    monkeypatch.setattr(init_manager, "chat_model", object())
+
+    async def _resolve_embed(user_id):
+        return per_user
+
+    async def _resolve_chat(user_id):
+        return object()
+
+    async def _fake_extract(title, body, chat_model):
+        return ExtractResult(entities=[], relations=[])
+
+    monkeypatch.setattr("app.graph.services.graph_service.create_embed_model_for_user", _resolve_embed)
+    monkeypatch.setattr("app.graph.services.graph_service.create_chat_model_for_user", _resolve_chat)
+    monkeypatch.setattr("app.graph.services.graph_service.extract_entities", _fake_extract)
+
+    await _run_extraction("md51", "u1", "报告.pdf", content_hash("body"),
+                          body="用 Python 写", source_type="doc",
+                          chunks=[{"chunk_index": 0, "text": "Python"}])
+
+    assert per_user.calls == 1
+    assert per_user.last_texts == ["Python"]
+    assert store.upserted[0]["embedding"] == [0.1, 0.2]
+
+
+@pytest.mark.asyncio
+async def test_run_extraction_falls_back_to_global_embed_on_per_user_failure(
+        db_session, session_factory, monkeypatch):
+    """per-user embed 解析抛错时回落全局 embed 模型，不阻断写入。"""
+    from app.core.background_init import init_manager
+    from app.graph.schemas.graph import ExtractResult
+
+    monkeypatch.setattr("app.graph.services.graph_service.AsyncSessionLocal", session_factory)
+    db_session.add(GraphDoc(id="md52", user_id="u1", filename="报告.pdf"))
+    await db_session.commit()
+
+    store = _RecorderStore()
+    monkeypatch.setattr("app.graph.services.graph_service.get_graph_store", lambda db: store)
+
+    global_embed = _EmbedRecorder()
+    monkeypatch.setattr(init_manager, "embed_model", global_embed)
+    monkeypatch.setattr(init_manager, "chat_model", object())
+
+    async def _resolve_embed(user_id):
+        raise ValueError("per-user 配置不完整")
+
+    async def _resolve_chat(user_id):
+        return object()
+
+    async def _fake_extract(title, body, chat_model):
+        return ExtractResult(entities=[], relations=[])
+
+    monkeypatch.setattr("app.graph.services.graph_service.create_embed_model_for_user", _resolve_embed)
+    monkeypatch.setattr("app.graph.services.graph_service.create_chat_model_for_user", _resolve_chat)
+    monkeypatch.setattr("app.graph.services.graph_service.extract_entities", _fake_extract)
+
+    await _run_extraction("md52", "u1", "报告.pdf", content_hash("body"),
+                          body="用 Python 写", source_type="doc",
+                          chunks=[{"chunk_index": 0, "text": "Python"}])
+
+    assert global_embed.calls == 1
+    assert store.upserted[0]["embedding"] == [0.1, 0.2]
