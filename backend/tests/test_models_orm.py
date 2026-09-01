@@ -210,3 +210,21 @@ class TestReviewRecordModel:
         db_session.add(ReviewRecord(id="rec-2", note_id="missing-note", user_id="u1"))
         with pytest.raises(IntegrityError):
             await db_session.flush()
+
+
+async def test_user_ai_config_roundtrip(db_session):
+    from app.models.user_ai_config import UserAIConfig
+
+    row = UserAIConfig(
+        user_id="u-1",
+        chat_base_url="http://localhost:11434/v1",
+        chat_model="qwen3:8b",
+        embed_base_url="http://localhost:11434/v1",
+        web_search_enabled=True,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    loaded = await db_session.get(UserAIConfig, "u-1")
+    assert loaded is not None
+    assert loaded.chat_base_url == "http://localhost:11434/v1"
+    assert loaded.web_search_enabled is True
