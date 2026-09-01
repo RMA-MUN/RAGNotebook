@@ -87,12 +87,20 @@ export default function Settings() {
   const [rerank, setRerank] = useState<CapabilityPayload>(EMPTY_CAP)
   const [web, setWeb] = useState<{ enabled: boolean; api_key: string; provider: string }>(WEB_EMPTY)
   const [keySet, setKeySet] = useState({ chat: false, embed: false, vision: false, rerank: false, web: false })
+  const [chatKeyEdited, setChatKeyEdited] = useState(false)
+  const [embedKeyEdited, setEmbedKeyEdited] = useState(false)
+  const [visionKeyEdited, setVisionKeyEdited] = useState(false)
+  const [rerankKeyEdited, setRerankKeyEdited] = useState(false)
+  const [webKeyEdited, setWebKeyEdited] = useState(false)
   const [showWebKey, setShowWebKey] = useState(false)
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- 仅挂载时加载一次配置，语言切换不得重建
   useEffect(() => {
+    let cancelled = false
     void (async () => {
       try {
         const cfg: AIConfig = await aiConfigApi.get()
+        if (cancelled) return
         setChat({ base_url: cfg.chat.base_url, api_key: '', model: cfg.chat.model })
         setEmbed({ base_url: cfg.embed.base_url, api_key: '', model: cfg.embed.model })
         setVision({ base_url: cfg.vision.base_url, api_key: '', model: cfg.vision.model })
@@ -106,22 +114,56 @@ export default function Settings() {
           web: cfg.web_search.api_key_set,
         })
       } catch {
-        toast.error(t('settings.ai.loadFailed'))
+        if (!cancelled) toast.error(t('settings.ai.loadFailed'))
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     })()
-  }, [t])
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleLangChange = (newLang: 'zh-CN' | 'en-US') => {
     setLang(newLang)
     i18n.changeLanguage(newLang)
   }
 
+  const handleChatChange = (next: CapabilityPayload) => {
+    if (next.api_key !== chat.api_key) setChatKeyEdited(true)
+    setChat(next)
+  }
+
+  const handleEmbedChange = (next: CapabilityPayload) => {
+    if (next.api_key !== embed.api_key) setEmbedKeyEdited(true)
+    setEmbed(next)
+  }
+
+  const handleVisionChange = (next: CapabilityPayload) => {
+    if (next.api_key !== vision.api_key) setVisionKeyEdited(true)
+    setVision(next)
+  }
+
+  const handleRerankChange = (next: CapabilityPayload) => {
+    if (next.api_key !== rerank.api_key) setRerankKeyEdited(true)
+    setRerank(next)
+  }
+
+  const handleWebChange = (next: { enabled: boolean; api_key: string; provider: string }) => {
+    if (next.api_key !== web.api_key) setWebKeyEdited(true)
+    setWeb(next)
+  }
+
   const handleSave = async () => {
     setSaving(true)
     try {
-      await aiConfigApi.save({ chat, embed, vision, rerank, web_search: web })
+      await aiConfigApi.save({
+        chat: { ...chat, api_key: chatKeyEdited ? chat.api_key : undefined },
+        embed: { ...embed, api_key: embedKeyEdited ? embed.api_key : undefined },
+        vision: { ...vision, api_key: visionKeyEdited ? vision.api_key : undefined },
+        rerank: { ...rerank, api_key: rerankKeyEdited ? rerank.api_key : undefined },
+        web_search: { ...web, api_key: webKeyEdited ? web.api_key : undefined },
+      })
       toast.success(t('settings.ai.saved'))
     } catch {
       toast.error(t('settings.ai.saveFailed'))
@@ -191,10 +233,10 @@ export default function Settings() {
           <div className="space-y-4">
             <h2 className="font-heading text-lg font-semibold text-[var(--color-text)]">{t('settings.ai.title')}</h2>
 
-            <CapabilityCard title={t('settings.ai.chat')} value={chat} onChange={setChat} apiKeySet={keySet.chat} />
-            <CapabilityCard title={t('settings.ai.embed')} value={embed} onChange={setEmbed} apiKeySet={keySet.embed} hint={t('settings.ai.reindexHint')} />
-            <CapabilityCard title={t('settings.ai.vision')} value={vision} onChange={setVision} apiKeySet={keySet.vision} />
-            <CapabilityCard title={t('settings.ai.rerank')} value={rerank} onChange={setRerank} apiKeySet={keySet.rerank} />
+            <CapabilityCard title={t('settings.ai.chat')} value={chat} onChange={handleChatChange} apiKeySet={keySet.chat} />
+            <CapabilityCard title={t('settings.ai.embed')} value={embed} onChange={handleEmbedChange} apiKeySet={keySet.embed} hint={t('settings.ai.reindexHint')} />
+            <CapabilityCard title={t('settings.ai.vision')} value={vision} onChange={handleVisionChange} apiKeySet={keySet.vision} />
+            <CapabilityCard title={t('settings.ai.rerank')} value={rerank} onChange={handleRerankChange} apiKeySet={keySet.rerank} />
 
             <div className="bg-[var(--color-card)] rounded-lg border border-[var(--color-border)] p-4 space-y-3">
               <div className="flex items-center justify-between">
@@ -203,7 +245,7 @@ export default function Settings() {
                   {keySet.web && <span className="text-xs text-[var(--color-accent)]">{t('settings.ai.configured')}</span>}
                   <button
                     type="button"
-                    onClick={() => setWeb((w) => ({ ...w, enabled: !w.enabled }))}
+                    onClick={() => handleWebChange({ ...web, enabled: !web.enabled })}
                     aria-label={t('settings.ai.enabled')}
                     className={`relative w-10 h-5 rounded-full transition-colors ${web.enabled ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-bg-tertiary)]'}`}
                   >
@@ -216,7 +258,7 @@ export default function Settings() {
                 <input
                   type="text"
                   value={web.provider}
-                  onChange={(e) => setWeb((w) => ({ ...w, provider: e.target.value }))}
+                  onChange={(e) => handleWebChange({ ...web, provider: e.target.value })}
                   className={listInputClass}
                 />
               </div>
@@ -226,7 +268,7 @@ export default function Settings() {
                   <input
                     type={showWebKey ? 'text' : 'password'}
                     value={web.api_key}
-                    onChange={(e) => setWeb((w) => ({ ...w, api_key: e.target.value }))}
+                    onChange={(e) => handleWebChange({ ...web, api_key: e.target.value })}
                     placeholder={t('settings.ai.keyHint')}
                     className={`${listInputClass} pr-11`}
                   />

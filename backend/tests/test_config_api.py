@@ -47,3 +47,32 @@ async def test_put_requiring_encryption_secret(client, auth_headers, monkeypatch
                "web_search": {"enabled": False, "api_key": "", "provider": ""}}
     resp = await client.put("/config/ai", json=payload, headers=auth_headers)
     assert resp.status_code == 500
+
+
+async def test_put_preserves_api_key_when_omitted(client, auth_headers, session_factory):
+    payload = {
+        "chat": {"base_url": "http://localhost:11434/v1", "api_key": "sk-real-secret", "model": "qwen3:8b"},
+        "embed": {"base_url": "", "api_key": "", "model": ""},
+        "vision": {"base_url": "", "api_key": "", "model": ""},
+        "rerank": {"base_url": "", "api_key": "", "model": ""},
+        "web_search": {"enabled": False, "api_key": "", "provider": ""},
+    }
+    await client.put("/config/ai", json=payload, headers=auth_headers)
+    async with session_factory() as session:
+        row = await session.get(UserAIConfig, TEST_USER_ID)
+        original_cipher = row.chat_api_key
+        assert original_cipher
+    # 省去 chat.api_key（视为未触碰→保留），仅改 model
+    payload2 = {
+        "chat": {"base_url": "http://localhost:11434/v1", "model": "qwen3:32b"},
+        "embed": {"base_url": "", "api_key": "", "model": ""},
+        "vision": {"base_url": "", "api_key": "", "model": ""},
+        "rerank": {"base_url": "", "api_key": "", "model": ""},
+        "web_search": {"enabled": False, "api_key": "", "provider": ""},
+    }
+    resp = await client.put("/config/ai", json=payload2, headers=auth_headers)
+    assert resp.status_code == 200
+    async with session_factory() as session:
+        row = await session.get(UserAIConfig, TEST_USER_ID)
+        assert row.chat_api_key == original_cipher
+        assert row.chat_model == "qwen3:32b"

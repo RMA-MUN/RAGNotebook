@@ -201,7 +201,7 @@ export interface AIConfig {
 
 export interface CapabilityPayload {
   base_url: string
-  api_key: string
+  api_key?: string
   model: string
 }
 
@@ -210,5 +210,5 @@ export interface AIConfigPayload {
   embed: CapabilityPayload
   vision: CapabilityPayload
   rerank: CapabilityPayload
-  web_search: { enabled: boolean; api_key: string; provider: string }
+  web_search: { enabled: boolean; api_key?: string; provider: string }
 }

@@ -36,6 +36,15 @@ def _capability_out(base_url, model, api_key_cipher) -> CapabilityOut:
     )
 
 
+def _apply_key(value, existing_cipher):
+    """按字段语义应用 api_key：字段缺失(None)保留现有密文；显式空串则清空。"""
+    if value is None:
+        return existing_cipher
+    if value == "":
+        return None
+    return encrypt_secret(value) or None
+
+
 @config_router.get("/ai")
 async def get_ai_config(user_id: str = Depends(get_current_user_id)):
     async with AsyncSessionLocal() as session:
@@ -69,19 +78,19 @@ async def put_ai_config(req: AIConfigIn, user_id: str = Depends(get_current_user
             row = UserAIConfig(user_id=user_id)
             session.add(row)
         row.chat_base_url = req.chat.base_url or None
-        row.chat_api_key = encrypt_secret(req.chat.api_key) or None
+        row.chat_api_key = _apply_key(req.chat.api_key, row.chat_api_key)
         row.chat_model = req.chat.model or None
         row.embed_base_url = req.embed.base_url or None
-        row.embed_api_key = encrypt_secret(req.embed.api_key) or None
+        row.embed_api_key = _apply_key(req.embed.api_key, row.embed_api_key)
         row.embed_model = req.embed.model or None
         row.vision_base_url = req.vision.base_url or None
-        row.vision_api_key = encrypt_secret(req.vision.api_key) or None
+        row.vision_api_key = _apply_key(req.vision.api_key, row.vision_api_key)
         row.vision_model = req.vision.model or None
         row.rerank_base_url = req.rerank.base_url or None
-        row.rerank_api_key = encrypt_secret(req.rerank.api_key) or None
+        row.rerank_api_key = _apply_key(req.rerank.api_key, row.rerank_api_key)
         row.rerank_model = req.rerank.model or None
         row.web_search_enabled = req.web_search.enabled
-        row.web_search_api_key = encrypt_secret(req.web_search.api_key) or None
+        row.web_search_api_key = _apply_key(req.web_search.api_key, row.web_search_api_key)
         row.web_search_provider = req.web_search.provider or None
         await session.commit()
         await session.refresh(row)

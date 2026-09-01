@@ -132,15 +132,14 @@ async def _run_extraction(source_id: str, user_id: str, title: str, body_hash: s
             # 2. LLM 抽取
             from app.core.background_init import init_manager
             chat_model = init_manager.chat_model
-            if chat_model is None:
-                raise RuntimeError("chat_model 未初始化")
             try:
                 user_chat_model = await create_chat_model_for_user(user_id)
-                if user_chat_model is not None:
-                    chat_model = user_chat_model
+                chat_model = user_chat_model
             except Exception:
                 logger.warning("per-user chat model resolution failed, using global for user_id=%s",
                                user_id, exc_info=True)
+            if chat_model is None:
+                raise RuntimeError("chat_model 未初始化")
             result = await extract_entities(title, body, chat_model)
 
             # 2.5 来源存在性复检：LLM 抽取期间来源可能已被删除（清理先于抽取完成），

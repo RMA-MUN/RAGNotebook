@@ -5,13 +5,13 @@ from pydantic import BaseModel
 
 class CapabilityIn(BaseModel):
     base_url: str = ""
-    api_key: str = ""
+    api_key: str | None = None
     model: str = ""
 
 
 class WebSearchIn(BaseModel):
     enabled: bool = False
-    api_key: str = ""
+    api_key: str | None = None
     provider: str = ""
 
 
