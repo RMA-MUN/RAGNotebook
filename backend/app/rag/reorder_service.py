@@ -13,6 +13,29 @@ from app.core.logger_handler import logger
 from app.core.settings import settings
 
 
+async def get_reorder_config_for_user(user_id: str) -> dict[str, str]:
+    """按用户解析云端 rerank 配置（base_url/api_key/model），未配置回落全局 RERANKER_*。
+
+    用户配置了基础地址或模型即视为已配置重排序；api_key 解密失败时回落全局配置，
+    保证默认链路（settings.RERANKER_*）始终可用。
+    """
+    from app.utils.encryption import decrypt_secret
+    from app.utils.user_config import get_user_ai_config
+
+    row = await get_user_ai_config(user_id)
+    if row is None:
+        return {
+            "base_url": (settings.RERANKER_API_BASE_URL or "").rstrip("/"),
+            "api_key": settings.RERANKER_API_KEY,
+            "model": settings.RERANKER_MODEL,
+        }
+    return {
+        "base_url": (row.rerank_base_url or settings.RERANKER_API_BASE_URL or "").rstrip("/"),
+        "api_key": decrypt_secret(row.rerank_api_key) or settings.RERANKER_API_KEY,
+        "model": row.rerank_model or settings.RERANKER_MODEL,
+    }
+
+
 class ReorderService:
     """文档重排序服务（云端 rerank API）"""
 
@@ -22,25 +45,42 @@ class ReorderService:
         self.model = settings.RERANKER_MODEL
         self.http_client_factory = http_client_factory or httpx.AsyncClient
 
-    async def _rerank(self, query: str, documents: list[str]) -> list[float]:
+    async def _rerank(
+        self,
+        query: str,
+        documents: list[str],
+        api_base_url: str | None = None,
+        api_key: str | None = None,
+        model: str | None = None,
+    ) -> list[float]:
         """调用 rerank API，按文档原顺序返回相关性分数。"""
+        api_base_url = api_base_url or self.api_base_url
+        api_key = api_key or self.api_key
+        model = model or self.model
         async with self.http_client_factory(timeout=10.0) as client:
             resp = await client.post(
-                f"{self.api_base_url}/rerank",
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                json={"model": self.model, "query": query, "documents": documents},
+                f"{api_base_url}/rerank",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={"model": model, "query": query, "documents": documents},
             )
             resp.raise_for_status()
             data = resp.json()
         results = sorted(data.get("results", []), key=lambda r: r.get("index", 0))
         return [float(r.get("relevance_score", 0.0)) for r in results]
 
-    async def reorder_documents(self, query: str, documents: list[str], thinking_callback=None) -> dict[str, Any]:
+    async def reorder_documents(
+        self,
+        query: str,
+        documents: list[str],
+        thinking_callback=None,
+        config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         对文档进行重排序
         :param query: 查询语句
         :param documents: 文档列表
         :param thinking_callback: 思考过程回调函数
+        :param config: 可选 per-user 配置 {base_url, api_key, model}；为空时沿用实例级/全局配置
         :return: 包含重排序结果的字典，格式为：
                  {"success": bool, "documents": List[Dict], "error": str}
         """
@@ -51,7 +91,10 @@ class ReorderService:
             if thinking_callback:
                 await thinking_callback({"type": "thinking", "stage": "reorder", "content": f"正在计算 {len(documents)} 个文档的相关性分数..."})
 
-            scores = await self._rerank(query, documents)
+            base_url = (config.get("base_url") if config else None) or self.api_base_url
+            api_key = (config.get("api_key") if config else None) or self.api_key
+            model = (config.get("model") if config else None) or self.model
+            scores = await self._rerank(query, documents, api_base_url=base_url, api_key=api_key, model=model)
 
             # 构建结果列表
             scored_documents = []

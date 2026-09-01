@@ -1,8 +1,8 @@
 import httpx
 import pytest
 
+from app.rag.agentic_rag.service import AgenticRagService
 from app.rag.agentic_rag.web_search import WebSearchClient
-
 
 @pytest.fixture(autouse=True)
 def _clean_web_search_env(monkeypatch):
@@ -188,3 +188,52 @@ async def test_search_returns_empty_on_request_or_parse_failures(fake_client):
     results = await client.search("latest agentic rag")
 
     assert results == []
+
+
+# ---------------------------------------------------------------------------
+# AgenticRagService._web_search_client_for_user：per-user web 客户端解析（不发网络请求）
+# ---------------------------------------------------------------------------
+class _FakeUserAIConfig:
+    def __init__(self, enabled, provider, api_key):
+        self.web_search_enabled = enabled
+        self.web_search_provider = provider
+        self.web_search_api_key = api_key
+
+
+def _make_service() -> AgenticRagService:
+    default = WebSearchClient(enabled=False, provider="", api_key="")
+    service = AgenticRagService(web_search_client=default)
+    return service
+
+
+def _patch_user_config(monkeypatch, row):
+    async def fake_get_user_ai_config(user_id):
+        return row
+
+    monkeypatch.setattr("app.utils.user_config.get_user_ai_config", fake_get_user_ai_config)
+
+
+@pytest.mark.asyncio
+async def test_web_search_client_for_user_builds_per_user_client(monkeypatch):
+    from app.utils.encryption import encrypt_secret
+
+    row = _FakeUserAIConfig(True, "tavily", encrypt_secret("per-user-secret-key"))
+    _patch_user_config(monkeypatch, row)
+
+    service = _make_service()
+    client = await service._web_search_client_for_user("user-1")
+
+    assert isinstance(client, WebSearchClient)
+    assert client.enabled is True
+    assert client.provider == "tavily"
+    assert client.api_key == "per-user-secret-key"
+
+
+@pytest.mark.asyncio
+async def test_web_search_client_for_user_falls_back_when_unconfigured(monkeypatch):
+    _patch_user_config(monkeypatch, None)
+
+    service = _make_service()
+    client = await service._web_search_client_for_user("user-1")
+
+    assert client is service.web_search_client

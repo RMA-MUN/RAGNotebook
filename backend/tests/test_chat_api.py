@@ -37,7 +37,7 @@ class FakeChatService:
             raise HTTPException(status_code=403, detail="Forbidden")
         return [{"id": user_id, "title": "t", "created_at": None, "updated_at": None}]
 
-    async def handle_reorder(self, query, documents):
+    async def handle_reorder(self, query, documents, user_id=""):
         return [{"document": d, "similarity": 0.9} for d in documents]
 
 

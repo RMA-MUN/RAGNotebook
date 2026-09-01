@@ -141,9 +141,10 @@ async def get_user_sessions(
 @chat_router.post("/reorder", response_model=ReorderResponse)
 async def reorder_documents(
         request: ReorderRequest,
+        user_id: str = Depends(get_current_user_id),
         router_service=Depends(get_router_service),
         _: None = Depends(rate_limit(limit=20, window=60))
 ):
-    """使用Ollama本地的嵌入模型对文档进行中文重排序"""
-    sorted_docs = await router_service.handle_reorder(request.query, request.documents)
+    """使用云端 rerank 对文档进行重排序"""
+    sorted_docs = await router_service.handle_reorder(request.query, request.documents, user_id)
     return success_response(data=ReorderResponse(documents=sorted_docs))

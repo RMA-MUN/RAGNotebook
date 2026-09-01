@@ -123,7 +123,7 @@ class AgenticRagService:
         )
         await asyncio.sleep(0)
 
-        web_evidences = await self._maybe_search_web(query, answerability, thinking_callback)
+        web_evidences = await self._maybe_search_web(query, user_id, answerability, thinking_callback)
         fused_evidences = merge_evidence([*local_evidences, *web_evidences])
         await self._emit(
             thinking_callback,
@@ -156,6 +156,7 @@ class AgenticRagService:
     async def _maybe_search_web(
         self,
         query: str,
+        user_id: str,
         answerability: AnswerabilityResult,
         thinking_callback: ThinkingCallback | None,
     ) -> list[Evidence]:
@@ -168,10 +169,11 @@ class AgenticRagService:
         if answerability.answerable and not answerability.web_queries:
             return []
 
+        client = await self._web_search_client_for_user(user_id)
         queries = answerability.web_queries or [query]
         web_evidences: list[Evidence] = []
         for web_query in queries:
-            web_evidences.extend(await self.web_search_client.search(web_query, max_results=5))
+            web_evidences.extend(await client.search(web_query, max_results=5))
 
         await self._emit(
             thinking_callback,
@@ -184,6 +186,29 @@ class AgenticRagService:
             },
         )
         return web_evidences
+
+    async def _web_search_client_for_user(self, user_id: str) -> WebSearchClient:
+        """用户配置了 web_search（enabled + provider）时构造 per-user 客户端，否则回落默认。
+
+        密钥解密失败或查询出错时不阻塞搜索链路，一律回落 self.web_search_client。
+        """
+        try:
+            from app.utils.encryption import decrypt_secret
+            from app.utils.user_config import get_user_ai_config
+
+            row = await get_user_ai_config(user_id)
+            if row is not None and row.web_search_enabled and row.web_search_provider:
+                return WebSearchClient(
+                    enabled=True,
+                    provider=row.web_search_provider,
+                    api_key=decrypt_secret(row.web_search_api_key) or None,
+                )
+        except Exception as e:
+            logger.warning(
+                "per-user web search client resolution failed, using default for user_id=%s: %s",
+                user_id, e, exc_info=True,
+            )
+        return self.web_search_client
 
     async def _search_graph_only(self, user_id: str, steps: list, retriever: LocalRetriever) -> list[Evidence]:
         """仅执行 search_graph 步骤（无其他文本步骤时也不抛错）。"""

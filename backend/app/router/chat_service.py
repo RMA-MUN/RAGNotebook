@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.core.logger_handler import logger
-from app.rag.reorder_service import reorder_service
+from app.rag.reorder_service import get_reorder_config_for_user, reorder_service
 from app.services import session_manager as sm
 
 
@@ -34,15 +34,17 @@ class ChatService:
         sessions = await sm.session_manager.get_user_sessions(user_id)
         return sessions
 
-    async def handle_reorder(self, query: str, documents: list[str]) -> list[dict[str, Any]]:
+    async def handle_reorder(self, query: str, documents: list[str], user_id: str = "") -> list[dict[str, Any]]:
         """
-        使用本地Ollama重排序模型对文档进行中文重排序
+        使用云端 rerank 对文档进行重排序（RERANKER_* 配置）
         :param query: 查询语句
         :param documents: 文档列表
+        :param user_id: 用户 ID；传入时按用户解析 rerank 配置，否则沿用全局配置
         :return: 排序后的文档列表，包含文档内容和相似度
         """
         try:
-            result = await reorder_service.reorder_documents(query, documents)
+            config = await get_reorder_config_for_user(user_id) if user_id else None
+            result = await reorder_service.reorder_documents(query, documents, config=config)
 
             if result["success"]:
                 logger.info(
