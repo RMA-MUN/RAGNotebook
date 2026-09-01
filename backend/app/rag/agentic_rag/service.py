@@ -40,6 +40,7 @@ class AgenticRagService:
         try:
             user_chat = await create_chat_model_for_user(user_id)
         except Exception:
+            logger.warning("per-user chat model resolution failed, using default for user_id=%s", user_id, exc_info=True)
             user_chat = None
         if user_chat is not None:
             planner = AgenticRagPlanner(chat_model=user_chat)
@@ -50,6 +51,7 @@ class AgenticRagService:
         try:
             user_embed = await create_embed_model_for_user(user_id)
         except Exception:
+            logger.warning("per-user embed model resolution failed, using default for user_id=%s", user_id, exc_info=True)
             user_embed = None
         retriever = self.local_retriever if user_embed is None else LocalRetriever(
             note_service=self.local_retriever.note_service,

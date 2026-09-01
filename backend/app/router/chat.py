@@ -65,6 +65,7 @@ async def query_stream(
         try:
             user_chat = await create_chat_model_for_user(user_id)
         except Exception:
+            logger.warning("per-user chat model resolution failed, using default for user_id=%s", user_id, exc_info=True)
             user_chat = None
 
         try:
