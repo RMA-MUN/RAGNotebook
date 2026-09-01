@@ -16,24 +16,36 @@ from app.core.settings import settings
 async def get_reorder_config_for_user(user_id: str) -> dict[str, str]:
     """按用户解析云端 rerank 配置（base_url/api_key/model），未配置回落全局 RERANKER_*。
 
-    用户配置了基础地址或模型即视为已配置重排序；api_key 解密失败时回落全局配置，
-    保证默认链路（settings.RERANKER_*）始终可用。
+    用户配置了基础地址或模型即视为已配置重排序；api_key 解密失败时回落全局配置。
+    DB 查询异常或 SECRET_KEY 缺失等任意错误一律回落全局 RERANKER_*（fail-soft），
+    保证默认链路不因用户配置解析失败而阻塞请求。
     """
     from app.utils.encryption import decrypt_secret
     from app.utils.user_config import get_user_ai_config
 
-    row = await get_user_ai_config(user_id)
-    if row is None:
+    try:
+        row = await get_user_ai_config(user_id)
+        if row is None:
+            return {
+                "base_url": (settings.RERANKER_API_BASE_URL or "").rstrip("/"),
+                "api_key": settings.RERANKER_API_KEY,
+                "model": settings.RERANKER_MODEL,
+            }
+        return {
+            "base_url": (row.rerank_base_url or settings.RERANKER_API_BASE_URL or "").rstrip("/"),
+            "api_key": decrypt_secret(row.rerank_api_key) or settings.RERANKER_API_KEY,
+            "model": row.rerank_model or settings.RERANKER_MODEL,
+        }
+    except Exception as e:
+        logger.warning(
+            "per-user rerank config resolution failed, using global RERANKER_* for user_id=%s: %s",
+            user_id, e, exc_info=True,
+        )
         return {
             "base_url": (settings.RERANKER_API_BASE_URL or "").rstrip("/"),
             "api_key": settings.RERANKER_API_KEY,
             "model": settings.RERANKER_MODEL,
         }
-    return {
-        "base_url": (row.rerank_base_url or settings.RERANKER_API_BASE_URL or "").rstrip("/"),
-        "api_key": decrypt_secret(row.rerank_api_key) or settings.RERANKER_API_KEY,
-        "model": row.rerank_model or settings.RERANKER_MODEL,
-    }
 
 
 class ReorderService:

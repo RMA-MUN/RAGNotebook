@@ -1,7 +1,7 @@
 """reorder_service.py — ReorderService 云端 rerank 逻辑测试（不发真实网络请求）。"""
 import pytest
 
-from app.rag.reorder_service import ReorderService
+from app.rag.reorder_service import ReorderService, get_reorder_config_for_user
 
 
 class FakeAsyncClient:
@@ -112,3 +112,26 @@ class TestFormatReorderResult:
         )
         assert "0.9123" in text
         assert "内容A" in text
+
+
+class TestGetReorderConfigForUser:
+    async def test_falls_back_to_global_defaults_when_db_fails(self, monkeypatch):
+        """DB 查询异常时 fail-soft：返回全局 RERANKER_* 默认，而不是抛错。"""
+        from app.core.settings import settings
+
+        monkeypatch.setattr(settings, "RERANKER_API_BASE_URL", "https://rerank.example.com/v1/")
+        monkeypatch.setattr(settings, "RERANKER_API_KEY", "global-key")
+        monkeypatch.setattr(settings, "RERANKER_MODEL", "global-model")
+
+        async def _boom(user_id):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr("app.utils.user_config.get_user_ai_config", _boom)
+
+        cfg = await get_reorder_config_for_user("user-1")
+
+        assert cfg == {
+            "base_url": "https://rerank.example.com/v1",
+            "api_key": "global-key",
+            "model": "global-model",
+        }
