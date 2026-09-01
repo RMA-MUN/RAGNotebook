@@ -86,7 +86,7 @@ class AgentFactory:
         """获取默认系统提示词"""
         return load_prompt('main_prompt')
 
-    def _create_chat_model(self, custom_model: str | None = None):
+    def _create_chat_model(self, custom_model: str | None = None, api_key: str | None = None, base_url: str | None = None):
         """内部方法：创建聊天模型实例（统一 OpenAI 兼容协议）"""
         from app.utils.factory import create_chat_openai
 
@@ -94,8 +94,8 @@ class AgentFactory:
         logger.info(f"🤖 Agent使用OpenAI兼容模型: {model}")
         return create_chat_openai(
             model=model,
-            api_key=settings.OPENAI_API_KEY or None,
-            base_url=settings.OPENAI_BASE_URL or None,
+            api_key=api_key or (settings.OPENAI_API_KEY or None),
+            base_url=base_url or (settings.OPENAI_BASE_URL or None),
             streaming=True,
             top_p=0.7,
         )
@@ -118,7 +118,7 @@ class AgentFactory:
         :return: 全新的 CompiledStateGraph 实例
         """
         # 1. 创建组件（每次都重新创建，避免全局状态污染）
-        chat_model = self._create_chat_model(custom_model)
+        chat_model = custom_model if getattr(custom_model, "ainvoke", None) else self._create_chat_model(custom_model)
         tools = custom_tools or self.default_tools
         system_prompt = custom_system_prompt or self.default_system_prompt
 
@@ -228,6 +228,7 @@ async def get_agent_stream_response(
         user_id: str,
         custom_tools: list[BaseTool] | None = None,
         rag_context: str = "",
+        chat_model: object | None = None,
         **kwargs
 ) -> AsyncGenerator[str, None]:
     """
@@ -237,6 +238,7 @@ async def get_agent_stream_response(
     :param user_id: 用户 ID
     :param custom_tools: 自定义工具（可选）
     :param rag_context: 预检索的 RAG 上下文（由路由层注入，为空则跳过）
+    :param chat_model: 已构建的每用户聊天模型实例（可选；为 None 时走工厂默认模型）
     :param kwargs: 其他参数
     :return: 流式响应生成器
     """
@@ -273,9 +275,10 @@ async def get_agent_stream_response(
             else:
                 system_prompt = agent_factory.default_system_prompt
 
-            agent = agent_factory.create_agent(
-                custom_tools=custom_tools, custom_system_prompt=system_prompt, **kwargs
-            )
+            create_agent_kwargs = dict(custom_tools=custom_tools, custom_system_prompt=system_prompt, **kwargs)
+            if chat_model is not None:
+                create_agent_kwargs["custom_model"] = chat_model
+            agent = agent_factory.create_agent(**create_agent_kwargs)
 
             full_response = []
 

@@ -8,8 +8,10 @@ from app.rag.agentic_rag.evaluator import AnswerabilityEvaluator
 from app.rag.agentic_rag.evidence import format_evidence_context, merge_evidence
 from app.rag.agentic_rag.local_retriever import LocalRetriever
 from app.rag.agentic_rag.planner import AgenticRagPlanner
+from app.rag.agentic_rag.query_entity_extractor import QueryEntityExtractor
 from app.rag.agentic_rag.schemas import AgenticRagResult, AnswerabilityResult, Evidence
 from app.rag.agentic_rag.web_search import WebSearchClient
+from app.utils.user_config import create_chat_model_for_user, create_embed_model_for_user
 
 
 ThinkingCallback = Callable[[dict[str, Any]], Any]
@@ -34,7 +36,28 @@ class AgenticRagService:
         user_id: str,
         thinking_callback: ThinkingCallback | None = None,
     ) -> AgenticRagResult:
-        plan = await self.planner.plan(query)
+        # 每用户模型：配置可解析时注入 per-user 组件，否则回落注入默认（调用方注入 / 全局 fallback）
+        try:
+            user_chat = await create_chat_model_for_user(user_id)
+        except Exception:
+            user_chat = None
+        if user_chat is not None:
+            planner = AgenticRagPlanner(chat_model=user_chat)
+            evaluator = AnswerabilityEvaluator(chat_model=user_chat)
+        else:
+            planner = self.planner
+            evaluator = self.evaluator
+        try:
+            user_embed = await create_embed_model_for_user(user_id)
+        except Exception:
+            user_embed = None
+        retriever = self.local_retriever if user_embed is None else LocalRetriever(
+            note_service=self.local_retriever.note_service,
+            session_factory=self.local_retriever.session_factory,
+            query_entity_extractor=QueryEntityExtractor(chat_model=user_chat),
+            embed_model=user_embed,
+        )
+        plan = await planner.plan(query)
         await self._emit(
             thinking_callback,
             "agentic_plan",
@@ -57,8 +80,8 @@ class AgenticRagService:
         text_steps = [step for step in plan.steps if step.tool != "search_graph"]
 
         # 图检索（含 LLM 实体抽取）与文本检索并行，避免 LLM 抽取拉长整体延迟
-        graph_task = asyncio.create_task(self._search_graph_only(user_id, graph_steps))
-        text_task = asyncio.create_task(self.local_retriever.search(user_id, text_steps))
+        graph_task = asyncio.create_task(self._search_graph_only(user_id, graph_steps, retriever))
+        text_task = asyncio.create_task(retriever.search(user_id, text_steps))
         local_evidences = []
         graph_evidences = []
         if graph_steps:
@@ -84,7 +107,7 @@ class AgenticRagService:
         )
         await asyncio.sleep(0)  # 分帧：让各阶段落入不同事件循环 tick，避免一次性涌入前端
 
-        answerability = await self.evaluator.evaluate(query, local_evidences)
+        answerability = await evaluator.evaluate(query, local_evidences)
         await self._emit(
             thinking_callback,
             "answerability",
@@ -160,11 +183,11 @@ class AgenticRagService:
         )
         return web_evidences
 
-    async def _search_graph_only(self, user_id: str, steps: list) -> list[Evidence]:
+    async def _search_graph_only(self, user_id: str, steps: list, retriever: LocalRetriever) -> list[Evidence]:
         """仅执行 search_graph 步骤（无其他文本步骤时也不抛错）。"""
         if not steps:
             return []
-        return await self.local_retriever.search(user_id, steps)
+        return await retriever.search(user_id, steps)
 
     async def _emit(
         self,

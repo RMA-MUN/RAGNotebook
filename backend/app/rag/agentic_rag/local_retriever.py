@@ -26,10 +26,12 @@ class LocalRetriever:
         note_service: Any | None = None,
         session_factory: Callable[[], Any] = AsyncSessionLocal,
         query_entity_extractor: QueryEntityExtractor | None = None,
+        embed_model: Any | None = None,
     ):
         self.note_service = note_service
         self.session_factory = session_factory
         self.query_entity_extractor = query_entity_extractor
+        self.embed_model = embed_model
 
     async def search(self, user_id: str, steps: list[RetrievalStep]) -> list[Evidence]:
         evidences: list[Evidence] = []
@@ -118,12 +120,13 @@ class LocalRetriever:
             logger.warning(f"查询实体抽取失败，回落规则: {query}: {e}")
             return QueryEntityExtractor._fallback_candidates(query)
 
-    @staticmethod
-    async def _query_embedding(query: str) -> list[float] | None:
+    async def _query_embedding(self, query: str) -> list[float] | None:
         """query 向量实时计算（失败返回 None，退化为纯全文检索）。"""
-        from app.core.background_init import init_manager
+        model = self.embed_model
+        if model is None:
+            from app.core.background_init import init_manager
 
-        model = init_manager.embed_model
+            model = init_manager.embed_model
         if model is None or not query:
             return None
         try:

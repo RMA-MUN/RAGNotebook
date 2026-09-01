@@ -17,6 +17,7 @@ from app.core.success_response import success_response
 from app.rag.agentic_rag.service import AgenticRagService
 from app.schemas.models import QueryRequest, ReorderRequest, ReorderResponse, SessionResponse
 from app.utils.auth_utils import get_current_user_id
+from app.utils.user_config import create_chat_model_for_user
 
 chat_router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -59,6 +60,13 @@ async def query_stream(
                 await thinking_queue.put(rag_done)
 
         rag_task = asyncio.create_task(run_rag())
+
+        # 每用户对话模型：配置可解析时注入，否则回落工厂默认（不阻塞对话）
+        try:
+            user_chat = await create_chat_model_for_user(user_id)
+        except Exception:
+            user_chat = None
+
         try:
             # 先发占位：让前端「正在规划」折叠框立即出现，而不是干等一整轮 LLM
             yield "data: " + json.dumps({
@@ -80,7 +88,7 @@ async def query_stream(
 
             # 转发 Agent 流式响应
             async for chunk in get_agent_stream_response(
-                request.query, session_id, user_id, rag_context=rag_context
+                request.query, session_id, user_id, rag_context=rag_context, chat_model=user_chat
             ):
                 yield chunk
         finally:
