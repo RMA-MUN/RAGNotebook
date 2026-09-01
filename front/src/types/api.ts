@@ -175,3 +175,40 @@ export interface KnowledgeSSEMessage {
   status?: string
   error_message?: string
 }
+
+export interface CapabilityConfig {
+  base_url: string
+  model: string
+  api_key_set: boolean
+  api_key_masked: string
+}
+
+export interface WebSearchConfig {
+  enabled: boolean
+  provider: string
+  api_key_set: boolean
+  api_key_masked: string
+}
+
+export interface AIConfig {
+  chat: CapabilityConfig
+  embed: CapabilityConfig
+  vision: CapabilityConfig
+  rerank: CapabilityConfig
+  web_search: WebSearchConfig
+  updated_at: string | null
+}
+
+export interface CapabilityPayload {
+  base_url: string
+  api_key: string
+  model: string
+}
+
+export interface AIConfigPayload {
+  chat: CapabilityPayload
+  embed: CapabilityPayload
+  vision: CapabilityPayload
+  rerank: CapabilityPayload
+  web_search: { enabled: boolean; api_key: string; provider: string }
+}

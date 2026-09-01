@@ -13,6 +13,9 @@ export const endpoints = {
   // AI Chat
   agentQueryStream: '/chat/agent/query/stream',
 
+  // AI config
+  aiConfig: '/config/ai',
+
   // Sessions
   getSession: (id: string) => `/chat/session/${id}`,
   deleteSession: (id: string) => `/chat/session/${id}`,
