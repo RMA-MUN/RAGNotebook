@@ -57,19 +57,34 @@ Issue #15 建议把 RAG 封装为 Agent 工具，让 Agent 自主判断是否检
 - 初始 `searched` 回填：chat.py 拿到前置 `AgenticRagResult` 后，将 `{用户原 query} ∪ {plan.steps[].query} ∪ {answerability.web_queries}`（`schemas.py` 现成字段）塞入守卫——前置实际搜过的 query 不重复搜。
 - 无守卫上下文时放行（兼容非流式 `get_agent_response` 与 scripts/ 评测脚本不牵连）。
 
-### 5. system prompt 约束（软约束主力）
+## 5. system prompt 维护改造（软约束主力 + 顺带修复现存维护裂缝）
 
-注入点：`agent.py:264-274` 两个分支都要补充 search_rag 使用纪律：
+现状问题：Agent 的 system prompt 有两套且维护方式分裂——
+- `main_prompt.txt`：`AgentFactory._get_default_system_prompt()` 经 `load_prompt('main_prompt')` 加载（`agent.py:87`），文件维护；
+- RAG 分支：`agent.py:265-272` 是硬编码 f-string，一旦有 `rag_context` 就**整体替换** main_prompt，main_prompt 里的工具纪律在该主路径上根本不生效。
 
-- 何时用：前置资料不足、需新维度、需验证具体事实时才调；
-- 怎么用：query 必须换一个新的聚焦角度，禁止原样复用本轮已检索问题；
-- 何时停：收到"已覆盖 / 已达上限"提示即停止检索，基于现有资料回答；
-- 保留自由度：当 `rag_context` 为空时，Agent 仍可用 search_rag 兜底（不要写死"仅在有前置资料时用"）。
+本次一并改造（保持 prompt.yaml 逻辑名→路径映射机制不变，仅 `.txt`→`.md` 与新增条目）：
+
+1. **模板 md 化（仅 Agent 相关）**：`main_prompt.txt` → `main_prompt.md`（内容 markdown 结构书写）；新增 `rag_context_prompt.md`（带 `{context}` 占位符）。`prompt.yaml` 同步改 `.md` 值并新增 `rag_context_prompt` 条目。其它非 Agent 模板不动。
+2. **`agent.py:265-272` 硬编码 f-string 抽为模板**：RAG 分支改用 `load_prompt('rag_context_prompt')` 加载后 `.replace("{context}", rag_context)` 注入；无 context 分支维持 `load_prompt('main_prompt')`。
+3. **search_rag 使用纪律写入两处模板**（双分支一致）：
+   - 何时用：前置资料不足、需新维度、需验证具体事实时才调；
+   - 怎么用：query 必须换一个新的聚焦角度，禁止原样复用本轮已检索问题；
+   - 何时停：收到"已覆盖 / 已达上限"提示即停止检索，基于现有资料回答；
+   - 兜底自由度：即使本轮无前置资料（`rag_context` 为空分支），Agent 仍可用 search_rag 兜底。
+4. **双 context 区分说明写入模板**："本轮参考资料包含系统注入的前置检索资料与 search_rag 返回的补充证据，一律按条目标注来源作答，禁止把外部搜索内容说成本地资料。"
+
+### 前置 vs 补充 context 的区分保证
+
+- 物理隔离：前置 context 进 system prompt（每轮请求开头注入一次）；search_rag 返回的 context 以 `ToolMessage` 形态只存在于当前轮的 messages 中，DB 落库仅存 `(user, assistant)` 文本对，不跨轮残留。
+- search_rag 返回值**加框定头**，不裸抛 `result.context`：如「以下是针对检索角度『{query}』的**补充检索结果**，证据均已标注来源：\n{result.context}」。
+- 证据统一 `format_evidence_context`（`evidence.py:43`）格式、每条自带 `来源：{笔记/知识库/知识图谱/外部搜索}《…》` 标签，模型按条目溯源引用。
 
 ## 不改动
 
 - 前置管线 `AgenticRagService` 本体及 `AgenticRagResult` schema。
 - chat.py 编排结构（仅取前置 plan 回填守卫初始集，属可选项）。
+- prompt.yaml 映射机制本身（仅值改 `.md`、新增条目）。
 
 ## 错误处理
 
