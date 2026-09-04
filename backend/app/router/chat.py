@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.routing import APIRouter
 
 from app.agent.agent import get_agent_stream_response
+from app.agent.agent_rag_tool import build_pre_searched_queries
 from app.core.rate_limit import rate_limit
 from app.core.success_response import success_response
 from app.rag.agentic_rag.service import AgenticRagService
@@ -78,9 +79,14 @@ async def query_stream(
             if result is not None:
                 rag_context = result.context or ""
 
+            searched_queries = build_pre_searched_queries(request.query, result)
             # 转发 Agent 流式响应
             async for chunk in get_agent_stream_response(
-                request.query, session_id, user_id, rag_context=rag_context
+                request.query,
+                session_id,
+                user_id,
+                rag_context=rag_context,
+                rag_searched_queries=searched_queries,
             ):
                 yield chunk
         finally:

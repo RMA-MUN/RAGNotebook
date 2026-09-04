@@ -22,6 +22,7 @@ from app.agent.agent_tools import (
     set_thinking_callback,
     what_time_is_now,
 )
+from app.agent.agent_rag_tool import init_rag_guard, search_rag
 from app.core.logger_handler import logger
 from app.services import session_manager as sm
 from app.utils.prompt_loader import load_prompt
@@ -69,6 +70,7 @@ class AgentFactory:
             mark_reviewed_tool,
             create_note_tool,
             get_related_notes_tool,
+            search_rag,
         ]
 
     def _get_default_middleware(self) -> list:
@@ -228,6 +230,7 @@ async def get_agent_stream_response(
         user_id: str,
         custom_tools: list[BaseTool] | None = None,
         rag_context: str = "",
+        rag_searched_queries: list[str] | None = None,
         **kwargs
 ) -> AsyncGenerator[str, None]:
     """
@@ -237,6 +240,7 @@ async def get_agent_stream_response(
     :param user_id: 用户 ID
     :param custom_tools: 自定义工具（可选）
     :param rag_context: 预检索的 RAG 上下文（由路由层注入，为空则跳过）
+    :param rag_searched_queries: 前置 RAG 管线本轮已检索的 query 集合（预置护栏去重）
     :param kwargs: 其他参数
     :return: 流式响应生成器
     """
@@ -255,6 +259,7 @@ async def get_agent_stream_response(
         try:
             set_current_user_id(user_id)
             set_thinking_callback(thinking_callback)
+            init_rag_guard(rag_searched_queries)
 
             history = await sm.session_manager.get_history(session_id, user_id)
             logger.info(f"【Agent流式响应】获取会话历史成功，历史记录数: {len(history)}")
@@ -263,13 +268,9 @@ async def get_agent_stream_response(
 
             # 根据是否有 RAG 上下文决定 system prompt 内容
             if rag_context:
-                system_prompt = f"""你是用户的智能助手。
-
-以下是与用户问题相关的参考资料：
-{rag_context}
-
-请基于以上资料回答用户的问题。回答时必须区分本地证据（笔记、知识库）与外部搜索证据，避免把外部搜索内容说成用户本地资料。
-如果资料中没有足够信息支撑结论，必须明确说明证据不足，并说明还缺少哪些信息。"""
+                system_prompt = (
+                    load_prompt("rag_context_prompt").replace("{context}", rag_context)
+                )
             else:
                 system_prompt = agent_factory.default_system_prompt
 

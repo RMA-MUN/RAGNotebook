@@ -11,7 +11,6 @@ from app.rag.agentic_rag.planner import AgenticRagPlanner
 from app.rag.agentic_rag.schemas import AgenticRagResult, AnswerabilityResult, Evidence
 from app.rag.agentic_rag.web_search import WebSearchClient
 
-
 ThinkingCallback = Callable[[dict[str, Any]], Any]
 
 
@@ -56,6 +55,12 @@ class AgenticRagService:
         graph_steps = [step for step in plan.steps if step.tool == "search_graph"]
         text_steps = [step for step in plan.steps if step.tool != "search_graph"]
 
+        await self._emit(
+            thinking_callback,
+            "local_retrieval",
+            "Searching local sources.",
+            {"status": "searching"},
+        )
         # 图检索（含 LLM 实体抽取）与文本检索并行，避免 LLM 抽取拉长整体延迟
         graph_task = asyncio.create_task(self._search_graph_only(user_id, graph_steps))
         text_task = asyncio.create_task(self.local_retriever.search(user_id, text_steps))
@@ -77,6 +82,7 @@ class AgenticRagService:
             "local_retrieval",
             "Retrieved local evidence.",
             {
+                "status": "evidence",
                 "queries": [step.model_dump() for step in plan.steps],
                 "evidence_count": len(local_evidences),
                 "results": [self._evidence_preview(evidence) for evidence in local_evidences],
@@ -145,6 +151,12 @@ class AgenticRagService:
 
         queries = answerability.web_queries or [query]
         web_evidences: list[Evidence] = []
+        await self._emit(
+            thinking_callback,
+            "web_search",
+            "Searching external sources.",
+            {"status": "searching"},
+        )
         for web_query in queries:
             web_evidences.extend(await self.web_search_client.search(web_query, max_results=5))
 
@@ -153,6 +165,7 @@ class AgenticRagService:
             "web_search",
             "Searched web fallback evidence.",
             {
+                "status": "evidence",
                 "queries": queries,
                 "evidence_count": len(web_evidences),
                 "results": [self._evidence_preview(evidence) for evidence in web_evidences],

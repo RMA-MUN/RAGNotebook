@@ -22,7 +22,10 @@ from app.agent.agent import (
     get_agent_response,
     get_agent_stream_response,
 )
+from app.agent.agent_rag_tool import search_rag
 from app.models.chat_history import ChatMessage, ChatSession
+from app.rag.agentic_rag.schemas import Evidence
+from app.rag.agentic_rag.service import AgenticRagService
 from tests.conftest import patch_session_factory
 from tests.fakes import FakeAgent
 
@@ -134,7 +137,7 @@ def _parse_frames(raw_frames):
 # ---------------------------------------------------------------------------
 # AgentFactory
 # ---------------------------------------------------------------------------
-def test_factory_returns_8_default_tools():
+def test_factory_returns_9_default_tools():
     names = {t.name for t in AgentFactory._get_default_tools()}
     assert names == {
         "what_time_is_now",
@@ -145,6 +148,7 @@ def test_factory_returns_8_default_tools():
         "mark_reviewed_tool",
         "create_note_tool",
         "get_related_notes_tool",
+        "search_rag",
     }
 
 
@@ -349,6 +353,98 @@ async def test_get_agent_stream_response_tool_end_with_toolmessage_output(
     assert events[-1]["type"] == "done"
 
 
+async def test_get_agent_stream_response_forwards_real_search_rag_callback(
+    monkeypatch, patched_db, fresh_session_manager
+):
+    """Real search_rag callback events travel through the stream queue before done."""
+    evidence = Evidence(
+        id="stream-note-1",
+        source="note",
+        title="流式证据",
+        content="可展示的证据内容",
+        score=0.87,
+        url="https://example.test/note-1",
+    )
+
+    async def fake_run(self, query, user_id, thinking_callback=None):
+        assert query == "补充检索问题"
+        assert user_id == "u1"
+        return type("Result", (), {
+            "context": "补充检索上下文",
+            "evidences": [evidence],
+            "used_web": False,
+        })()
+
+    class SearchRagStreamingAgent(FakeAgent):
+        async def astream_events(self, inputs, version="v2"):
+            self.inputs.append(inputs)
+            yield {
+                "event": "on_tool_start",
+                "name": "search_rag",
+                "data": {"input": {"query": "补充检索问题"}},
+            }
+            tool_output = await search_rag.ainvoke({"query": "补充检索问题"})
+            yield {
+                "event": "on_tool_end",
+                "name": "search_rag",
+                "data": {"output": ToolMessage(content=tool_output, tool_call_id="call-1")},
+            }
+            yield {
+                "event": "on_chat_model_stream",
+                "name": "FakeChatModel",
+                "data": {"chunk": AIMessageChunk(content="流式最终回答")},
+            }
+
+    monkeypatch.setattr(AgenticRagService, "run", fake_run)
+    monkeypatch.setattr(
+        agent_module.agent_factory,
+        "create_agent",
+        lambda **kwargs: SearchRagStreamingAgent(),
+    )
+
+    frames = await _collect_stream("问题", session_id="s1", user_id="u1")
+    events = _parse_frames(frames)
+
+    supplemental_index = next(
+        index for index, event in enumerate(events)
+        if event.get("type") == "thinking"
+        and event.get("stage") == "supplemental_retrieval"
+    )
+    done_index = next(index for index, event in enumerate(events) if event["type"] == "done")
+    supplemental = events[supplemental_index]
+    tool_end = next(
+        event for event in events
+        if event.get("type") == "thinking" and event.get("stage") == "tool_end"
+    )
+
+    assert supplemental["details"] == {
+        "query": "补充检索问题",
+        "status": "evidence",
+        "evidence_count": 1,
+        "results": [{
+            "id": "stream-note-1",
+            "source": "note",
+            "title": "流式证据",
+            "score": 0.87,
+            "url": "https://example.test/note-1",
+            "preview": "可展示的证据内容",
+        }],
+    }
+    tool_output = tool_end["details"]["tool_output"]
+    assert "[补充检索结果开始]" in tool_output
+    assert "[检索证据]" in tool_output
+    assert "[补充检索结果结束]" in tool_output
+    assert any(
+        event["type"] == "response" and event["content"] == "流式最终回答"
+        for event in events
+    )
+    response_index = next(
+        index for index, event in enumerate(events)
+        if event["type"] == "response" and event["content"] == "流式最终回答"
+    )
+    assert supplemental_index < response_index < done_index
+
+
 async def test_get_agent_stream_response_filters_planning_run_tokens(
     monkeypatch, patched_db, fresh_session_manager
 ):
@@ -440,6 +536,8 @@ async def test_get_agent_stream_response_with_rag_context(monkeypatch, patched_d
     assert "区分本地证据" in system_prompt
     assert "外部搜索证据" in system_prompt
     assert "证据不足" in system_prompt
+    assert "search_rag" in system_prompt
+    assert "不要重复问一遍用户原话" in system_prompt
 
 
 async def test_get_agent_stream_response_default_system_prompt_without_rag(
