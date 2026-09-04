@@ -1,0 +1,9 @@
+{
+  "user_id": "eval-duretrieval",
+  "docs_processed": 500,
+  "extract_time_s": 1477.3,
+  "entity_nodes": 3936,
+  "relation_edges": 3414,
+  "mentions_edges": 8259,
+  "docs_with_entities": 4291
+}
