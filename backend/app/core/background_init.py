@@ -75,11 +75,19 @@ class _BackgroundInitManager:
 
     async def _init_models(self):
         """初始化 AI 模型"""
-        from app.utils.factory import ChatModelFactory, EmbedModelFactory, VisionModelFactory
-
-        self.chat_model = await asyncio.to_thread(
-            lambda: ChatModelFactory().generator()
+        from app.utils.factory import (
+            ChatModelFactory,
+            EmbedModelFactory,
+            VisionModelFactory,
+            resolve_chat_config,
         )
+
+        if resolve_chat_config()["api_key"]:
+            self.chat_model = await asyncio.to_thread(
+                lambda: ChatModelFactory().generator()
+            )
+        else:
+            logger.warning("对话配置不完整，chat_model 预热已跳过")
         logger.info("✅ chat_model 初始化完成")
 
         self.embed_model = await asyncio.to_thread(

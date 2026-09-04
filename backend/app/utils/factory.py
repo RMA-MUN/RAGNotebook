@@ -95,14 +95,14 @@ class EmbedModelFactory(BaseModelFactory):
     """嵌入模型工厂 - 统一 OpenAI 兼容 /v1/embeddings"""
     def generator(self) -> Embeddings | BaseChatModel | None:
         """根据 EMBED_* 环境变量生成嵌入模型（统一 OpenAI 兼容 /v1/embeddings）"""
-        from langchain_openai import OpenAIEmbeddings
         cfg = resolve_embed_config()
         if not (cfg["base_url"] and cfg["api_key"]):
-            raise ValueError(
-                "嵌入模型配置不完整：请同时提供 EMBED_BASE_URL 与 EMBED_API_KEY；"
-                "或二者都留空以整体回落 OPENAI_BASE_URL/OPENAI_API_KEY。"
-                "避免跨供应商混用凭据（如只配了 EMBED_BASE_URL 却用对话的 OPENAI_API_KEY）。"
+            logger.warning(
+                "嵌入配置不完整（缺少 EMBED_BASE_URL/EMBED_API_KEY 且无完整 OPENAI_* 回落），"
+                "嵌入已关闭（降级无向量能力）"
             )
+            return None
+        from langchain_openai import OpenAIEmbeddings
         logger.info(f"📦 EmbedModel 使用OpenAI兼容嵌入模型: {cfg['model']}")
         return OpenAIEmbeddings(
             model=cfg["model"], api_key=cfg["api_key"], base_url=cfg["base_url"],

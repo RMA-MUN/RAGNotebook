@@ -217,6 +217,32 @@ def test_vision_factory_default_when_unset_and_no_config(monkeypatch):
     assert VisionModelFactory().generator() is None
 
 
+def test_embed_factory_fail_soft_without_config(monkeypatch, caplog):
+    _clear_env(monkeypatch)
+
+    assert EmbedModelFactory().generator() is None
+    assert "嵌入配置不完整" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("embed_base_url", "embed_api_key"),
+    [
+        ("https://embed.example/v1", None),
+        (None, "sk-embed"),
+    ],
+    ids=["base-url-only", "api-key-only"],
+)
+def test_embed_factory_fail_soft_with_partial_config(
+    monkeypatch, caplog, embed_base_url, embed_api_key,
+):
+    _clear_env(monkeypatch)
+    monkeypatch.setattr(settings, "EMBED_BASE_URL", embed_base_url)
+    monkeypatch.setattr(settings, "EMBED_API_KEY", embed_api_key)
+
+    assert EmbedModelFactory().generator() is None
+    assert "嵌入配置不完整" in caplog.text
+
+
 def test_reranker_factory_always_returns_none():
     assert RerankerModelFactory().generator() is None
 
