@@ -91,6 +91,15 @@ export default function AIChat() {
   const [expandedApproval, setExpandedApproval] = useState<Record<string, boolean>>({})
   const [showThinking, setShowThinking] = useState(true)
   const [loadingHistory, setLoadingHistory] = useState(false)
+  // 会话切换时在 render 阶段同步重置审批与历史加载态（与原 effect 语义一致，避免 effect 内同步 setState）
+  const [prevSessionId, setPrevSessionId] = useState<string | undefined | null>(null)
+  if (sessionId !== prevSessionId) {
+    setPrevSessionId(sessionId)
+    setPendingApproval(null)
+    setApprovalNotice(null)
+    setRejectReason('')
+    setLoadingHistory(!!sessionId)
+  }
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef('')
   const rafRef = useRef<number | null>(null)
@@ -187,10 +196,6 @@ export default function AIChat() {
 
   useEffect(() => {
     if (sessionId) {
-      setPendingApproval(null)
-      setApprovalNotice(null)
-      setRejectReason('')
-      setLoadingHistory(true)
       sessionsApi.get(sessionId).then((res) => {
         const data = res.data as { history?: [string, string][]; pending_run_id?: string | null } | undefined
         if (data?.history) {
