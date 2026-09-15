@@ -30,7 +30,6 @@ dependencies = [
     "pypdf==6.9.2",
     "python-magic==0.4.27",
     "python-magic-bin==0.4.14; sys_platform == 'win32' or sys_platform == 'darwin'",
-    "unstructured[all-docs]==0.22.20",
     "langgraph-cli[inmem]==0.1.54",
     "rank-bm25==0.2.2",
     "pymupdf==1.25.0",
@@ -53,6 +52,13 @@ dev = [
     "black==24.10.0",
     "isort==5.13.2",
     "ruff==0.8.0",
+]
+
+# 文档解析依赖组：unstructured[all-docs] 含 torch/CUDA 栈（数 GB），默认安装保证本地/Docker 行为不变；
+# CI 用 `uv sync --no-group parsers` 跳过
+[dependency-groups]
+parsers = [
+    "unstructured[all-docs]==0.22.20",
 ]
 
 [tool.pytest.ini_options]
@@ -85,3 +91,4 @@ default = true
 
 [tool.uv]
 index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default-groups = ["parsers"]
