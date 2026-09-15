@@ -69,6 +69,7 @@ except ImportError:
 from app.agent.agent_tools import get_thinking_callback_from_context
 from app.core.logger_handler import logger
 
+
 def _describe_create_note(tool_call, state, runtime) -> str:
     """创建笔记审批摘要：只带标题、正文长度与开头预览，避免把全文塞进审批负载。"""
     args = (tool_call.get("args") if isinstance(tool_call, dict) else {}) or {}

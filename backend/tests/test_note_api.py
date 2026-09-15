@@ -1,10 +1,8 @@
 """笔记 API 集成测试（真实 NoteService + SQLite + 假 LLM）。"""
 import asyncio
-import json
 import zipfile
 
 from tests.fakes import TEST_USER_ID
-
 
 PASSWORD = None  # unused
 
@@ -32,6 +30,7 @@ async def test_create_note(client, real_note_service, session_factory):
     # 已入库
     async with session_factory() as s:
         from sqlalchemy import select
+
         from app.models.note import Note
         result = await s.execute(select(Note).where(Note.id == note["id"]))
         assert result.scalar_one() is not None
@@ -39,11 +38,12 @@ async def test_create_note(client, real_note_service, session_factory):
 
 async def test_create_note_starts_auto_tag_task(client, real_note_service, session_factory, monkeypatch):
     """未提供 tags/category 时，后台任务自动生成标签并创建回顾记录。"""
-    from app.core.background_init import init_manager
     from langchain_core.messages import AIMessage
-    from app.models.review_record import ReviewRecord
-    from app.models.note import Note
     from sqlalchemy import select
+
+    from app.core.background_init import init_manager
+    from app.models.note import Note
+    from app.models.review_record import ReviewRecord
 
     class CannedChat:
         async def ainvoke(self, messages):
@@ -255,7 +255,7 @@ async def test_assist_stream(client, real_note_service):
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/event-stream")
         lines = [line async for line in resp.aiter_lines()]
-    data_frames = [l for l in lines if l.startswith("data: ")]
+    data_frames = [line for line in lines if line.startswith("data: ")]
     assert data_frames
     assert data_frames[-1] == "data: [DONE]"
 

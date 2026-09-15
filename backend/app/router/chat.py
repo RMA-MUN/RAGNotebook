@@ -20,7 +20,6 @@ from app.agent.agent import (
     read_pending_interrupt,
 )
 from app.agent.agent_rag_tool import build_pre_searched_queries
-from app.agent.checkpoint.mysql_saver import MySQLCheckpointSaver
 from app.core.logger_handler import logger
 from app.core.rate_limit import rate_limit
 from app.core.success_response import success_response

@@ -4,11 +4,9 @@ conftest 已设置 VISION_ENABLED=false（导入时生效），默认走纯文�
 视觉路径通过临时 monkeypatch 模块级开关单独验证，且不触碰真实 data 目录
 （extract_images_from_pdf 全部打桩）。
 """
-import os
 
 import fitz
 import pytest
-from langchain_core.documents import Document
 
 import app.utils.pdf_multimodal_loader as loader_mod
 from app.utils.pdf_multimodal_loader import (

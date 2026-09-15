@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette import status
 
 # 项目配置唯一读取点在 app/core/settings.py，此处 re-export 兼容既有导入路径
-from app.core.settings import Settings, settings
+from app.core.settings import settings
 
 # 生产环境强制关闭 DEBUG_MODE，双保险防止泄露
 DEBUG_MODE = settings.DEBUG_MODE if settings.ENV != "prod" else False

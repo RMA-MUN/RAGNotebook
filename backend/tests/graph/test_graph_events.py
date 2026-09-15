@@ -1,5 +1,4 @@
 import asyncio
-import json
 
 import pytest
 
@@ -28,8 +27,6 @@ async def test_publish_does_not_leak_across_users():
 
 @pytest.mark.asyncio
 async def test_events_endpoint_streams_extract_event(client, monkeypatch):
-    from fastapi.testclient import TestClient
-    from main import app
 
     # SSE 端点需真实网络事件循环，这里只验证事件形状（通过 bus 直接 push）
     bus = GraphEventBus()

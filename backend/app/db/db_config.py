@@ -74,8 +74,7 @@ async def init_db():
     # 确保所有 Model 已导入，注册到 Base.metadata
     from app.models import (
         agent_checkpoint,  # noqa: F401
-        chat_history, graph, note, note_template, review_record, user_model,
-    )
+        )
 
     async with async_engine.begin() as conn:
         # 先删除旧表，然后创建新表
@@ -101,9 +100,10 @@ async def get_db():
 
 
 async def seed_test_user():
+    from sqlalchemy import select
+
     from app.models.user_model import User, UserStatusChoice
     from app.utils.auth_utils import hash_password
-    from sqlalchemy import select
 
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(User).where(User.username == "admin"))

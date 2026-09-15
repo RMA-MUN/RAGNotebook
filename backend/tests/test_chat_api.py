@@ -45,9 +45,8 @@ class FakeChatService:
 
 
 def install_fake_chat_service(monkeypatch):
-    from main import app
-
     import app.router.chat as chat_module
+    from main import app
 
     service = FakeChatService()
     app.dependency_overrides[chat_module.get_router_service] = lambda: service
@@ -72,9 +71,8 @@ async def test_get_session(client, monkeypatch):
 
 async def test_get_session_includes_pending_run_id(client, monkeypatch):
     """会话详情响应携带 pending_run_id（供前端恢复审批卡）。"""
-    from main import app
-
     import app.router.chat as chat_module
+    from main import app
 
     class FakeService:
         def __init__(self):
@@ -155,9 +153,9 @@ async def test_agent_query_stream_real_agentic_rag_pipeline(client, real_note_se
     ) as resp:
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/event-stream")
-        lines = [l async for l in resp.aiter_lines()]
+        lines = [line async for line in resp.aiter_lines()]
 
-    frames = [json.loads(l[6:]) for l in lines if l.startswith("data: ")]
+    frames = [json.loads(line[6:]) for line in lines if line.startswith("data: ")]
     assert any(frame["type"] == "response" for frame in frames)
     assert frames[-1]["type"] == "done"
     response_frame = next(frame for frame in frames if frame["type"] == "response")
@@ -188,9 +186,9 @@ async def test_agent_query_stream_rag_error_continues_with_empty_context(client,
         headers={"Authorization": "Bearer x"},
     ) as resp:
         assert resp.status_code == 200
-        lines = [l async for l in resp.aiter_lines()]
+        lines = [line async for line in resp.aiter_lines()]
 
-    frames = [json.loads(l[6:]) for l in lines if l.startswith("data: ")]
+    frames = [json.loads(line[6:]) for line in lines if line.startswith("data: ")]
     assert seen["rag_context"] == ""
     assert frames[-1]["type"] == "done"
 
@@ -220,9 +218,9 @@ async def test_agent_query_stream_with_rag(client, real_note_service, monkeypatc
         headers={"Authorization": "Bearer x"},
     ) as resp:
         assert resp.status_code == 200
-        lines = [l async for l in resp.aiter_lines()]
+        lines = [line async for line in resp.aiter_lines()]
 
-    frames = [json.loads(l[6:]) for l in lines if l.startswith("data: ")]
+    frames = [json.loads(line[6:]) for line in lines if line.startswith("data: ")]
     # 存在 RAG 思考事件 + agent 响应
     assert any(f.get("type") == "thinking" for f in frames)
     assert frames[-1]["type"] == "done"
@@ -253,9 +251,9 @@ async def test_agent_query_stream_uses_agentic_rag_context_before_agent_response
         headers={"Authorization": "Bearer x"},
     ) as resp:
         assert resp.status_code == 200
-        lines = [l async for l in resp.aiter_lines()]
+        lines = [line async for line in resp.aiter_lines()]
 
-    frames = [json.loads(l[6:]) for l in lines if l.startswith("data: ")]
+    frames = [json.loads(line[6:]) for line in lines if line.startswith("data: ")]
     assert calls == [("讲讲最新RAG", TEST_USER_ID)]
     # 时序：路由占位 thinking（让前端折叠框立即出现）→ RAG 真实事件 → agent 响应 → done
     assert [frame["type"] for frame in frames] == ["thinking", "thinking", "response", "done"]

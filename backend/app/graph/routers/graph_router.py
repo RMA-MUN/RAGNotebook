@@ -3,28 +3,24 @@ import asyncio
 import functools
 import json
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from fastapi.routing import APIRouter
-
-from app.core.logger_handler import logger
-from app.graph.services.event_bus import event_bus
-from app.graph.storage.neo4j_client import GraphUnavailableError
-from app.utils.auth_utils import get_current_user_id
-
-graph_router = APIRouter(prefix="/api/graph", tags=["graph"])
-
-
-from fastapi import Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logger_handler import logger
 from app.core.success_response import success_response
 from app.db.db_config import get_db
 from app.graph.schemas.graph import EntityIn, MergeRequest, RelationIn, TypeIn
+from app.graph.services.event_bus import event_bus
 from app.graph.services.graph_service import manual_re_extract
 from app.graph.storage import get_graph_store
+from app.graph.storage.neo4j_client import GraphUnavailableError
 from app.models.note import Note
+from app.utils.auth_utils import get_current_user_id
+
+graph_router = APIRouter(prefix="/api/graph", tags=["graph"])
 
 
 def _graph_gate(fn):
@@ -83,7 +79,7 @@ async def neighbors(entity_id: str, depth: int = Query(1, ge=1, le=3),
 async def entity_notes(entity_id: str, user_id: str = Depends(get_current_user_id),
                        db: AsyncSession = Depends(get_db)):
     links = await get_graph_store(db).get_entity_notes(user_id, entity_id)
-    return success_response(data=[l.model_dump() for l in links])
+    return success_response(data=[link.model_dump() for link in links])
 
 
 @graph_router.get("/notes/{note_id}/related")

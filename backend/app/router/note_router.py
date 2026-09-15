@@ -106,8 +106,8 @@ async def batch_download_notes(
     """
     批量下载笔记为 ZIP 压缩包（内含 .md 文件）。
     """
-    from urllib.parse import quote
     from datetime import datetime
+    from urllib.parse import quote
 
     zip_bytes = await init_manager.note_service.batch_export_zip(db, user_id, payload.ids)
     date_str = datetime.now().strftime("%Y%m%d")

@@ -1,5 +1,4 @@
 """Chat 业务服务层：会话管理、Agent 问答、重排序（旧 RagService 链路已退役，检索统一走 Agentic RAG）。"""
-import uuid
 from typing import Any
 
 from fastapi import HTTPException

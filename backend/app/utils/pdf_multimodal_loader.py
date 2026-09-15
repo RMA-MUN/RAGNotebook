@@ -7,8 +7,8 @@ from dataclasses import dataclass
 import fitz
 from langchain_core.documents import Document
 
-from app.core.settings import settings
 from app.core.logger_handler import logger
+from app.core.settings import settings
 from app.utils.image_extractor import extract_images_from_pdf
 from app.utils.path_tool import get_abstract_path
 from app.utils.vision_service import VisionService

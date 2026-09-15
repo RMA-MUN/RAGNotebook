@@ -12,7 +12,6 @@ from sqlalchemy import select
 
 from app.models.chat_history import ChatMessage, ChatSession
 from app.services.database_session_manager import DatabaseSessionManager
-
 from tests.conftest import patch_session_factory
 
 
@@ -216,7 +215,6 @@ async def test_set_and_get_pending_run_id(session_factory, monkeypatch):
     from tests.conftest import patch_session_factory
 
     patch_session_factory(monkeypatch, session_factory)
-    from app.services import session_manager as sm
     from app.services.database_session_manager import DatabaseSessionManager
 
     mgr = DatabaseSessionManager()
