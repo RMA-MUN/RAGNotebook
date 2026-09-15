@@ -87,7 +87,6 @@ class QueryEntityExtractor:
         t0 = time.perf_counter()
         used_llm = True
         try:
-            from langchain_core.messages import HumanMessage
             prompt = self.prompt_template.replace("{query}", query)
             response = await model.ainvoke(prompt)
             content = getattr(response, "content", response)

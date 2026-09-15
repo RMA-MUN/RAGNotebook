@@ -3,12 +3,9 @@ import json
 import re
 from typing import Any
 
-from pydantic import ValidationError
-
 from app.core.logger_handler import logger
 from app.core.settings import settings
 from app.rag.agentic_rag.schemas import RetrievalPlan, RetrievalStep
-
 
 FRESHNESS_TERMS = (
     "最新",

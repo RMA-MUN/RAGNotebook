@@ -14,7 +14,6 @@ gold = {E}，按返回的实体证据顺序（去重）算 hit@k / MRR / recall@
 import argparse
 import asyncio
 import json
-import math
 import random
 import statistics
 import sys
@@ -117,7 +116,7 @@ async def main() -> None:
         json.dumps({"summary": agg, "rows": rows}, ensure_ascii=False, indent=2), encoding="utf-8")
     md = ["# 实体级 GraphRAG 检索评测", "",
           f"- 用户：`{args.user_id}`  样本：{len(rows)} 实体",
-          f"- 口径：从图中取实体构造问题，测真实 search_graph 路径（实体抽取→匹配）",
+          "- 口径：从图中取实体构造问题，测真实 search_graph 路径（实体抽取→匹配）",
           "", "| 指标 | 值 |", "|---|---|"]
     for k in TOP_Ks:
         md.append(f"| 实体 hit@{k} | {agg[f'hit@{k}']:.4f} |")

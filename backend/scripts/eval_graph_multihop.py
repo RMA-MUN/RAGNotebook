@@ -156,7 +156,8 @@ async def main() -> None:
         g_ac_hit = p["a"] in g_ents and p["c"] in g_ents
         g_text = _evidence_text(rg.evidences)
         g_has_b_hit = p["b"] in g_text
-        g_ac += int(g_ac_hit); g_has_b += int(g_has_b_hit)
+        g_ac += int(g_ac_hit)
+        g_has_b += int(g_has_b_hit)
 
         # 文本路径
         rt = await svc_text.run(q, args.user_id)
@@ -206,7 +207,9 @@ async def main() -> None:
           f"- 图路径检索延迟均值：{agg['mean_graph_latency_ms']:.0f} ms", "",
           "## 逐路径明细", "", "| 路径 | a/c命中 | 证据含b(G/T) | 答案(G/T) |", "|---|---|---|---|"]
     for r in rows:
-        md.append(f"| {r['path'][:48]} | {int(r['graph_ac_hit'])} | {int(r['graph_evidence_has_b'])}/{int(r['text_evidence_has_b'])} | {r['graph_answer_correct']}/{r['text_answer_correct']} |")
+        md.append(f"| {r['path'][:48]} | {int(r['graph_ac_hit'])} | "
+                  f"{int(r['graph_evidence_has_b'])}/{int(r['text_evidence_has_b'])} | "
+                  f"{r['graph_answer_correct']}/{r['text_answer_correct']} |")
     (args.results_dir / "report.md").write_text("\n".join(md), encoding="utf-8")
     print(json.dumps(agg, ensure_ascii=False, indent=2))
     print(f"[done] -> {args.results_dir / 'report.json'}")

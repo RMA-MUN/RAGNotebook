@@ -2,11 +2,9 @@
 import base64
 
 from fastapi import HTTPException
-from langchain_core.documents import Document
 
 from app.rag.sse_models import SSEEvent
 from app.router.knowledge_service import KnowledgeService
-from tests.conftest import install_fake_vector_store
 from tests.fakes import TEST_USER_ID
 
 
@@ -70,9 +68,8 @@ class FakeKnowledgeService(KnowledgeService):
 
 
 def install_fake_knowledge_service(monkeypatch):
-    from main import app
-
     import app.router.knowledge_router as kr
+    from main import app
 
     service = FakeKnowledgeService()
     app.dependency_overrides[kr.get_knowledge_service] = lambda: service
@@ -95,7 +92,7 @@ async def test_add_single(client, monkeypatch):
 
 
 async def test_add_multiple(client, monkeypatch):
-    service = install_fake_knowledge_service(monkeypatch)
+    install_fake_knowledge_service(monkeypatch)
     resp = await client.post(
         "/knowledge/add/multiple",
         files=[("files", ("a.txt", b"aaa", "text/plain")), ("files", ("b.md", b"bbb", "text/markdown"))],
@@ -113,8 +110,8 @@ async def test_add_multiple_stream(client, monkeypatch):
         headers={"Authorization": "Bearer x"},
     ) as resp:
         assert resp.status_code == 200
-        lines = [l async for l in resp.aiter_lines()]
-    frames = [l for l in lines if l.startswith("event: ") or l.startswith("data: ")]
+        lines = [line async for line in resp.aiter_lines()]
+    frames = [line for line in lines if line.startswith("event: ") or line.startswith("data: ")]
     assert frames
 
 
@@ -137,7 +134,7 @@ async def test_clear_md5(client, monkeypatch):
 
 
 async def test_delete_single_md5(client, monkeypatch):
-    service = install_fake_knowledge_service(monkeypatch)
+    install_fake_knowledge_service(monkeypatch)
     resp = await client.delete("/knowledge/md5/delete/exists", headers={"Authorization": "Bearer x"})
     assert resp.status_code == 200
     assert "已成功删除MD5记录 exists" in resp.json()["message"]
@@ -148,7 +145,7 @@ async def test_delete_single_md5(client, monkeypatch):
 
 
 async def test_delete_by_filename(client, monkeypatch):
-    service = install_fake_knowledge_service(monkeypatch)
+    install_fake_knowledge_service(monkeypatch)
     resp = await client.delete("/knowledge/delete/filename?filename=exists.txt", headers={"Authorization": "Bearer x"})
     assert resp.status_code == 200
 

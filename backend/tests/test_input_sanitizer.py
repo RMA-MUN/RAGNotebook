@@ -1,4 +1,3 @@
-import pytest
 from app.utils.input_sanitizer import sanitize_content
 
 

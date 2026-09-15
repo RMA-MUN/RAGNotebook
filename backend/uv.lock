@@ -246,7 +246,6 @@ dependencies = [
     { name = "shortuuid" },
     { name = "sqlalchemy" },
     { name = "starlette" },
-    { name = "unstructured", extra = ["all-docs"] },
     { name = "uvicorn" },
 ]
 
@@ -259,6 +258,11 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "ruff" },
+]
+
+[package.dev-dependencies]
+parsers = [
+    { name = "unstructured", extra = ["all-docs"] },
 ]
 
 [package.metadata]
@@ -301,10 +305,12 @@ requires-dist = [
     { name = "shortuuid", specifier = "==1.0.11" },
     { name = "sqlalchemy", specifier = "==2.0.48" },
     { name = "starlette", specifier = "==0.50.0" },
-    { name = "unstructured", extras = ["all-docs"], specifier = "==0.22.20" },
     { name = "uvicorn", specifier = "==0.21.1" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+parsers = [{ name = "unstructured", extras = ["all-docs"], specifier = "==0.22.20" }]
 
 [[package]]
 name = "bcrypt"

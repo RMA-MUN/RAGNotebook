@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { Trash2, Plus, FolderTree, X, GripVertical } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { notesApi } from '../../api/notes'
@@ -57,9 +57,12 @@ export default function CategoryManageDialog({
   const [items, setItems] = useState<CategoryItem[]>([])
   const dragItem = useRef<number | null>(null)
 
-  useEffect(() => {
+  // open 翻转时在 render 阶段同步重置本地 items（与原 effect 语义一致，避免 effect 内同步 setState）
+  const [prevOpen, setPrevOpen] = useState<boolean | undefined>(undefined)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
     setItems([...categories])
-  }, [open])
+  }
 
   if (!open) return null
 

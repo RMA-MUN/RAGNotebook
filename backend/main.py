@@ -11,6 +11,7 @@ from app.core.failed_response_register import register_exception_handlers
 from app.core.logger_handler import logger
 from app.db.db_config import init_db, seed_test_user
 from app.db.redis_config import close_redis, connect_redis
+from app.graph.routers.graph_router import graph_router
 from app.router.chat import chat_router
 from app.router.health import health_router
 from app.router.knowledge_router import knowledge_router
@@ -18,7 +19,6 @@ from app.router.note_router import note_router
 from app.router.note_template_router import note_template_router
 from app.router.review_router import review_router
 from app.router.user import file_router, user_router
-from app.graph.routers.graph_router import graph_router
 from app.services.database_session_manager import init_database_session_manager
 
 # 加载环境变量

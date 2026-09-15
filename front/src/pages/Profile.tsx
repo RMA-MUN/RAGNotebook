@@ -40,7 +40,10 @@ export default function Profile() {
     }
   }, [token])
 
-  useEffect(() => {
+  // userInfo 变化时在 render 阶段同步表单（store 已持久化，挂载时即可能有值；与原 effect 语义一致）
+  const [prevUserInfo, setPrevUserInfo] = useState<UserInfo | null | undefined>(undefined)
+  if (userInfo !== prevUserInfo) {
+    setPrevUserInfo(userInfo)
     if (userInfo) {
       setForm({
         username: (userInfo.username as string) || '',
@@ -50,7 +53,7 @@ export default function Profile() {
         bio: (userInfo.bio as string) || '',
       })
     }
-  }, [userInfo])
+  }
 
   const handleSave = async () => {
     setLoading(true)

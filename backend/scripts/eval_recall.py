@@ -24,8 +24,6 @@ import sys
 import time
 from pathlib import Path
 
-import pandas as pd
-
 BACKEND = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND))
 
@@ -177,7 +175,8 @@ async def main() -> None:
     md.append("| query_id | 相关文档数 | recall@5 | hit@5 | nDCG@10 | MAP | MRR | 延迟(ms) |")
     md.append("|---|---|---|---|---|---|---|---|")
     for r in rows[:30]:
-        md.append(f"| {r['query_id'][:10]} | {r['relevant_count']} | {r['recall@5']:.3f} | {r['hit@5']:.1f} | {r['ndcg@10']:.3f} | {r['map']:.3f} | {r['mrr']:.3f} | {r['latency_ms']} |")
+        md.append(f"| {r['query_id'][:10]} | {r['relevant_count']} | {r['recall@5']:.3f} | "
+                  f"{r['hit@5']:.1f} | {r['ndcg@10']:.3f} | {r['map']:.3f} | {r['mrr']:.3f} | {r['latency_ms']} |")
     (args.results_dir / "report.md").write_text("\n".join(md), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     print(f"[done] -> {args.results_dir / 'report.json'}")

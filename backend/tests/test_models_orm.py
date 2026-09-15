@@ -10,7 +10,6 @@ from app.models.note_template import NoteTemplate
 from app.models.review_record import ReviewRecord
 from app.models.user_model import User, UserStatusChoice, generate_uuid
 
-
 HEX24 = re.compile(r"^[0-9a-f]{24}$")
 
 

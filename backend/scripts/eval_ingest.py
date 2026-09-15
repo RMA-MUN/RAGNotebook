@@ -14,7 +14,6 @@
 import argparse
 import asyncio
 import json
-import os
 import random
 import sys
 import time
@@ -115,7 +114,6 @@ async def main() -> None:
     sampled_qids, relevant, doc_ids = sample(
         queries, corpus, qrels, args.n_query, args.n_doc, args.seed
     )
-    qid_set = set(sampled_qids)
     qtext = dict(zip(queries["_id"].astype(str), queries["text"].astype(str)))
     ctext = dict(zip(corpus["_id"].astype(str), corpus["text"].astype(str)))
     ctitle = dict(zip(corpus["_id"].astype(str), corpus["title"].astype(str)))

@@ -10,25 +10,24 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMe
 from langchain_core.tools import BaseTool
 from langgraph.types import Command
 
-from app.core.settings import settings
-
+from app.agent.agent_middleware import DEFAULT_APPROVAL_TOOLS
+from app.agent.agent_rag_tool import init_rag_guard, search_rag
 from app.agent.agent_tools import (
     create_note_tool,
     get_note_stats_tool,
     get_related_notes_tool,
+    get_thinking_callback_from_context,
     get_today_reviews_tool,
     get_user_info_tools,
-    get_thinking_callback_from_context,
     mark_reviewed_tool,
     search_notes_tool,
     set_current_user_id,
     set_thinking_callback,
     what_time_is_now,
 )
-from app.agent.agent_middleware import DEFAULT_APPROVAL_TOOLS, get_middleware
-from app.agent.agent_rag_tool import init_rag_guard, search_rag
 from app.agent.checkpoint.mysql_saver import MySQLCheckpointSaver
 from app.core.logger_handler import logger
+from app.core.settings import settings
 from app.services import session_manager as sm
 from app.utils.prompt_loader import load_prompt
 
@@ -669,7 +668,6 @@ async def get_agent_stream_response(
                 yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
                 return
 
-            response = agent_result_holder.get("response") or "抱歉，我无法理解您的请求。"
             yield f"data: {json.dumps({'type': 'done', 'session_id': session_id}, ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.error(f"【Agent流式响应】处理请求失败: {e}", exc_info=True)

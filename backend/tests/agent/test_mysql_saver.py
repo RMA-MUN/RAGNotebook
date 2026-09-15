@@ -3,7 +3,6 @@
 覆盖：aput/aget_tuple roundtrip、parent 链、aput_writes 与 pending_writes、
 alist 排序与 limit、adelete_thread、中断写(WRITES_IDX_MAP 下标)。
 """
-import json
 
 import pytest
 from langchain_core.messages import HumanMessage
@@ -88,7 +87,6 @@ async def test_adelete_thread_removes_checkpoints_and_writes(saver):
 
 async def test_special_write_uses_writes_idx_map_index(saver):
     """interrupt 类特殊写必须以 WRITES_IDX_MAP 负下标落库（langgraph 依赖）。"""
-    from langgraph.checkpoint.base import WRITES_IDX_MAP
 
     await saver.aput(_config("thread-1"), _make_checkpoint("c1"), {"step": 0}, {})
     cfg = _config("thread-1", "c1")

@@ -25,9 +25,8 @@ _DROP_SCHEMA_STMTS = (
 async def _cleanup():
     """每个用例结束后清理测试产生的 Neo4j 子图（pipe- 前缀用户 + API 测试的固定用户）。"""
     yield
-    from tests.fakes import TEST_USER_ID
-
     from app.graph.storage import neo4j_client
+    from tests.fakes import TEST_USER_ID
 
     driver = neo4j_client.get_neo4j_driver()
     await driver.execute_query(

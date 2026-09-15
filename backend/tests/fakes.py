@@ -3,11 +3,9 @@
 统一策略：MySQL / Redis / LLM / 重排序模型全部用内存替身替换，
 测试不依赖任何外部服务，可在任意环境直接运行。
 """
-import asyncio
 import fnmatch
 import itertools
 import types
-import uuid as uuidlib
 
 from langchain_core.documents import Document
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel

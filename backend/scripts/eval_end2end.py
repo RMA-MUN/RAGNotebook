@@ -27,8 +27,8 @@ from pathlib import Path
 BACKEND = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND))
 
-from langchain_core.messages import HumanMessage, SystemMessage  # noqa: E402
 import pandas as pd  # noqa: E402
+from langchain_core.messages import HumanMessage, SystemMessage  # noqa: E402
 
 from app.rag.agentic_rag.service import AgenticRagService  # noqa: E402
 from app.utils.factory import ChatModelFactory  # noqa: E402
@@ -195,7 +195,7 @@ async def main() -> None:
     (args.results_dir / "report.json").write_text(json.dumps({"summary": agg, "rows": rows}, ensure_ascii=False, indent=2), encoding="utf-8")
     md = ["# Agentic RAG 端到端评测报告（自动合成 QA）", ""]
     md.append(f"- 评测用户：`{user_id}`  样本：{len(rows)}（跳过 {skipped}）")
-    md.append(f"- 口径：题目从源正文自动生成，衡量**答案质量/忠实度/延迟**，**不衡量检索难度**")
+    md.append("- 口径：题目从源正文自动生成，衡量**答案质量/忠实度/延迟**，**不衡量检索难度**")
     md.append("")
     md.append("| 指标 | 值 |")
     md.append("|---|---|")
