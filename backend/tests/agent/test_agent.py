@@ -637,7 +637,9 @@ async def test_factory_create_agent_passes_checkpointer(monkeypatch):
                             responses=[AIMessage(content="ok")]))
     monkeypatch.setattr(agent_module, "get_checkpointer", lambda: object())
 
-    factory = agent_module.AgentFactory()
+    # mock 打在单例实例上（agent_factory），必须用单例调用：新实例看不到实例级 mock，
+    # 会走到真实 _create_chat_model，在无凭证环境（CI）直接报错
+    factory = agent_module.agent_factory
     agent = factory.create_agent(custom_tools=[])
     assert seen["checkpointer"] is not None
     assert isinstance(agent, CompiledStateGraph)
