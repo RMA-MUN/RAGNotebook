@@ -7,6 +7,9 @@
 <a href="https://github.com/RMA-MUN/RAGNotebook/network/members">
   <img src="https://img.shields.io/github/forks/RMA-MUN/RAGNotebook?style=flat-square&label=Forks&color=green" alt="Forks">
 </a>
+<a href="https://github.com/RMA-MUN/RAGNotebook/actions/workflows/ci.yml">
+  <img src="https://github.com/RMA-MUN/RAGNotebook/actions/workflows/ci.yml/badge.svg" alt="CI">
+</a>
   <img src="https://img.shields.io/badge/python-v3.12.4-blue.svg" alt="Python">
 </div>
 
@@ -148,8 +151,12 @@ cd RAGNotebook
 ##### 后端依赖
 ```bash
 cd backend
-uv sync
+uv sync --extra dev
 ```
+
+> 说明：文档解析依赖（`unstructured` + torch，数 GB）放在 `parsers`
+> 依赖组中，**默认随 `uv sync` 一起安装**，本地/Docker 行为不变；
+> CI 用 `uv sync --extra dev --no-group parsers` 跳过它以保持快速。
 
 ##### 前端依赖
 ```bash
