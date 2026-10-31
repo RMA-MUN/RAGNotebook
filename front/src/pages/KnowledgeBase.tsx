@@ -43,6 +43,8 @@ export default function KnowledgeBase() {
     }
   }
 
+  // 挂载时拉取文档列表：loadDocs 首行的 setLoading(true) 仅服务于手动刷新路径（loading 初始值已为 true）；单次提交，无级联渲染
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadDocs() }, [])
 
   const handleFilesSelected = (files: FileList) => {

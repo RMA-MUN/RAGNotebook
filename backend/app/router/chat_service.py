@@ -1,5 +1,4 @@
 """Chat 业务服务层：会话管理、Agent 问答、重排序（旧 RagService 链路已退役，检索统一走 Agentic RAG）。"""
-import uuid
 from typing import Any
 
 from fastapi import HTTPException
@@ -16,6 +15,10 @@ class ChatService:
         """处理获取会话逻辑"""
         history = await sm.session_manager.get_history(session_id, user_id)
         return history
+
+    async def handle_get_pending_run_id(self, session_id: str, user_id: str) -> str | None:
+        """处理获取会话待审批 run_id 逻辑"""
+        return await sm.session_manager.get_pending_run_id(session_id, user_id)
 
     async def handle_delete_session(self, session_id: str, user_id: str) -> None:
         """处理删除会话逻辑"""

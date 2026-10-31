@@ -12,6 +12,7 @@ class SessionResponse(BaseModel):
     """会话响应模型"""
     session_id: str
     history: list[tuple[str, str]]
+    pending_run_id: str | None = None
 
 
 class AgentStep(BaseModel):

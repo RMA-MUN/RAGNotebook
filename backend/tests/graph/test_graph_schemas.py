@@ -1,8 +1,7 @@
 from app.graph.schemas.graph import (
-    Entity,
     EntityIn,
-    ExtractResult,
     ExtractedEntity,
+    ExtractResult,
     GraphEdge,
     GraphNode,
     GraphView,

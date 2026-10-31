@@ -7,7 +7,6 @@ import httpx
 from app.core.settings import settings
 from app.rag.agentic_rag.schemas import Evidence
 
-
 HttpClientFactory = Callable[[], httpx.AsyncClient]
 
 

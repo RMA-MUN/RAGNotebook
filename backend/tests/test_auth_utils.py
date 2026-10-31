@@ -26,7 +26,6 @@ from app.utils.auth_utils import (
     hash_password,
     verify_password,
 )
-
 from tests.conftest import patch_session_factory
 from tests.fakes import install_fake_redis
 

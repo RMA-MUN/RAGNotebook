@@ -1,5 +1,4 @@
 """app/cache/redis_decorator.py 测试：缓存写入/命中、key 生成、删除与模式删除。"""
-import pytest
 
 from app.cache.redis_decorator import RedisCache, cache_with_redis
 from tests.fakes import install_fake_redis

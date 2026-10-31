@@ -20,14 +20,20 @@ export default function DocumentDetailDrawer({ filename, onClose }: DocumentDeta
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
 
-  useEffect(() => {
-    if (!filename) {
-      setDetail(null)
-      return
-    }
-    setLoading(true)
+  // filename 变化时在 render 阶段同步重置（与原 effect 语义一致，避免 effect 内同步 setState）
+  const [prevFilename, setPrevFilename] = useState<string | null | undefined>(undefined)
+  if (filename !== prevFilename) {
+    setPrevFilename(filename)
+    setDetail(null)
+    setLoading(!!filename)
     setError(false)
     setTab('content')
+  }
+
+  useEffect(() => {
+    if (!filename) {
+      return
+    }
     knowledgeApi.detail(filename)
       .then((res) => setDetail(res.data))
       .catch(() => setError(true))

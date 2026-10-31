@@ -147,7 +147,6 @@ async def test_doc_pipeline_with_prechunks(db_session, session_factory, monkeypa
 async def test_note_pipeline_wiki_edges_first_match(db_session, session_factory, monkeypatch,
                                                     neo4j_env, _cleanup):
     """[[双链]] 命中已存在笔记才建 WIKI 边；重名笔记首条匹配生效，不得 MultipleResultsFound。"""
-    from sqlalchemy import select
 
     from app.graph.storage import neo4j_client
     from app.models.note import Note
@@ -175,7 +174,6 @@ async def test_note_pipeline_wiki_edges_first_match(db_session, session_factory,
 async def test_doc_pipeline_skips_note_edges(db_session, session_factory, monkeypatch,
                                              neo4j_env, _cleanup):
     """文档正文里即便有 [[双链]] 语法也不生成笔记 WIKI 边；实体照常落图。"""
-    from sqlalchemy import select
 
     from app.graph.storage import neo4j_client
     from app.models.graph import GraphDoc
@@ -266,7 +264,6 @@ async def test_cleanup_note_graph_removes_graph_and_logs(db_session, session_fac
 async def test_extraction_replaces_stale_relations_keeps_manual(db_session, session_factory,
                                                                 monkeypatch, neo4j_env, _cleanup):
     """重抽按来源溯源替换旧关系；无溯源标记的手动关系（图谱页手工连线）不受影响。"""
-    from sqlalchemy import select
 
     from app.graph.schemas.graph import EntityIn, RelationIn
     from app.graph.storage import neo4j_client

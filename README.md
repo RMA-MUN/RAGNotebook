@@ -7,6 +7,9 @@
 <a href="https://github.com/RMA-MUN/RAGNotebook/network/members">
   <img src="https://img.shields.io/github/forks/RMA-MUN/RAGNotebook?style=flat-square&label=Forks&color=green" alt="Forks">
 </a>
+<a href="https://github.com/RMA-MUN/RAGNotebook/actions/workflows/ci.yml">
+  <img src="https://github.com/RMA-MUN/RAGNotebook/actions/workflows/ci.yml/badge.svg" alt="CI">
+</a>
   <img src="https://img.shields.io/badge/python-v3.12.4-blue.svg" alt="Python">
 </div>
 
@@ -83,7 +86,52 @@ AI 驱动的个人知识管理工具，融合 **笔记管理 + neo4j知识图谱
 
 ## 快速开始
 
-### 环境要求
+> 💡 想最快跑起来？直接用下方 **Docker 一键启动**，无需安装 Python / Node / MySQL / Redis / Neo4j。
+
+### Docker 一键启动（推荐）
+
+前置要求：已安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/) 并启动引擎；建议内存 ≥ 4GB；首次构建约 10 分钟（后端依赖较大）。
+
+```bash
+git clone https://github.com/RMA-MUN/RAGNotebook.git
+cd RAGNotebook
+```
+
+**Windows**：直接双击（或在终端运行）根目录 `start.bat`——自动生成 `backend/.env`（如不存在）、构建并启动全部 5 个容器、等待后端就绪后打开浏览器。
+
+**Linux / macOS**（手动方式，`start.bat` 仅 Windows）：
+
+```bash
+# 1. 生成环境变量文件并填入模型 Key
+cp backend/.env.example backend/.env
+#    编辑 backend/.env，至少填写 OPENAI_BASE_URL / OPENAI_API_KEY / OPENAI_MODEL_NAME
+# 2. 构建并启动（可选：改库密码在根目录 .env 中覆盖 MYSQL_ROOT_PASSWORD / NEO4J_PASSWORD）
+docker compose up -d --build
+```
+
+启动完成后：
+
+| 入口 | 地址 | 说明 |
+|------|------|------|
+| 前端页面 | http://localhost:3000 | 默认账号 `admin / admin1234`（后端启动时自动创建） |
+| 后端 API 文档 | http://localhost:8000/docs | 便于调试 |
+
+常用操作：
+
+```bash
+docker compose up -d          # 启动（重启电脑后恢复用）
+docker compose down           # 停止（数据保留）
+docker compose logs -f backend   # 查看后端日志
+docker compose restart backend   # 修改 backend/.env 的模型 Key 后使其生效
+```
+
+> **重要**：模型密钥通过 `backend/.env` 挂载注入（已 .gitignore，不会进入镜像），容器内 MySQL / Redis / Neo4j 的地址与密码由 `docker-compose.yml` 自动接管，无需也不应修改 `.env` 中的 localhost 配置；未配置 LLM Key 时服务可正常启动浏览，但问答等 AI 功能不可用。
+>
+> 数据持久化：MySQL / Redis / Neo4j 数据在 Docker 数据卷中，上传文件/日志在 `backend/media`、`backend/logs`、`backend/data` 目录。彻底重置全部数据：`docker compose down -v`（慎用，会清空数据库）。
+
+### 本地开发（非 Docker）
+
+#### 环境要求
 
 | 环境 | 版本推荐 |
 |------|----------|
@@ -91,30 +139,34 @@ AI 驱动的个人知识管理工具，融合 **笔记管理 + neo4j知识图谱
 | uv | 0.11.9 |
 | Node.js | 16+ |
 
-### 克隆项目
+#### 克隆项目
 
 ```bash
 git clone https://github.com/RMA-MUN/RAGNotebook.git
 cd RAGNotebook
 ```
 
-### 安装依赖
+#### 安装依赖
 
-#### 后端依赖
+##### 后端依赖
 ```bash
 cd backend
-uv sync
+uv sync --extra dev
 ```
 
-#### 前端依赖
+> 说明：文档解析依赖（`unstructured` + torch，数 GB）放在 `parsers`
+> 依赖组中，**默认随 `uv sync` 一起安装**，本地/Docker 行为不变；
+> CI 用 `uv sync --extra dev --no-group parsers` 跳过它以保持快速。
+
+##### 前端依赖
 ```bash
 cd front
 npm install
 ```
 
-### 环境配置
+#### 环境配置
 
-#### 创建后端环境变量文件
+##### 创建后端环境变量文件
 
 在 `backend` 目录下创建 `.env` 文件，参考 `.env.example` 文件填写配置：
 
@@ -162,7 +214,7 @@ ALGORITHM=HS256
 
 > 完整配置项（视觉模型、联网搜索兜底、跨平台混搭示例等）见 [backend/.env.example](./backend/.env.example)。
 
-### 启动服务
+#### 启动服务
 
 | 服务 | 命令 | 端口 |
 |------|------|------|
@@ -235,6 +287,8 @@ ALGORITHM=HS256
 │   │   ├── services/            # 业务服务层（笔记/回顾/笔记模板/会话管理）
 │   │   └── utils/               # 工具函数
 │   ├── data/                    # 数据存储目录
+│   ├── Dockerfile               # 后端容器镜像
+│   ├── .dockerignore
 │   ├── main.py                  # 应用入口
 │   └── pyproject.toml
 ├── front/                       # React 前端项目
@@ -266,12 +320,17 @@ ALGORITHM=HS256
 │   │   ├── types/api.ts         # TypeScript 类型定义
 │   │   ├── App.tsx              # 应用入口组件
 │   │   └── main.tsx             # 应用入口
+│   ├── Dockerfile               # 前端多阶段构建（node 编译 → nginx 托管）
+│   ├── nginx.conf               # nginx 静态托管 + 后端 API 反向代理
+│   ├── .dockerignore
 │   └── package.json
 ├── docs/                        # 项目文档
 │   ├── project_develop.md      # 项目变迁与设计思路
 │   └── troubleshooting.md      # 故障排除
 ├── images/                      # 截图资源
-└── plan/                       # 开发计划归档
+├── plan/                       # 开发计划归档
+├── docker-compose.yml           # Docker 一键启动编排（前端/后端/MySQL/Redis/Neo4j）
+└── start.bat                    # Windows 一键启动脚本
 ```
 
 ## API 文档
@@ -314,9 +373,9 @@ ALGORITHM=HS256
 ## Star History
 
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=RMA-MUN/RAGNotebook&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=RMA-MUN/RAGNotebook&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=RMA-MUN/RAGNotebook&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=rma-mun/ragnotebook&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=rma-mun/ragnotebook&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=rma-mun/ragnotebook&type=date&legend=top-left" />
  </picture>
 
 ## License

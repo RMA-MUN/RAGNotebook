@@ -14,7 +14,7 @@ from langchain.agents.middleware import ModelResponse
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.agent import agent_middleware as mw_module
-from app.agent.agent_middleware import get_middleware
+from app.agent.agent_middleware import _describe_create_note, get_middleware
 from app.agent.agent_tools import set_thinking_callback
 
 
@@ -34,7 +34,7 @@ class FakeLogger:
 
 def test_get_middleware_returns_all_hooks_in_order():
     mw = get_middleware()
-    assert len(mw) == 9
+    assert len(mw) == 10
     assert [m.name for m in mw] == [
         "log_before_agent",
         "log_after_agent",
@@ -45,6 +45,7 @@ def test_get_middleware_returns_all_hooks_in_order():
         "ModelRetryMiddleware",
         "ToolRetryMiddleware",
         "ToolCallLimitMiddleware",
+        "HumanInTheLoopMiddleware",
     ]
 
 
@@ -187,3 +188,23 @@ def test_tool_call_hook_truncates_long_args(monkeypatch):
     result = asyncio.run(mw[5].awrap_tool_call(request, handler))
     assert result == "tool-output"
     assert any("search_notes_tool" in msg for msg in fake_logger.infos)
+
+
+def test_describe_create_note_truncates_long_content():
+    """创建笔记审批摘要：长正文只带标题、字数与 120 字预览，不含全文。"""
+    tool_call = {"name": "create_note_tool",
+                 "args": {"title": "t", "content": "正文" * 200}}
+    desc = _describe_create_note(tool_call, {}, object())
+    assert "《t》" in desc
+    assert "正文约 400 字" in desc
+    assert desc.endswith("…")
+    assert "正文" * 150 not in desc
+
+
+def test_describe_create_note_short_content_kept_whole():
+    """短正文完整保留，不加省略号；缺标题时给默认值。"""
+    desc = _describe_create_note(
+        {"name": "create_note_tool", "args": {"content": "hello"}}, {}, object())
+    assert "(无标题)" in desc
+    assert desc.endswith("hello")
+    assert "…" not in desc

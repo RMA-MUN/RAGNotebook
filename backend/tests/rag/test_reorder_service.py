@@ -1,5 +1,4 @@
 """reorder_service.py — ReorderService 云端 rerank 逻辑测试（不发真实网络请求）。"""
-import pytest
 
 from app.rag.reorder_service import ReorderService
 

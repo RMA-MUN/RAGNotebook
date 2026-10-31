@@ -3,13 +3,11 @@ import json
 import uuid
 from datetime import datetime, timedelta
 
-import pytest
 from sqlalchemy import select
 
 from app.models.note import Note
 from app.models.review_record import ReviewRecord
 from app.services.review_service import INTERVALS, ReviewService, get_next_interval
-
 from tests.conftest import install_init_manager_fakes
 from tests.fakes import make_fake_chat_model
 

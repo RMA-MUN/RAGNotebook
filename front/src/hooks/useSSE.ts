@@ -7,6 +7,7 @@ type SSECallback = {
   onResponse?: (content: string, sessionId?: string) => void
   onDone?: (sessionId?: string) => void
   onError?: (error: string) => void
+  onInterrupt?: (msg: SSEMessage) => void
   onKnowledgeProgress?: (data: KnowledgeSSEMessage) => void
 }
 
@@ -105,6 +106,10 @@ export function useSSE() {
                     flushResponse()
                     callbacks.onError?.(msg.content || 'Unknown error')
                     setError(msg.content || 'Unknown error')
+                    break
+                  case 'interrupt':
+                    flushResponse()
+                    callbacks.onInterrupt?.(msg)
                     break
                 }
               } catch {

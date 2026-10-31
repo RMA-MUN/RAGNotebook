@@ -276,9 +276,8 @@ async def test_protected_endpoint_invalid_token(raw_client):
 
 async def test_protected_endpoint_revoked_token(raw_client, monkeypatch, session_factory):
     """Token 已被加入黑名单 → 401。"""
-    from tests.fakes import FakeRedis
-
     from app.utils.auth_utils import decode_django_jwt
+    from tests.fakes import FakeRedis
 
     redis = FakeRedis()
     await install_fake_redis(monkeypatch, redis)

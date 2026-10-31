@@ -12,6 +12,8 @@ export const endpoints = {
 
   // AI Chat
   agentQueryStream: '/chat/agent/query/stream',
+  agentResume: '/chat/agent/resume',
+  getSessionPending: (id: string) => `/chat/session/${id}/pending`,
 
   // Sessions
   getSession: (id: string) => `/chat/session/${id}`,

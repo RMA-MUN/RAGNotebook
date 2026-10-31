@@ -29,8 +29,15 @@ class Settings(BaseSettings):
     # Agent 直接调用时的独立 API Key（为空回落 OPENAI_API_KEY 语义由调用方实现）
     CHAT_API_KEY: str = ""
 
-    # 视觉模型（VISION_ENABLED 三态：None=默认启用 / "false"=关闭 / "true"=强制启用）
-    VISION_BASE_URL: str | None = None
+    # 检索规划小模型（规划只是吐小 JSON，用快模型即可；三件套为空时按序复用
+    # EMBED_* 通道（同为硅基流动则 key 通用）→ 回落 OPENAI_*；见 resolve_planner_config）
+    PLANNER_BASE_URL: str | None = None
+    PLANNER_API_KEY: str | None = None
+    PLANNER_MODEL_NAME: str | None = None
+    # 规划 LLM 超时秒数：超时直接用确定性 fallback，保证延迟有上界
+    PLANNER_TIMEOUT_S: float = 8.0
+
+    # 视觉模型（VISION_ENABLED 三态：None=默认启用 / "false"=关闭 / "true"=强制启用）    VISION_BASE_URL: str | None = None
     VISION_API_KEY: str | None = None
     VISION_MODEL_NAME: str | None = None
     VISION_ENABLED: str | None = None

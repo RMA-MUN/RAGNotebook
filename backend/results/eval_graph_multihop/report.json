@@ -1,0 +1,257 @@
+{
+  "summary": {
+    "n_paths": 15,
+    "graph_ac_entity_recall": 0.933,
+    "graph_evidence_has_b": 0.867,
+    "text_evidence_has_b": 0.6,
+    "graph_answer_accuracy": 0.4,
+    "text_answer_accuracy": 0.4,
+    "delta_answer": 0.0,
+    "mean_graph_latency_ms": 43278.1
+  },
+  "rows": [
+    {
+      "path": "iPhone 6s -是...的产品-> 苹果 -提供-> iCloud",
+      "question": "根据知识图谱，实体“iPhone 6s”和“iCloud”之间是如何关联的？请指出中间实体与关系。",
+      "gold_mid": "苹果",
+      "graph_entities": [
+        "iPhone 6s",
+        "iCloud",
+        "iCloud相册"
+      ],
+      "graph_ac_hit": true,
+      "graph_evidence_has_b": true,
+      "graph_answer_correct": 0,
+      "graph_answer": "根据提供的知识图谱资料，实体“iPhone 6s”和“iCloud”的描述中未直接指定它们之间的关联关系。知识图谱条目[1]、[2]、[3]仅提供了实体的基本信息：iPhone 6s是苹果公司推出的一款智能手机型号；iCloud是苹果公司提供的云存储和云服务；iCloud相册是iCloud中用于同步和管理照片与视频的特定功能。这些条目中没有包含实体间的关系元组或明确路径。\n\n基于相关知识库文档[6",
+      "graph_latency_ms": 36057.8,
+      "text_evidence_has_b": true,
+      "text_answer_correct": 0
+    },
+    {
+      "path": "闲鱼 -禁止私下联系-> 微信 -抓取内容-> HTML",
+      "question": "根据知识图谱，实体“闲鱼”和“HTML”之间是如何关联的？请指出中间实体与关系。",
+      "gold_mid": "微信",
+      "graph_entities": [
+        "闲鱼",
+        "闲鱼卖货速推网",
+        "HTML"
+      ],
+      "graph_ac_hit": true,
+      "graph_evidence_has_b": true,
+      "graph_answer_correct": 0,
+      "graph_answer": "根据提供的参考资料，实体“闲鱼”和“HTML”在知识图谱中没有直接或明确的关联路径。以下是基于现有资料的分析：\n\n### 知识图谱实体和关系：\n- **实体“闲鱼”**：来自知识图谱《闲鱼》，描述为一个二手交易平台。\n- **实体“HTML”**：来自知识图谱《HTML》，描述为用于创建网页的标记语言。\n- **实体“闲鱼卖货速推网”**：来自知识图谱《闲鱼卖货速推网》，描述为一个提供闲鱼卖货助推",
+      "graph_latency_ms": 35191.2,
+      "text_evidence_has_b": false,
+      "text_answer_correct": 0
+    },
+    {
+      "path": "weixin-js-sdk -包含接口-> wx.ready -调用-> updateTimelineShareData",
+      "question": "根据知识图谱，实体“weixin-js-sdk”和“updateTimelineShareData”之间是如何关联的？请指出中间实体与关系。",
+      "gold_mid": "wx.ready",
+      "graph_entities": [
+        "weixin-js-sdk",
+        "updateTimelineShareData"
+      ],
+      "graph_ac_hit": true,
+      "graph_evidence_has_b": true,
+      "graph_answer_correct": 0,
+      "graph_answer": "根据提供的资料，实体“weixin-js-sdk”和“updateTimelineShareData”在知识图谱中没有直接的关联关系，但它们共同关联到同一个文档实体“doc-5a0185795a481dd76e9d4877a05aa002”。\n\n### 具体关联路径：\n- **中间实体**：`doc-5a0185795a481dd76e9d4877a05aa002`（微信JS-SDK使用文档）\n-",
+      "graph_latency_ms": 39806.3,
+      "text_evidence_has_b": true,
+      "text_answer_correct": 0
+    },
+    {
+      "path": "错误处理 -保护-> up_wap -运行于-> Oracle Database",
+      "question": "根据知识图谱，实体“错误处理”和“Oracle Database”之间是如何关联的？请指出中间实体与关系。",
+      "gold_mid": "up_wap",
+      "graph_entities": [
+        "错误处理",
+        "Oracle Database"
+      ],
+      "graph_ac_hit": true,
+      "graph_evidence_has_b": false,
+      "graph_answer_correct": 0,
+      "graph_answer": "根据您提供的知识图谱参考资料，目前无法确定实体“错误处理”与“Oracle Database”之间的直接关联关系。  \n\n已知信息如下：  \n- **错误处理**：指PL/SQL代码中用于捕获和处理异常的部分。  \n- **Oracle Database**：关系型数据库管理系统。  \n\n由于参考资料中仅分别给出了两个实体的独立定义，**未提供它们之间的关系路径、中间实体或直接关联信息**，因此无",
+      "graph_latency_ms": 39392.0,
+      "text_evidence_has_b": false,
+      "text_answer_correct": 0
+    },
+    {
+      "path": "吴莫愁 -是成员-> 白队 -参与-> 《奔跑吧兄弟》",
+      "question": "根据知识图谱，实体“吴莫愁”和“《奔跑吧兄弟》”之间是如何关联的？请指出中间实体与关系。",
+      "gold_mid": "白队",
+      "graph_entities": [
+        "吴莫愁",
+        "《奔跑吧兄弟》"
+      ],
+      "graph_ac_hit": true,
+      "graph_evidence_has_b": true,
+      "graph_answer_correct": 1,
+      "graph_answer": "根据提供的资料，**无法直接得出**实体“吴莫愁”和“《奔跑吧兄弟》”之间在知识图谱中的关联路径。\n\n以下是基于现有资料的分析：\n\n1.  **资料局限性**：提供的知识图谱资料仅包含对“吴莫愁”和“《奔跑吧兄弟》”两个实体的**独立定义**。\n    *   关于“吴莫愁”的图谱条目 [1] 描述了她的身份（歌手）和出道经历，其中提到她是“**白队成员之一**”，但并未指明是哪个具体节目或事件中",
+      "graph_latency_ms": 42215.5,
+      "text_evidence_has_b": true,
+      "text_answer_correct": 1
+    },
+    {
+      "path": "文件传输助手 -属于-> 微信 -抓取缩略图-> img",
+      "question": "根据知识图谱，实体“文件传输助手”和“img”之间是如何关联的？请指出中间实体与关系。",
+      "gold_mid": "微信",
+      "graph_entities": [
+        "文件传输助手",
+        "img"
+      ],
+      "graph_ac_hit": true,
+      "graph_evidence_has_b": true,
+      "graph_answer_correct": 0,
+      "graph_answer": "根据提供的资料，实体 **“文件传输助手”** 和 **“img”** 之间没有直接关联。  \n通过分析，它们之间存在一条可能的间接关联路径，但需要借助中间实体和关系。具体如下：\n\n---\n\n### **关联路径**  \n**“文件传输助手”** → **（传输）** → **“图片”** ← **（展示为）** ← **“img”**\n\n### **详细说明**  \n1. **“文件传输助手”*",
+      "graph_latency_ms": 43577.2,
+      "text_evidence_has_b": true,
+      "text_answer_correct": 0
+    },
+    {
+      "path": "妈妈 -哺乳与照料-> 宝宝 -会做-> 世界体操姿势",
+      "question": "根据知识图谱，实体“妈妈”和“世界体操姿势”之间是如何关联的？请指出中间实体与关系。",
+      "gold_mid": "宝宝",
+      "graph_entities": [
+        "妈妈",
+        "产后妈妈",
+        "世界体操姿势"
+      ],
+      "graph_ac_hit": true,
+      "graph_evidence_has_b": true,
+      "graph_answer_correct": 0,
+      "graph_answer": "根据提供的参考资料，实体“妈妈”和“世界体操姿势”之间通过 **“胎儿”** 这一中间实体相关联。具体关联路径和关系如下：\n\n**关联路径：**\n1.  **妈妈** — (孕育关系) —> **胎儿**\n2.  **胎儿** — (表现出特定状态或动作) —> **世界体操姿势**\n\n**具体说明：**\n- **中间实体：** **胎儿**。这是连接“妈妈”与“世界体操姿势”的核心纽带。\n- *",
+      "graph_latency_ms": 55713.4,
+      "text_evidence_has_b": true,
+      "text_answer_correct": 1
+    },
+    {
+      "path": "37个国家的元首、政府首脑等领导人 -参与者-> 一带一路国际合作高峰论坛 -讨论主题-> 一带一路",
+      "question": "根据知识图谱，实体“37个国家的元首、政府首脑等领导人”和“一带一路”之间是如何关联的？请指出中间实体与关系。",
+      "gold_mid": "一带一路国际合作高峰论坛",
+      "graph_entities": [
+        "37个国家的元首、政府首脑等领导人",
+        "一带一路",
+        "一带一路国际合作高峰论坛"
+      ],
+      "graph_ac_hit": true,
+      "graph_evidence_has_b": false,
+      "graph_answer_correct": 1,
+      "graph_answer": "## 知识图谱关联分析\n\n根据提供的知识图谱资料，**\"37个国家的元首、政府首脑等领导人\"** 和 **\"一带一路\"** 之间通过一个中间实体相关联：\n\n### 关联路径\n\n```\n37个国家的元首、政府首脑等领导人\n        ↓ [确认出席]\n    一带一路国际合作高峰论坛\n        ↓ [是关于]\n       一带一路\n```\n\n### 具体关系说明\n\n| 关系起点 | 关系",
+      "graph_latency_ms": 42552.2,
+      "text_evidence_has_b": false,
+      "text_answer_correct": 1
+    },
+    {
+      "path": "wx.config -调用前置-> wx.ready -调用-> updateTimelineShareData",
+      "question": "根据知识图谱，实体“wx.config”和“updateTimelineShareData”之间是如何关联的？请指出中间实体与关系。",
+      "gold_mid": "wx.ready",
+      "graph_entities": [
+        "wx.config",
+        "updateTimelineShareData"
+      ],
+      "graph_ac_hit": true,
+      "graph_evidence_has_b": true,
+      "graph_answer_correct": 1,
+      "graph_answer": "根据您提供的知识图谱与知识库资料，实体 **`wx.config`** 和 **`updateTimelineShareData`** 之间存在直接的**调用与依赖关系**。\n\n以下是具体的关联路径和中间实体：\n\n### 关联实体与关系\n\n1.  **起点实体**：`wx.config`（微信JS-SDK的配置接口）\n2.  **中间实体**：**`wx.ready`**（微信JS-SDK的就绪回",
+      "graph_latency_ms": 56521.7,
+      "text_evidence_has_b": true,
+      "text_answer_correct": 1
+    },
+    {
+      "path": "百度经验 -提供教程-> QQ -可运行于-> iPad Pro",
+      "question": "根据知识图谱，实体“百度经验”和“iPad Pro”之间是如何关联的？请指出中间实体与关系。",
+      "gold_mid": "QQ",
+      "graph_entities": [
+        "百度经验",
+        "iPad Pro"
+      ],
+      "graph_ac_hit": true,
+      "graph_evidence_has_b": true,
+      "graph_answer_correct": 0,
+      "graph_answer": "## 分析结果\n\n根据提供的资料，**\"百度经验\"和\"iPad Pro\"之间没有直接的关联关系**。\n\n### 具体分析：\n\n**实体信息：**\n- **百度经验**（资料[1]）：百度旗下的生活经验分享平台\n- **iPad Pro**（资料[2]）：苹果公司生产的平板电脑型号\n\n**关联来源对比：**\n\n| 实体 | 关联文档 |\n|------|----------|\n| 百度经验 | do",
+      "graph_latency_ms": 35909.8,
+      "text_evidence_has_b": false,
+      "text_answer_correct": 0
+    },
+    {
+      "path": "丁桂脐贴 -用于治疗-> 宝宝 -会做-> 世界体操姿势",
+      "question": "根据知识图谱，实体“丁桂脐贴”和“世界体操姿势”之间是如何关联的？请指出中间实体与关系。",
+      "gold_mid": "宝宝",
+      "graph_entities": [
+        "丁桂脐贴",
+        "世界体操姿势"
+      ],
+      "graph_ac_hit": true,
+      "graph_evidence_has_b": true,
+      "graph_answer_correct": 0,
+      "graph_answer": "根据提供的资料分析，**\"丁桂脐贴\"和\"世界体操姿势\"之间没有直接的关联关系**。\n\n具体分析如下：\n\n| 实体 | 知识图谱类型 | 关联文档 |\n|------|-------------|---------|\n| 丁桂脐贴 | 外用药品 | doc-6ddb6d585dbd3f1a835e5548cd5af843 |\n| 世界体操姿势 | 胎儿宫内动作 | doc-cf2598af44d69",
+      "graph_latency_ms": 39863.4,
+      "text_evidence_has_b": true,
+      "text_answer_correct": 1
+    },
+    {
+      "path": "迭代器模式 -使用于-> Java -被比较-> VB",
+      "question": "根据知识图谱，实体“迭代器模式”和“VB”之间是如何关联的？请指出中间实体与关系。",
+      "gold_mid": "Java",
+      "graph_entities": [
+        "迭代器模式"
+      ],
+      "graph_ac_hit": false,
+      "graph_evidence_has_b": true,
+      "graph_answer_correct": 0,
+      "graph_answer": "根据您提供的参考资料，**无法确定\"迭代器模式\"和\"VB\"之间的关联**。\n\n## 资料分析\n\n**资料[1]（知识图谱）中关于\"迭代器模式\"的信息：**\n- 类型：未分类\n- 描述：一种广泛使用的软件设计模式，用于遍历集合\n- 别名：无\n- 关联来源：doc-a20bb65b766b371c5aa83fe6dab813f1\n\n**资料[2]（知识库文档）中提到的编程语言：**\n- Java\n- ",
+      "graph_latency_ms": 46288.5,
+      "text_evidence_has_b": true,
+      "text_answer_correct": 0
+    },
+    {
+      "path": "网络营业厅 -官方网站-> 中国移动 -曾施行-> 1毛1G",
+      "question": "根据知识图谱，实体“网络营业厅”和“1毛1G”之间是如何关联的？请指出中间实体与关系。",
+      "gold_mid": "中国移动",
+      "graph_entities": [
+        "网络营业厅",
+        "1毛1G"
+      ],
+      "graph_ac_hit": true,
+      "graph_evidence_has_b": true,
+      "graph_answer_correct": 1,
+      "graph_answer": "根据提供的资料，实体“网络营业厅”和“1毛1G”之间**没有直接的明确关联关系**。但通过资料内容，可以推断出它们共享一个核心关联实体——**中国移动**。\n\n基于现有资料，它们的间接关联路径如下：\n\n1.  **实体“中国移动”是核心关联点**：\n    *   资料[2]和资料[4]均明确指出，“1毛1G”是**中国移动**曾施行过的流量资费标准。\n    *   资料[3]中描述的“移动网上",
+      "graph_latency_ms": 54904.8,
+      "text_evidence_has_b": false,
+      "text_answer_correct": 0
+    },
+    {
+      "path": "Excel Password Geeker -用于恢复密码-> Excel -包含函数-> SUMPRODUCT函数",
+      "question": "根据知识图谱，实体“Excel Password Geeker”和“SUMPRODUCT函数”之间是如何关联的？请指出中间实体与关系。",
+      "gold_mid": "Excel",
+      "graph_entities": [
+        "Excel Password Geeker",
+        "SUMPRODUCT函数"
+      ],
+      "graph_ac_hit": true,
+      "graph_evidence_has_b": true,
+      "graph_answer_correct": 1,
+      "graph_answer": "# 实体关联分析\n\n根据提供的知识图谱资料，以下是关联分析：\n\n## 实体描述\n- **Excel Password Geeker**：一款用于恢复Excel密码的软件工具\n- **SUMPRODUCT函数**：一个用于进行范围统计计算的Excel函数\n\n## 推断的关联路径\n\n```\nExcel Password Geeker ——适用于/用于处理——> Excel <——属于/内置函数—— S",
+      "graph_latency_ms": 44392.8,
+      "text_evidence_has_b": true,
+      "text_answer_correct": 1
+    },
+    {
+      "path": "徐良 -悼念-> 本兮 -发行-> 《一个人的》",
+      "question": "根据知识图谱，实体“徐良”和“《一个人的》”之间是如何关联的？请指出中间实体与关系。",
+      "gold_mid": "本兮",
+      "graph_entities": [
+        "徐良",
+        "《一个人的》"
+      ],
+      "graph_ac_hit": true,
+      "graph_evidence_has_b": true,
+      "graph_answer_correct": 1,
+      "graph_answer": "## 实体关联分析\n\n根据知识图谱资料，实体\"徐良\"和\"《一个人的》\"之间的关联路径如下：\n\n### 关联路径\n\n```\n徐良 ——(曾与合作)——> 本兮 ——(发行)——> 《一个人的》\n```\n\n### 具体说明\n\n| 节点 | 关系 | 节点 |\n|------|------|------|\n| 徐良 | 曾与...合作 | 本兮 |\n| 本兮 | 发行 | 《一个人的》 |\n\n### 中",
+      "graph_latency_ms": 36784.8,
+      "text_evidence_has_b": false,
+      "text_answer_correct": 0
+    }
+  ]
+}

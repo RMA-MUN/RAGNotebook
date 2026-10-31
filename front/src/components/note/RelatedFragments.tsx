@@ -14,9 +14,16 @@ export default function RelatedFragments({ noteId, open, onClose }: Props) {
   const [loading, setLoading] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
+  // 对话框目标变化时在 render 阶段同步置 loading（与原 effect 语义一致，避免 effect 内同步 setState）
+  const activeKey = open ? noteId : null
+  const [prevKey, setPrevKey] = useState<string | null | undefined>(undefined)
+  if (activeKey !== prevKey) {
+    setPrevKey(activeKey)
+    if (activeKey !== null) setLoading(true)
+  }
+
   useEffect(() => {
     if (!open || !noteId) return
-    setLoading(true)
     notesApi.related(noteId)
       .then((res) => setFragments(res.data ?? []))
       .catch(() => {})

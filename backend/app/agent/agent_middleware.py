@@ -22,6 +22,7 @@ except ImportError:
 
 try:
     from langchain.agents.middleware import (
+        HumanInTheLoopMiddleware,
         ModelRetryMiddleware,
         ToolCallLimitMiddleware,
         ToolRetryMiddleware,
@@ -55,6 +56,7 @@ except ImportError:
     after_model = _fallback_middleware("after_model")
     wrap_model_call = _fallback_middleware("wrap_model_call")
     wrap_tool_call = _fallback_middleware("wrap_tool_call")
+    HumanInTheLoopMiddleware = None
     ModelRetryMiddleware = None
     ToolRetryMiddleware = None
     ToolCallLimitMiddleware = None
@@ -66,6 +68,24 @@ except ImportError:
 
 from app.agent.agent_tools import get_thinking_callback_from_context
 from app.core.logger_handler import logger
+
+
+def _describe_create_note(tool_call, state, runtime) -> str:
+    """创建笔记审批摘要：只带标题、正文长度与开头预览，避免把全文塞进审批负载。"""
+    args = (tool_call.get("args") if isinstance(tool_call, dict) else {}) or {}
+    title = args.get("title") or "(无标题)"
+    content = args.get("content") or ""
+    preview = content[:120]
+    suffix = "…" if len(content) > 120 else ""
+    return f"将创建笔记《{title}》（正文约 {len(content)} 字）：{preview}{suffix}"
+
+DEFAULT_APPROVAL_TOOLS: dict = {
+    "create_note_tool": {
+        "allowed_decisions": ["approve", "reject"],
+        "description": _describe_create_note,
+    },
+}
+
 
 SLOW_MODEL_CALL_MS = 5000
 TOOL_ARGS_LOG_LIMIT = 200
@@ -171,8 +191,11 @@ async def tool_call_hook(request, handler):
     return response
 
 
-def get_middleware():
-    """返回本模块的所有中间件（自定义钩子 + 官方健壮性中间件）。"""
+def get_middleware(approval_tools: dict | None = None):
+    """返回本模块的所有中间件（自定义钩子 + 官方健壮性中间件 + HITL 审批中间件）。
+
+    approval_tools: {工具名: {"allowed_decisions": [...]}}；None 使用默认白名单。
+    """
     middleware = [
         log_before_agent,
         log_after_agent,
@@ -187,4 +210,13 @@ def get_middleware():
             ToolRetryMiddleware(max_retries=1),
             ToolCallLimitMiddleware(run_limit=5),
         ]
+    if HumanInTheLoopMiddleware is not None:
+        middleware.append(
+            HumanInTheLoopMiddleware(
+                interrupt_on=approval_tools or DEFAULT_APPROVAL_TOOLS,
+                description_prefix="工具执行需要你的确认",
+            )
+        )
+    else:
+        logger.warning("HumanInTheLoopMiddleware 不可用，审批中间件已禁用（降级模式）。")
     return middleware

@@ -1,6 +1,5 @@
 """vision_service.py — VisionService 测试（假视觉模型 + tmp 图片文件）。"""
 import base64
-import os
 
 import pytest
 from langchain_core.messages import AIMessage

@@ -12,8 +12,10 @@ from app.utils.factory import (
     RerankerModelFactory,
     VisionModelFactory,
     _resolve_openai_config,
+    create_planner_chat_openai,
     resolve_chat_config,
     resolve_embed_config,
+    resolve_planner_config,
     resolve_vision_config,
 )
 
@@ -29,6 +31,9 @@ ALL_KEYS = [
     "EMBED_BASE_URL",
     "EMBED_API_KEY",
     "EMBED_MODEL_NAME",
+    "PLANNER_BASE_URL",
+    "PLANNER_API_KEY",
+    "PLANNER_MODEL_NAME",
 ]
 
 
@@ -198,6 +203,83 @@ def test_embed_config_full_own_credentials(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# resolve_planner_config（规划小模型：PLANNER_* → 复用 EMBED 通道 → OPENAI_*）
+# ---------------------------------------------------------------------------
+def test_planner_config_reuses_embed_channel_by_default(monkeypatch):
+    """不配 PLANNER_* 时自动复用 EMBED 硅基流动通道，零新增配置切小模型。"""
+    _clear_env(monkeypatch)
+    monkeypatch.setattr(settings, "EMBED_BASE_URL", "https://api.siliconflow.cn/v1")
+    monkeypatch.setattr(settings, "EMBED_API_KEY", "sk-embed")
+    cfg = resolve_planner_config()
+    assert cfg == {
+        "model": "Qwen/Qwen3-8B",
+        "api_key": "sk-embed",
+        "base_url": "https://api.siliconflow.cn/v1",
+    }
+
+
+def test_planner_config_own_trio_wins(monkeypatch):
+    _clear_env(monkeypatch)
+    monkeypatch.setattr(settings, "EMBED_BASE_URL", "https://api.siliconflow.cn/v1")
+    monkeypatch.setattr(settings, "EMBED_API_KEY", "sk-embed")
+    monkeypatch.setattr(settings, "PLANNER_BASE_URL", "https://planner.example/v1")
+    monkeypatch.setattr(settings, "PLANNER_API_KEY", "sk-planner")
+    monkeypatch.setattr(settings, "PLANNER_MODEL_NAME", "tiny-model")
+    cfg = resolve_planner_config()
+    assert cfg == {
+        "model": "tiny-model",
+        "api_key": "sk-planner",
+        "base_url": "https://planner.example/v1",
+    }
+
+
+def test_planner_config_falls_back_to_openai(monkeypatch):
+    _clear_env(monkeypatch)
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://openai.example")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-openai")
+    cfg = resolve_planner_config()
+    assert cfg["base_url"] == "https://openai.example"
+    assert cfg["api_key"] == "sk-openai"
+
+
+def test_planner_config_partial_planner_never_mixes_vendors(monkeypatch):
+    """只配 PLANNER_BASE_URL 不配 key：绝不混搭他家 key，退回 EMBED/OPENAI 完整通道。"""
+    _clear_env(monkeypatch)
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://openai.example")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setattr(settings, "PLANNER_BASE_URL", "https://planner.example/v1")
+    cfg = resolve_planner_config()
+    assert cfg["base_url"] == "https://openai.example"
+    assert cfg["api_key"] == "sk-openai"
+
+
+# ---------------------------------------------------------------------------
+# create_planner_chat_openai（Qwen 系通道关 thinking，OpenAI 官方不带）
+# ---------------------------------------------------------------------------
+def test_planner_client_disables_thinking_on_siliconflow(monkeypatch):
+    _clear_env(monkeypatch)
+    monkeypatch.setattr(settings, "EMBED_BASE_URL", "https://api.siliconflow.cn/v1")
+    monkeypatch.setattr(settings, "EMBED_API_KEY", "sk-embed")
+    client = create_planner_chat_openai()
+    assert client is not None
+    assert getattr(client, "extra_body", None) == {"enable_thinking": False}
+
+
+def test_planner_client_no_extra_params_on_openai(monkeypatch):
+    _clear_env(monkeypatch)
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-openai")
+    client = create_planner_chat_openai()
+    assert client is not None
+    assert getattr(client, "extra_body", None) in (None, {})
+
+
+def test_planner_client_none_without_config(monkeypatch):
+    _clear_env(monkeypatch)
+    assert create_planner_chat_openai() is None
+
+
+# ---------------------------------------------------------------------------
 # factories (network-free branches only)
 # ---------------------------------------------------------------------------
 def test_vision_factory_disabled_returns_none(monkeypatch):
@@ -215,6 +297,32 @@ def test_vision_factory_fail_soft_without_config(monkeypatch):
 def test_vision_factory_default_when_unset_and_no_config(monkeypatch):
     _clear_env(monkeypatch)
     assert VisionModelFactory().generator() is None
+
+
+def test_embed_factory_fail_soft_without_config(monkeypatch, caplog):
+    _clear_env(monkeypatch)
+
+    assert EmbedModelFactory().generator() is None
+    assert "嵌入配置不完整" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("embed_base_url", "embed_api_key"),
+    [
+        ("https://embed.example/v1", None),
+        (None, "sk-embed"),
+    ],
+    ids=["base-url-only", "api-key-only"],
+)
+def test_embed_factory_fail_soft_with_partial_config(
+    monkeypatch, caplog, embed_base_url, embed_api_key,
+):
+    _clear_env(monkeypatch)
+    monkeypatch.setattr(settings, "EMBED_BASE_URL", embed_base_url)
+    monkeypatch.setattr(settings, "EMBED_API_KEY", embed_api_key)
+
+    assert EmbedModelFactory().generator() is None
+    assert "嵌入配置不完整" in caplog.text
 
 
 def test_reranker_factory_always_returns_none():

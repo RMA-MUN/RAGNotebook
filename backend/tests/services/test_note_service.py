@@ -13,14 +13,12 @@ import uuid
 import zipfile
 from datetime import datetime, timedelta
 
-import pytest
 from sqlalchemy import select
 
 from app.models.note import Note
 from app.models.review_record import ReviewRecord
 from app.schemas.models import NoteCreate, NoteUpdate
 from app.services.note_service import NoteService
-
 from tests.conftest import (
     install_init_manager_fakes,
     patch_session_factory,
@@ -328,8 +326,8 @@ async def test_get_category_stats(real_note_service, db_session):
 
 async def test_delete_category_removes_notes(real_note_service, db_session, session_factory):
     svc = real_note_service
-    w1 = await _seed_note(db_session, USER, title="w1", category="work")
-    w2 = await _seed_note(db_session, USER, title="w2", category="work")
+    await _seed_note(db_session, USER, title="w1", category="work")
+    await _seed_note(db_session, USER, title="w2", category="work")
     s1 = await _seed_note(db_session, USER, title="s1", category="study")
 
     deleted = await svc.delete_category(db_session, USER, "work")

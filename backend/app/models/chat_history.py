@@ -12,6 +12,7 @@ class ChatSession(Base):
     user_id = Column(String(64), index=True, nullable=False)
 
     title = Column(String(255), default="新的对话")
+    pending_run_id = Column(String(64), nullable=True, default=None)
     metadata_ = Column(JSON, name="metadata")  # metadata 是 SQL 保留字，加下划线
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

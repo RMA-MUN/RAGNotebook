@@ -77,6 +77,7 @@ class AnswerabilityEvaluator:
     async def evaluate(self, query: str, evidences: list[Evidence]) -> AnswerabilityResult:
         # 规则快路径：结论确定，无需 LLM
         if not evidences:
+            logger.info("【RAG耗时】evaluator=规则直出(无证据→不可答)")
             return AnswerabilityResult(
                 answerable=False,
                 confidence=0.0,
@@ -84,6 +85,7 @@ class AnswerabilityEvaluator:
                 web_queries=[query],
             )
         if has_freshness_term(query):
+            logger.info("【RAG耗时】evaluator=规则直出(新鲜词→需联网)")
             return AnswerabilityResult(
                 answerable=False,
                 confidence=0.35,
@@ -93,9 +95,15 @@ class AnswerabilityEvaluator:
 
         model = self.chat_model if self.chat_model is not None else _resolve_shared_chat_model()
         if model is None:
+            logger.info("【RAG耗时】evaluator=规则回落(无可用模型)")
             return self._rule_fallback()
         try:
-            return await self._llm_evaluate(query, evidences, model)
+            import time
+
+            t0 = time.perf_counter()
+            result = await self._llm_evaluate(query, evidences, model)
+            logger.info(f"【RAG耗时】evaluator_LLM={(time.perf_counter() - t0) * 1000:.0f}ms answerable={result.answerable}")
+            return result
         except Exception as e:
             logger.warning(f"可答性 LLM 判定失败，回落规则: {query}: {e}")
             return self._rule_fallback()

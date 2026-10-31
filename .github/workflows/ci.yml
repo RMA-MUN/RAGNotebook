@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.12.14"
+          python-version: "3.12"
+          enable-cache: true
+          working-directory: backend
+
+      # 跳过 parsers 组（unstructured + torch/CUDA，数 GB）：测试不需要它
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev --no-group parsers
+
+      # 必须 --no-sync：否则 uv run 会重新同步默认组，把 parsers 装回来
+      - name: Lint
+        run: uv run --no-sync ruff check .
+
+      - name: Test
+        run: uv run --no-sync pytest -q
+
+      - name: Assert heavy deps excluded
+        run: uv run --no-sync python -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('torch') is None and importlib.util.find_spec('unstructured') is None else 1)"
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: front/package-lock.json
+
+      - name: Install dependencies
+        working-directory: front
+        run: npm ci
+
+      - name: Lint
+        working-directory: front
+        run: npm run lint
+
+      - name: Build
+        working-directory: front
+        run: npm run build

@@ -76,13 +76,17 @@ class QueryEntityExtractor:
         )
 
     async def extract(self, query: str) -> list[str]:
+        import time
+
         candidates: list[str] = []
         model = self._resolve_chat_model()
         if model is None:
             candidates = _fallback_candidates(query)
+            logger.info(f"【RAG耗时】entity_extract=规则直出 candidates={candidates}")
             return candidates
+        t0 = time.perf_counter()
+        used_llm = True
         try:
-            from langchain_core.messages import HumanMessage
             prompt = self.prompt_template.replace("{query}", query)
             response = await model.ainvoke(prompt)
             content = getattr(response, "content", response)
@@ -91,9 +95,13 @@ class QueryEntityExtractor:
         except Exception as e:
             logger.warning(f"LLM 查询实体抽取失败，回落规则: {query}: {e}")
             candidates = []
+            used_llm = False
 
         if not candidates:
             candidates = _fallback_candidates(query)
+            used_llm = False
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        logger.info(f"【RAG耗时】entity_extract={elapsed_ms:.0f}ms used_llm={used_llm} candidates={candidates}")
         return candidates
 
     def _resolve_chat_model(self):

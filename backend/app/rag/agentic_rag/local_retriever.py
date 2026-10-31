@@ -8,6 +8,7 @@
 工具名保持不变，执行层为图存储检索。
 """
 import asyncio
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -53,17 +54,31 @@ class LocalRetriever:
     async def _search_chunks(self, user_id: str, step: RetrievalStep,
                              kinds: list[str] | None) -> list[Evidence]:
         """种子检索：向量 + 全文（store 内 RRF 融合）取 top chunk。"""
+        t0 = time.perf_counter()
         async with self.session_factory() as db:
             store = get_graph_store(db)
+            t_emb = time.perf_counter()
             embedding = await self._query_embedding(step.query)
+            emb_ms = (time.perf_counter() - t_emb) * 1000
+            t_search = time.perf_counter()
             hits = await store.search_chunks(user_id, embedding, step.query, kinds, step.top_k)
+            search_ms = (time.perf_counter() - t_search) * 1000
+            total_ms = (time.perf_counter() - t0) * 1000
+            logger.info(
+                f"【RAG耗时】search_chunks tool={step.tool} kinds={kinds} total={total_ms:.0f}ms "
+                f"embed={emb_ms:.0f}ms store_search={search_ms:.0f}ms hits={len(hits)} "
+                f"embed_none={embedding is None}"
+            )
             return [self._chunk_to_evidence(hit) for hit in hits]
 
     async def _search_graph(self, user_id: str, step: RetrievalStep) -> list[Evidence]:
         """从知识图谱检索：先抽实体候选词匹配实体（证据=描述+类型+别名+关联来源），
         Neo4j 主路径再补命中实体所在的 chunk 片段，让图谱证据有正文可引。"""
         evidences: list[Evidence] = []
+        t0 = time.perf_counter()
+        t_extract = time.perf_counter()
         names = await self._entity_candidates(step.query)
+        extract_ms = (time.perf_counter() - t_extract) * 1000
         matched_entity_ids: list[str] = []
         async with self.session_factory() as db:
             store = get_graph_store(db)
@@ -105,6 +120,11 @@ class LocalRetriever:
                 except NotImplementedError:
                     chunk_hits = []
                 evidences.extend(self._chunk_to_evidence(hit) for hit in chunk_hits)
+        graph_ms = (time.perf_counter() - t0) * 1000
+        logger.info(
+            f"【RAG耗时】search_graph total={graph_ms:.0f}ms entity_extract={extract_ms:.0f}ms "
+            f"names={names} entities={len(matched_entity_ids)} evidences={len(evidences)}"
+        )
         return evidences
 
     async def _entity_candidates(self, query: str) -> list[str]:

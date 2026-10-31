@@ -11,32 +11,33 @@ export default function AuthImage({ src, alt, className }: AuthImageProps) {
   const [loaded, setLoaded] = useState(false)
   const mountedRef = useRef(true)
 
-  useEffect(() => {
-    mountedRef.current = true
+  // src 变化时在 render 阶段同步重置（与原 effect 语义一致，避免 effect 内同步 setState）
+  const [prevSrc, setPrevSrc] = useState<string | undefined>(undefined)
+  if (src !== prevSrc) {
+    setPrevSrc(src)
     setBlobUrl(null)
     setLoaded(false)
+  }
+
+  useEffect(() => {
+    mountedRef.current = true
 
     const token = localStorage.getItem('jwt_token')
-    if (!token) {
-      setBlobUrl(src)
-      return
-    }
+    const load: Promise<string> = token
+      ? fetch(src, { headers: { Authorization: `Bearer ${token}` } })
+        .then((res) => {
+          if (!res.ok) throw new Error('Auth image load failed')
+          return res.blob()
+        })
+        .then((blob) => URL.createObjectURL(blob))
+        .catch(() => src)
+      : Promise.resolve(src)
 
-    fetch(src, { headers: { Authorization: `Bearer ${token}` } })
-      .then((res) => {
-        if (!res.ok) throw new Error('Auth image load failed')
-        return res.blob()
-      })
-      .then((blob) => {
-        if (mountedRef.current) {
-          setBlobUrl(URL.createObjectURL(blob))
-        }
-      })
-      .catch(() => {
-        if (mountedRef.current) {
-          setBlobUrl(src)
-        }
-      })
+    load.then((url) => {
+      if (mountedRef.current) {
+        setBlobUrl(url)
+      }
+    })
 
     return () => {
       mountedRef.current = false

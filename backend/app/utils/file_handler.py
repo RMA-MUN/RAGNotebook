@@ -153,6 +153,9 @@ async def markdown_loader(file_path: str) -> list[Document]:
     try:
         loader = UnstructuredMarkdownLoader(abs_file_path, mode="single")
         return await asyncio.to_thread(loader.load)
+    except ImportError:
+        logger.error("【Markdown文件加载】unstructured 未安装（缺少 parsers 依赖组），已跳过；请执行 uv sync 安装")
+        return []
     except Exception as e:
         logger.error(f"【Markdown文件加载】加载文件 {abs_file_path} 时出错: {e}")
         return []
@@ -168,6 +171,9 @@ async def ppt_loader(file_path: str) -> list[Document]:
     try:
         loader = UnstructuredPowerPointLoader(abs_file_path, mode="single")
         return await asyncio.to_thread(loader.load)
+    except ImportError:
+        logger.error("【PPT文件加载】unstructured 未安装（缺少 parsers 依赖组），已跳过；请执行 uv sync 安装")
+        return []
     except Exception as e:
         logger.error(f"【PPT文件加载】加载文件 {abs_file_path} 时出错: {e}")
         return []
@@ -267,6 +273,9 @@ def markdown_loader_sync(file_path: str) -> list[Document]:
     try:
         loader = UnstructuredMarkdownLoader(abs_file_path, mode="single")
         return loader.load()
+    except ImportError:
+        logger.error("【Markdown文件加载】unstructured 未安装（缺少 parsers 依赖组），已跳过；请执行 uv sync 安装")
+        return []
     except Exception as e:
         logger.error(f"【Markdown文件加载】加载文件 {abs_file_path} 时出错: {e}")
         return []
@@ -282,6 +291,9 @@ def ppt_loader_sync(file_path: str) -> list[Document]:
     try:
         loader = UnstructuredPowerPointLoader(abs_file_path, mode="single")
         return loader.load()
+    except ImportError:
+        logger.error("【PPT文件加载】unstructured 未安装（缺少 parsers 依赖组），已跳过；请执行 uv sync 安装")
+        return []
     except Exception as e:
         logger.error(f"【PPT文件加载】加载文件 {abs_file_path} 时出错: {e}")
         return []

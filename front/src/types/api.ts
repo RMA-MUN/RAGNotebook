@@ -71,6 +71,7 @@ export interface ChatSession {
   metadata?: Record<string, unknown>
   created_at: string
   updated_at: string
+  pending_run_id?: string | null
 }
 
 export interface ChatMessage {
@@ -155,12 +156,30 @@ export interface ReviewListData {
   total_count: number
 }
 
+export interface ApprovalActionRequest {
+  name: string
+  args: Record<string, unknown>
+  description?: string
+}
+
+export interface ApprovalReviewConfig {
+  action_name: string
+  allowed_decisions: ('approve' | 'reject')[]
+}
+
+export interface ApprovalPayload {
+  action_requests: ApprovalActionRequest[]
+  review_configs: ApprovalReviewConfig[]
+}
+
 export interface SSEMessage {
-  type: 'thinking' | 'response' | 'done' | 'error'
+  type: 'thinking' | 'response' | 'done' | 'error' | 'interrupt'
   content?: string
   session_id?: string
   stage?: string
   details?: Record<string, unknown>
+  run_id?: string
+  payload?: ApprovalPayload
 }
 
 export interface KnowledgeSSEMessage {

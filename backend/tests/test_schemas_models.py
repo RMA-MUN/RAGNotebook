@@ -12,7 +12,6 @@ from app.schemas.models import (
     ChunkInfo,
     DocumentChunksResponse,
     KnowledgeDocument,
-    KnowledgeDocumentDetail,
     KnowledgeListResponse,
     MD5ListResponse,
     MD5Record,
@@ -27,10 +26,10 @@ from app.schemas.models import (
     NoteUpdate,
     PageRequest,
     QueryRequest,
-    ReorderRequest,
-    ReorderResponse,
     RelatedNoteItem,
     RelatedNotesResponse,
+    ReorderRequest,
+    ReorderResponse,
     SessionResponse,
 )
 

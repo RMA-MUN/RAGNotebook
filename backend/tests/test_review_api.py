@@ -6,9 +6,10 @@ from tests.fakes import TEST_USER_ID
 
 async def _seed_note_with_review(session_factory, note_id="note-1", title="值得回顾的笔记",
                                  due_in_days=-1):
+    import uuid as uuidlib
+
     from app.models.note import Note
     from app.models.review_record import ReviewRecord
-    import uuid as uuidlib
 
     async with session_factory() as s:
         note = Note(id=note_id, user_id=TEST_USER_ID, title=title, content="这是需要复习的内容", category="study")
@@ -58,8 +59,9 @@ async def test_mark_reviewed_missing_record(client):
 
 
 async def test_review_question(client, session_factory, monkeypatch):
-    from app.core.background_init import init_manager
     from langchain_core.messages import AIMessage
+
+    from app.core.background_init import init_manager
 
     await _seed_note_with_review(session_factory)
 

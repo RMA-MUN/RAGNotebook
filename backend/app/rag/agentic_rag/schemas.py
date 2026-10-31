@@ -2,7 +2,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-
 EvidenceSource = Literal["note", "knowledge_base", "graph", "web"]
 RetrievalTool = Literal[
     "search_notes",

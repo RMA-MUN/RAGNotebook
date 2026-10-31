@@ -1,0 +1,25 @@
+# 密钥：严禁进入镜像
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+*.egg-info/
+
+# 运行时数据（bind mount 挂载）
+logs/
+media/
+data/
+
+# 与镜像无关的文件
+tests/
+results/
+scripts/
+openapi.json
+.idea/
+*.db
+*.sqlite3

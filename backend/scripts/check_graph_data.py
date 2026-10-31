@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import asyncio
+
 from sqlalchemy import func, select
 
 from app.db.db_config import AsyncSessionLocal
@@ -46,8 +47,8 @@ async def main():
             select(GraphExtractLog.source_type, GraphExtractLog.status, GraphExtractLog.new_count,
                    GraphExtractLog.error_message).order_by(GraphExtractLog.triggered_at)
         )).all()
-        for l in logs:
-            print(f"  [{l[0]}] {l[1]} new={l[2]} err={l[3]}")
+        for log in logs:
+            print(f"  [{log[0]}] {log[1]} new={log[2]} err={log[3]}")
 
 
 asyncio.run(main())

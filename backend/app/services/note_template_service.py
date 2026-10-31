@@ -2,10 +2,10 @@
 笔记模板服务 —— CRUD + 内置模板初始化。
 """
 
-import uuid
 import logging
+import uuid
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.note_template import NoteTemplate
@@ -56,7 +56,8 @@ DEFAULT_TEMPLATES = [
         "icon": "ListTodo",
         "category": "project",
         "title": "",
-        "content": "## 项目概述\n\n\n## 目标\n- [ ] \n\n## 里程碑\n| 阶段 | 内容 | 截止日期 | 状态 |\n|------|------|----------|------|\n| 1    |      |          | 待开始 |\n\n## 备注\n\n",
+        "content": "## 项目概述\n\n\n## 目标\n- [ ] \n\n## 里程碑\n| 阶段 | 内容 | 截止日期 | 状态 |\n"
+                   "|------|------|----------|------|\n| 1    |      |          | 待开始 |\n\n## 备注\n\n",
         "tags": ["项目"],
     },
     {

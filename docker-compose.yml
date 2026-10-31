@@ -1,0 +1,96 @@
+name: ragnotebook
+
+# 后端连接基础设施时强制覆盖的服务发现配置（backend/.env 中的 localhost 设置不适用于容器）
+x-app-infra-env: &app-infra-env
+  MYSQL_HOST: mysql
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-ragnotebook123}
+  MYSQL_DATABASE: chat_history
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  NEO4J_URI: bolt://neo4j:7687
+  NEO4J_USER: neo4j
+  NEO4J_PASSWORD: ${NEO4J_PASSWORD:-ragnotebook123}
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-ragnotebook123}
+      MYSQL_DATABASE: chat_history
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  neo4j:
+    image: neo4j:5.26-community
+    restart: unless-stopped
+    environment:
+      # 首次启动时设置初始密码；凭据由 compose 统一注入 backend，无需用户手动同步
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-ragnotebook123}
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p '${NEO4J_PASSWORD:-ragnotebook123}' 'RETURN 1'"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      # 只负责 LLM 相关配置（OPENAI_*/VISION_*/EMBED_*/RERANKER_*/WEB_SEARCH_*/SECRET_KEY 等）；
+      # 基础设施地址与凭据由下方 environment 覆盖
+      - ./backend/.env
+    environment:
+      <<: *app-infra-env
+    volumes:
+      - ./backend/media:/app/media
+      - ./backend/logs:/app/logs
+      - ./backend/data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+
+  frontend:
+    build: ./front
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
+  redis_data:
+  neo4j_data:
+  neo4j_logs:

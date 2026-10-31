@@ -26,6 +26,9 @@ class FakeChatService:
     async def handle_get_session(self, session_id, user_id):
         return [("你好", "你好呀")]
 
+    async def handle_get_pending_run_id(self, session_id, user_id):
+        return None
+
     async def handle_delete_session(self, session_id, user_id):
         self.calls.append(("delete", session_id, user_id))
 
@@ -42,9 +45,8 @@ class FakeChatService:
 
 
 def install_fake_chat_service(monkeypatch):
-    from main import app
-
     import app.router.chat as chat_module
+    from main import app
 
     service = FakeChatService()
     app.dependency_overrides[chat_module.get_router_service] = lambda: service
@@ -64,6 +66,33 @@ async def test_get_session(client, monkeypatch):
     body = resp.json()
     assert body["data"]["session_id"] == "abc"
     assert body["data"]["history"] == [["你好", "你好呀"]]
+    assert body["data"]["pending_run_id"] is None
+
+
+async def test_get_session_includes_pending_run_id(client, monkeypatch):
+    """会话详情响应携带 pending_run_id（供前端恢复审批卡）。"""
+    import app.router.chat as chat_module
+    from main import app
+
+    class FakeService:
+        def __init__(self):
+            self.calls = []
+
+        async def handle_get_session(self, session_id, user_id):
+            return [("q", "a")]
+
+        async def handle_get_pending_run_id(self, session_id, user_id):
+            self.calls.append((session_id, user_id))
+            return "run-9"
+
+    # 说明：brief 原文用 monkeypatch.setattr("app.router.chat.get_router_service", ...)
+    # 但 get_session 的 Depends 在装饰时已捕获原函数对象，setattr 无法生效；
+    # 此处沿用本文件既有 dependency_overrides 模式，断言意图与 brief 一致。
+    service = FakeService()
+    app.dependency_overrides[chat_module.get_router_service] = lambda: service
+    resp = await client.get("/chat/session/abc", headers={"Authorization": "Bearer x"})
+    assert resp.status_code == 200
+    assert resp.json()["data"]["pending_run_id"] == "run-9"
 
 
 async def test_delete_session(client, monkeypatch):
@@ -124,9 +153,9 @@ async def test_agent_query_stream_real_agentic_rag_pipeline(client, real_note_se
     ) as resp:
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/event-stream")
-        lines = [l async for l in resp.aiter_lines()]
+        lines = [line async for line in resp.aiter_lines()]
 
-    frames = [json.loads(l[6:]) for l in lines if l.startswith("data: ")]
+    frames = [json.loads(line[6:]) for line in lines if line.startswith("data: ")]
     assert any(frame["type"] == "response" for frame in frames)
     assert frames[-1]["type"] == "done"
     response_frame = next(frame for frame in frames if frame["type"] == "response")
@@ -157,9 +186,9 @@ async def test_agent_query_stream_rag_error_continues_with_empty_context(client,
         headers={"Authorization": "Bearer x"},
     ) as resp:
         assert resp.status_code == 200
-        lines = [l async for l in resp.aiter_lines()]
+        lines = [line async for line in resp.aiter_lines()]
 
-    frames = [json.loads(l[6:]) for l in lines if l.startswith("data: ")]
+    frames = [json.loads(line[6:]) for line in lines if line.startswith("data: ")]
     assert seen["rag_context"] == ""
     assert frames[-1]["type"] == "done"
 
@@ -189,9 +218,9 @@ async def test_agent_query_stream_with_rag(client, real_note_service, monkeypatc
         headers={"Authorization": "Bearer x"},
     ) as resp:
         assert resp.status_code == 200
-        lines = [l async for l in resp.aiter_lines()]
+        lines = [line async for line in resp.aiter_lines()]
 
-    frames = [json.loads(l[6:]) for l in lines if l.startswith("data: ")]
+    frames = [json.loads(line[6:]) for line in lines if line.startswith("data: ")]
     # 存在 RAG 思考事件 + agent 响应
     assert any(f.get("type") == "thinking" for f in frames)
     assert frames[-1]["type"] == "done"
@@ -222,9 +251,9 @@ async def test_agent_query_stream_uses_agentic_rag_context_before_agent_response
         headers={"Authorization": "Bearer x"},
     ) as resp:
         assert resp.status_code == 200
-        lines = [l async for l in resp.aiter_lines()]
+        lines = [line async for line in resp.aiter_lines()]
 
-    frames = [json.loads(l[6:]) for l in lines if l.startswith("data: ")]
+    frames = [json.loads(line[6:]) for line in lines if line.startswith("data: ")]
     assert calls == [("讲讲最新RAG", TEST_USER_ID)]
     # 时序：路由占位 thinking（让前端折叠框立即出现）→ RAG 真实事件 → agent 响应 → done
     assert [frame["type"] for frame in frames] == ["thinking", "thinking", "response", "done"]
@@ -279,3 +308,41 @@ async def test_agent_query_stream_emits_thinking_before_rag_finishes(monkeypatch
 
     rag_finished.set()
     assert await asyncio.wait_for(_next_stream_chunk(response), timeout=0.2) == "agent response"
+
+
+async def test_resume_endpoint_returns_error_when_no_pending(client, monkeypatch):
+    from app.router import chat as chat_module
+
+    async def fake_resume(session_id, user_id, run_id, decisions, **kwargs):
+        yield f"data: {json.dumps({'type': 'error', 'content': 'RESUME_MISMATCH'}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+
+    monkeypatch.setattr(chat_module, "get_agent_resume_stream_response", fake_resume)
+    resp = await client.post("/chat/agent/resume", json={"session_id": "none", "decisions": [{"type": "approve"}]})
+    assert resp.status_code == 200
+    body = resp.text
+    assert "RESUME_MISMATCH" in body
+
+
+async def test_pending_endpoint_with_pending(client, monkeypatch):
+    from app.router import chat as chat_module
+
+    # 说明：brief 原文用同步 lambda，但路由以 await 调用两者，
+    # 同步替身会被 await 抛 TypeError；此处改用异步替身，断言意图与 brief 一致。
+    async def fake_get_pending_run_id(session_id, user_id):
+        return "run-7"
+
+    async def fake_read_pending_interrupt(run_id):
+        return {"run_id": "run-7", "payload": {"action_requests": []}, "query": "q"}
+
+    monkeypatch.setattr(
+        chat_module.sm.session_manager, "get_pending_run_id",
+        fake_get_pending_run_id,
+    )
+    monkeypatch.setattr(
+        chat_module, "read_pending_interrupt",
+        fake_read_pending_interrupt,
+    )
+    resp = await client.get("/chat/session/abc/pending", headers={"Authorization": "Bearer x"})
+    assert resp.status_code == 200
+    assert resp.json()["data"]["run_id"] == "run-7"

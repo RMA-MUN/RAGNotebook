@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -10,7 +11,6 @@ from app.rag.agentic_rag.local_retriever import LocalRetriever
 from app.rag.agentic_rag.planner import AgenticRagPlanner
 from app.rag.agentic_rag.schemas import AgenticRagResult, AnswerabilityResult, Evidence
 from app.rag.agentic_rag.web_search import WebSearchClient
-
 
 ThinkingCallback = Callable[[dict[str, Any]], Any]
 
@@ -34,7 +34,11 @@ class AgenticRagService:
         user_id: str,
         thinking_callback: ThinkingCallback | None = None,
     ) -> AgenticRagResult:
+        t_total = time.perf_counter()
+        t0 = time.perf_counter()
         plan = await self.planner.plan(query)
+        planner_ms = (time.perf_counter() - t0) * 1000
+        logger.info(f"【RAG耗时】planner={planner_ms:.0f}ms source={plan.metadata.get('source', 'unknown')} need_retrieval={plan.need_retrieval} steps={len(plan.steps)}")
         await self._emit(
             thinking_callback,
             "agentic_plan",
@@ -51,12 +55,21 @@ class AgenticRagService:
         )
 
         if not plan.need_retrieval:
+            total_ms = (time.perf_counter() - t_total) * 1000
+            logger.info(f"【RAG耗时】total={total_ms:.0f}ms (无需检索短路) planner={planner_ms:.0f}ms")
             return AgenticRagResult(context="", evidences=[], plan=plan, answerability=None, used_web=False)
 
         graph_steps = [step for step in plan.steps if step.tool == "search_graph"]
         text_steps = [step for step in plan.steps if step.tool != "search_graph"]
 
+        await self._emit(
+            thinking_callback,
+            "local_retrieval",
+            "Searching local sources.",
+            {"status": "searching"},
+        )
         # 图检索（含 LLM 实体抽取）与文本检索并行，避免 LLM 抽取拉长整体延迟
+        t_retrieval = time.perf_counter()
         graph_task = asyncio.create_task(self._search_graph_only(user_id, graph_steps))
         text_task = asyncio.create_task(self.local_retriever.search(user_id, text_steps))
         local_evidences = []
@@ -70,6 +83,8 @@ class AgenticRagService:
         if text_steps:
             local_evidences = await text_task
         await asyncio.gather(graph_task, text_task, return_exceptions=True)
+        retrieval_ms = (time.perf_counter() - t_retrieval) * 1000
+        logger.info(f"【RAG耗时】local_retrieval={retrieval_ms:.0f}ms graph_steps={len(graph_steps)} text_steps={len(text_steps)} evidence={len(local_evidences)}")
         local_evidences = [*local_evidences, *graph_evidences]
 
         await self._emit(
@@ -77,6 +92,7 @@ class AgenticRagService:
             "local_retrieval",
             "Retrieved local evidence.",
             {
+                "status": "evidence",
                 "queries": [step.model_dump() for step in plan.steps],
                 "evidence_count": len(local_evidences),
                 "results": [self._evidence_preview(evidence) for evidence in local_evidences],
@@ -84,7 +100,10 @@ class AgenticRagService:
         )
         await asyncio.sleep(0)  # 分帧：让各阶段落入不同事件循环 tick，避免一次性涌入前端
 
+        t_eval = time.perf_counter()
         answerability = await self.evaluator.evaluate(query, local_evidences)
+        eval_ms = (time.perf_counter() - t_eval) * 1000
+        logger.info(f"【RAG耗时】evaluator={eval_ms:.0f}ms answerable={answerability.answerable} web_queries={answerability.web_queries}")
         await self._emit(
             thinking_callback,
             "answerability",
@@ -98,7 +117,15 @@ class AgenticRagService:
         )
         await asyncio.sleep(0)
 
+        t_web = time.perf_counter()
         web_evidences = await self._maybe_search_web(query, answerability, thinking_callback)
+        web_ms = (time.perf_counter() - t_web) * 1000
+        total_ms = (time.perf_counter() - t_total) * 1000
+        logger.info(
+            f"【RAG耗时】total={total_ms:.0f}ms planner={planner_ms:.0f}ms "
+            f"retrieval={retrieval_ms:.0f}ms evaluator={eval_ms:.0f}ms web={web_ms:.0f}ms "
+            f"used_web={bool(web_evidences)} fused={len(local_evidences) + len(web_evidences)}"
+        )
         fused_evidences = merge_evidence([*local_evidences, *web_evidences])
         await self._emit(
             thinking_callback,
@@ -145,6 +172,12 @@ class AgenticRagService:
 
         queries = answerability.web_queries or [query]
         web_evidences: list[Evidence] = []
+        await self._emit(
+            thinking_callback,
+            "web_search",
+            "Searching external sources.",
+            {"status": "searching"},
+        )
         for web_query in queries:
             web_evidences.extend(await self.web_search_client.search(web_query, max_results=5))
 
@@ -153,6 +186,7 @@ class AgenticRagService:
             "web_search",
             "Searched web fallback evidence.",
             {
+                "status": "evidence",
                 "queries": queries,
                 "evidence_count": len(web_evidences),
                 "results": [self._evidence_preview(evidence) for evidence in web_evidences],

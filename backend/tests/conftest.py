@@ -42,11 +42,10 @@ from sqlalchemy import event as sa_event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.models.chat_history import Base
-
 from tests.fakes import (
+    TEST_USER_ID,
     FakeReorderService,
     FakeVectorStoreService,
-    TEST_USER_ID,
     install_fake_redis,
     make_fake_chat_model,
 )
@@ -88,7 +87,15 @@ async def db_engine(tmp_path):
     改用文件库 + 默认连接池后，每个 session 有独立连接，写操作可被其他连接看到（与生产一致）。
     """
     # 确保所有 Model 在 create_all 之前已注册到 Base.metadata
-    from app.models import chat_history, graph, note, note_template, review_record, user_model  # noqa: F401
+    from app.models import (  # noqa: F401
+        agent_checkpoint,
+        chat_history,
+        graph,
+        note,
+        note_template,
+        review_record,
+        user_model,
+    )
 
     db_file = tmp_path / "test.db"
     engine = create_async_engine(
@@ -204,12 +211,12 @@ async def client(session_factory, monkeypatch, fake_models):
     使用 httpx ASGITransport 直连应用、不触发 lifespan（启动事件不会执行，
     因此不会连接 MySQL/Redis）。
     """
-    from main import app
-    from app.utils.auth_utils import get_current_user_id, security
     from fastapi.security import HTTPAuthorizationCredentials
 
     # 1. 数据库：依赖注入 get_db → SQLite；模块内 AsyncSessionLocal → SQLite
     from app.db.db_config import get_db
+    from app.utils.auth_utils import get_current_user_id, security
+    from main import app
 
     async def _override_get_db():
         async with session_factory() as session:
@@ -259,9 +266,8 @@ async def raw_client(session_factory, monkeypatch):
     - 非法 Token → 401（get_current_user_id 内部逻辑）
     - 黑名单 Token → 401
     """
-    from main import app
-
     from app.db.db_config import get_db
+    from main import app
 
     patch_session_factory(monkeypatch, session_factory)
     await install_fake_redis(monkeypatch)

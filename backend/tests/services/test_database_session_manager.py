@@ -12,7 +12,6 @@ from sqlalchemy import select
 
 from app.models.chat_history import ChatMessage, ChatSession
 from app.services.database_session_manager import DatabaseSessionManager
-
 from tests.conftest import patch_session_factory
 
 
@@ -210,3 +209,19 @@ async def test_get_user_sessions_ordered_by_updated_at_desc(mgr, session_factory
     assert sessions[0]["title"] == "最新"
     assert sessions[0]["updated_at"] is not None
     assert sessions[0]["created_at"] is not None
+
+
+async def test_set_and_get_pending_run_id(session_factory, monkeypatch):
+    from tests.conftest import patch_session_factory
+
+    patch_session_factory(monkeypatch, session_factory)
+    from app.services.database_session_manager import DatabaseSessionManager
+
+    mgr = DatabaseSessionManager()
+    await mgr.get_session("s-pending", "u1")  # 建会话
+    assert await mgr.get_pending_run_id("s-pending", "u1") is None
+    await mgr.set_pending_run_id("s-pending", "u1", "run-x")
+    assert await mgr.get_pending_run_id("s-pending", "u1") == "run-x"
+    await mgr.set_pending_run_id("s-pending", "u1", None)
+    assert await mgr.get_pending_run_id("s-pending", "u1") is None
+    assert await mgr.get_pending_run_id("s-pending", "other-user") is None

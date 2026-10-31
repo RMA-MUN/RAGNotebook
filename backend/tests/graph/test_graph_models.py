@@ -1,13 +1,9 @@
 import pytest
-from sqlalchemy import inspect, select
+from sqlalchemy import inspect
 
 from app.models.graph import (
     GraphEntity,
-    GraphEntityNote,
-    GraphEntityType,
     GraphExtractLog,
-    GraphNoteEdge,
-    GraphRelation,
 )
 
 

@@ -5,8 +5,8 @@ from app.rag.sse_models import (
     EVENT_DONE,
     EVENT_ERROR,
     EVENT_RESPONSE,
-    SSEEvent,
     SliceResult,
+    SSEEvent,
 )
 
 

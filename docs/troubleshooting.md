@@ -87,6 +87,50 @@
 - 验证用户权限是否正确
 - 检查会话 ID 是否正确
 
+### 11. Docker 部署常见问题
+
+#### 启动失败 / 容器反复重启
+
+**问题**：`docker compose up` 后 `backend` 一直重启，或 `start.bat` 提示后端长时间未就绪
+
+**解决方法**：
+- 查看日志定位原因：`docker compose logs -f backend`
+- MySQL / Redis / Neo4j 初始化较慢时后端会重试，通常 1-2 分钟内自愈；确认三者 healthy：`docker compose ps`
+- 端口冲突：3000 / 8000 被占用时修改 `docker-compose.yml` 的 `ports` 映射后重新 `docker compose up -d`
+
+#### 模型 Key 配置/修改
+
+- 编辑 `backend/.env`，填写 `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `OPENAI_MODEL_NAME`（`.env` 不会进入镜像，改完不必重新构建）
+- 生效：`docker compose restart backend`
+- Key 无效时前端表现为问答报错/401，页面本身可正常使用
+
+#### 容器内数据库地址错误（Connection refused 指向 localhost）
+
+Docker 模式下 MySQL / Redis / Neo4j 地址与密码由 `docker-compose.yml` 自动覆盖（`mysql` / `redis` / `neo4j` 容器名），**不要**修改 `backend/.env` 中 MYSQL_HOST / REDIS_HOST / NEO4J_URI 为 localhost。
+
+#### 修改数据库密码 / Neo4j 密码
+
+- 在项目根目录创建 `.env`，写入 `MYSQL_ROOT_PASSWORD=xxx`、`NEO4J_PASSWORD=xxx` 后重新执行 `docker compose up -d`
+- 注意 Neo4j 密码只在**首次启动（数据卷为空）**时生效；已初始化的数据卷密码固定，如需更换需先 `docker compose down` 并删除 `neo4j_data` 数据卷（`docker volume rm ragnotebook_neo4j_data`），会清空图谱数据
+
+#### 重置所有数据
+
+```bash
+docker compose down -v   # 删除数据卷（MySQL/Redis/Neo4j 数据全部清空）
+```
+
+重新执行 `start.bat` 或 `docker compose up -d --build` 即可全新初始化。
+
+#### 首次构建很慢 / 下载失败
+
+- 后端镜像含 torch / unstructured 等重型依赖，首次构建约 10 分钟属正常
+- 后端依赖用 uv 按 `uv.lock` 安装，镜像源与本地开发一致（backend/pyproject.toml 的 `[tool.uv]` 默认清华 PyPI）；如需换源，修改 pyproject.toml 后重新 `docker compose build backend`（仅换"uv 安装"源用 `--build-arg PIP_INDEX_URL=...`）
+- 国内网络拉取 Docker Hub 镜像慢时，为 Docker 配置镜像加速器后重试
+
+#### 无 Key 时哪些功能可用
+
+未配置 LLM Key 时系统可启动、可注册登录、可浏览页面；笔记保存、知识库上传解析正常，但实体抽取/智能标签/问答/写作等 AI 能力会失败或降级。
+
 ## 日志检查
 
 ### 应用日志

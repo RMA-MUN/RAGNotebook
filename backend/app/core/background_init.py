@@ -31,6 +31,7 @@ class _BackgroundInitManager:
 
         # 初始化后的实例（初始化完成前为 None）
         self.chat_model = None
+        self.planner_model = None
         self.embed_model = None
         self.vision_model = None
         self.note_service = None
@@ -75,12 +76,34 @@ class _BackgroundInitManager:
 
     async def _init_models(self):
         """初始化 AI 模型"""
-        from app.utils.factory import ChatModelFactory, EmbedModelFactory, VisionModelFactory
-
-        self.chat_model = await asyncio.to_thread(
-            lambda: ChatModelFactory().generator()
+        from app.utils.factory import (
+            ChatModelFactory,
+            EmbedModelFactory,
+            VisionModelFactory,
+            resolve_chat_config,
+            resolve_planner_config,
         )
+
+        if resolve_chat_config()["api_key"]:
+            self.chat_model = await asyncio.to_thread(
+                lambda: ChatModelFactory().generator()
+            )
+        else:
+            logger.warning("对话配置不完整，chat_model 预热已跳过")
         logger.info("✅ chat_model 初始化完成")
+
+        # 规划小模型预热（失败不阻塞：planner 有超时+fallback 兜底）
+        try:
+            from app.utils.factory import create_planner_chat_openai
+
+            planner_model = await asyncio.to_thread(create_planner_chat_openai)
+            if planner_model is not None:
+                self.planner_model = planner_model
+                logger.info(f"✅ planner_model 初始化完成: {resolve_planner_config()['model']}")
+            else:
+                logger.warning("规划模型配置不完整，planner_model 预热已跳过（运行时按需创建）")
+        except Exception as e:
+            logger.warning(f"planner_model 预热失败（可忽略，运行时回落）: {e}")
 
         self.embed_model = await asyncio.to_thread(
             lambda: EmbedModelFactory().generator()

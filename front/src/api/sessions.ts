@@ -1,6 +1,6 @@
 import client from './client'
 import { endpoints } from './endpoints'
-import type { ApiResponse, ChatSession } from '../types/api'
+import type { ApiResponse, ApprovalPayload, ChatSession } from '../types/api'
 
 interface SessionsData {
   sessions: ChatSession[]
@@ -9,6 +9,13 @@ interface SessionsData {
 interface SessionDetailData {
   session_id: string
   history: [string, string][]
+  pending_run_id?: string | null
+}
+
+interface PendingData {
+  run_id: string
+  payload: ApprovalPayload
+  query?: string
 }
 
 export const sessionsApi = {
@@ -19,6 +26,11 @@ export const sessionsApi = {
 
   get: async (id: string) => {
     const res = await client.get<ApiResponse<SessionDetailData>>(endpoints.getSession(id))
+    return res.data
+  },
+
+  getPending: async (id: string) => {
+    const res = await client.get<ApiResponse<PendingData | null>>(endpoints.getSessionPending(id))
     return res.data
   },
 

@@ -137,12 +137,21 @@ export default function NoteList() {
     }
   }, [])
 
-  useEffect(() => {
+  // 筛选条件变化时在 render 阶段同步重置页码（与原 effect 语义一致，避免 effect 内同步 setState）
+  const [prevCategory, setPrevCategory] = useState<string | null>(null)
+  const [prevSearchQuery, setPrevSearchQuery] = useState<string | null>(null)
+  if (category !== prevCategory || searchQuery !== prevSearchQuery) {
+    setPrevCategory(category)
+    setPrevSearchQuery(searchQuery)
     setPage(1)
+  }
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 筛选变化时重新拉取：setLoading(true) 是单次 fetch 开始标志，setPage(1) 已在 render 阶段同步；无级联渲染
     loadNotes(1, true)
   }, [category, searchQuery])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 分类统计刷新：setState 均在 await 请求回调之后触发，单次提交，无级联渲染
     refreshCategories(extraCategories)
   }, [extraCategories])
 

@@ -3,7 +3,7 @@ import json
 import re
 
 from app.core.logger_handler import logger
-from app.graph.schemas.graph import ExtractResult, ExtractedEntity, ExtractedRelation
+from app.graph.schemas.graph import ExtractedEntity, ExtractedRelation, ExtractResult
 from app.utils.prompt_loader import load_prompt
 
 

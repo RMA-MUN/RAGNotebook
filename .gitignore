@@ -105,6 +105,9 @@ skills-lock.json
 # SDD plan workspaces (scratch, per-plan ledger/briefs/reports)
 .superpowers/
 
+# Superpowers design and implementation notes
+docs/superpowers/
+
 
 # AI 工具工作区
 .zcode/

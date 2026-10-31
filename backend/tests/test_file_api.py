@@ -8,8 +8,8 @@ from tests.fakes import TEST_USER_ID
 
 async def test_upload_file(client, session_factory, monkeypatch, tmp_path):
     """上传成功：文件写入临时目录、avatar 更新、redis 缓存被清。"""
-    from app.router import user as user_module
     from app.models.user_model import User, UserStatusChoice
+    from app.router import user as user_module
     from app.utils.auth_utils import hash_password
 
     # 把媒体目录重定向到临时目录，避免污染仓库
@@ -44,6 +44,7 @@ async def test_upload_file(client, session_factory, monkeypatch, tmp_path):
     # avatar 已更新
     async with session_factory() as s:
         from sqlalchemy import select
+
         from app.models.user_model import User
         result = await s.execute(select(User).where(User.uuid == TEST_USER_ID))
         updated = result.scalar_one()

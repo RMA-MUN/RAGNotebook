@@ -174,11 +174,37 @@ class DatabaseSessionManager:
                 {
                     "id": session.id,
                     "title": session.title,
+                    "pending_run_id": session.pending_run_id,
                     "created_at": session.created_at.isoformat() if session.created_at else None,
                     "updated_at": session.updated_at.isoformat() if session.updated_at else None
                 }
                 for session in sessions
             ]
+
+    async def get_pending_run_id(self, session_id: str, user_id: str) -> str | None:
+        """返回该会话待审批 run_id；无会话或不属于该用户返回 None。"""
+        async with AsyncSessionLocal() as db:
+            session = await db.run_sync(
+                lambda s: s.query(ChatSession)
+                .filter(ChatSession.id == session_id, ChatSession.user_id == user_id)
+                .first()
+            )
+            return session.pending_run_id if session else None
+
+    async def set_pending_run_id(
+        self, session_id: str, user_id: str, run_id: str | None
+    ) -> None:
+        """写入/清除会话的待审批 run_id（校验所有权）。"""
+        async with AsyncSessionLocal() as db:
+            session = await db.run_sync(
+                lambda s: s.query(ChatSession)
+                .filter(ChatSession.id == session_id, ChatSession.user_id == user_id)
+                .first()
+            )
+            if session is None:
+                return
+            session.pending_run_id = run_id
+            await db.commit()
 
 
 # 全局数据库会话管理器实例

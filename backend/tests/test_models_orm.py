@@ -10,7 +10,6 @@ from app.models.note_template import NoteTemplate
 from app.models.review_record import ReviewRecord
 from app.models.user_model import User, UserStatusChoice, generate_uuid
 
-
 HEX24 = re.compile(r"^[0-9a-f]{24}$")
 
 
@@ -140,6 +139,40 @@ class TestChatModels:
         db_session.add(ChatMessage(session_id="sess-1", content="x"))
         with pytest.raises(IntegrityError):
             await db_session.flush()
+
+
+class TestAgentCheckpointModels:
+    async def test_agent_checkpoint_roundtrip(self, db_session):
+        from app.models.agent_checkpoint import AgentCheckpoint
+
+        row = AgentCheckpoint(
+            thread_id="t1",
+            checkpoint_ns="",
+            checkpoint_id="c1",
+            parent_checkpoint_id=None,
+            type="checkpoint",
+            checkpoint=b"\x00\x01blob",
+            metadata_=b'{"step": 0}',
+        )
+        db_session.add(row)
+        await db_session.flush()
+        got = await db_session.get(AgentCheckpoint, ("t1", "", "c1"))
+        assert got.checkpoint == b"\x00\x01blob"
+
+    async def test_agent_checkpoint_write_roundtrip(self, db_session):
+        from app.models.agent_checkpoint import AgentCheckpointWrite
+
+        row = AgentCheckpointWrite(
+            thread_id="t1", checkpoint_ns="", checkpoint_id="c1",
+            task_id="task-1", idx=0, channel="messages", type="value",
+            value=b"payload",
+        )
+        db_session.add(row)
+        await db_session.flush()
+        got = await db_session.get(
+            AgentCheckpointWrite, ("t1", "", "c1", "task-1", 0)
+        )
+        assert got.channel == "messages"
 
 
 class TestNoteModel:
