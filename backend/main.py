@@ -1,5 +1,6 @@
 import os
 import time
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -24,7 +25,50 @@ from app.services.database_session_manager import init_database_session_manager
 # 加载环境变量
 load_dotenv()
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用启动与关闭的生命周期管理"""
+    # ---------- 启动 ----------
+    # 初始化数据库表结构（自动创建/迁移）
+    await init_db()
+    logger.info("数据库表结构初始化完成")
+
+    # 确保测试用户存在
+    await seed_test_user()
+
+    # 使用数据库版本的会话管理器
+    await init_database_session_manager()
+    logger.info("数据库会话管理器初始化完成")
+
+    # 连接Redis
+    await connect_redis()
+    logger.info("Redis连接初始化完成")
+
+    # 检查并重排序模型（在后台异步加载）
+    await init_manager.start()
+    logger.info("部分资源正在初始化")
+
+    yield
+
+    # ---------- 关闭 ----------
+    # 关闭 Redis 连接
+    await close_redis()
+    logger.info("Redis连接已关闭")
+
+    # 停止图谱构建 worker 并关闭 Neo4j 驱动（未配置时为空操作）
+    await init_manager.stop_graph_worker()
+    from app.graph.storage.neo4j_client import close_neo4j_driver
+    await close_neo4j_driver()
+    logger.info("Neo4j驱动已关闭")
+
+    # 关闭 SQLAlchemy 引擎（释放 aiomysql 连接池，避免 GC 时事件循环已关闭）
+    from app.db.db_config import async_engine
+    await async_engine.dispose()
+    logger.info("数据库引擎已关闭")
+
+
+app = FastAPI(lifespan=lifespan)
 
 # 集成限流中间件（暂时注释掉，以免在调试阶段干扰正常请求）
 # RateLimitMiddleware 基于令牌桶实现，每 60 秒允许 100 个请求
@@ -82,47 +126,6 @@ async def say_hello(name: str):
 @app.get('/health')
 async def health_check():
     return {"message": "The service is healthy"}
-
-
-@app.on_event("startup")
-async def startup_event():
-    """应用启动时初始化会话管理器"""
-    # 初始化数据库表结构（自动创建/迁移）
-    await init_db()
-    logger.info("数据库表结构初始化完成")
-
-    # 确保测试用户存在
-    await seed_test_user()
-
-    # 使用数据库版本的会话管理器
-    await init_database_session_manager()
-    logger.info("数据库会话管理器初始化完成")
-
-    # 连接Redis
-    await connect_redis()
-    logger.info("Redis连接初始化完成")
-
-    # 检查并重排序模型（在后台异步加载）
-    await init_manager.start()
-    logger.info("部分资源正在初始化")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """应用关闭时清理资源"""
-    # 关闭 Redis 连接
-    await close_redis()
-    logger.info("Redis连接已关闭")
-
-    # 停止图谱构建 worker 并关闭 Neo4j 驱动（未配置时为空操作）
-    await init_manager.stop_graph_worker()
-    from app.graph.storage.neo4j_client import close_neo4j_driver
-    await close_neo4j_driver()
-    logger.info("Neo4j驱动已关闭")
-
-    # 关闭 SQLAlchemy 引擎（释放 aiomysql 连接池，避免 GC 时事件循环已关闭）
-    from app.db.db_config import async_engine
-    await async_engine.dispose()
-    logger.info("数据库引擎已关闭")
 
 
 if __name__ == "__main__":
