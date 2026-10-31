@@ -123,3 +123,10 @@ async def shutdown_event():
     from app.db.db_config import async_engine
     await async_engine.dispose()
     logger.info("数据库引擎已关闭")
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    # 热重载必须用导入字符串形式，不能直接传 app 对象
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
